@@ -1045,7 +1045,7 @@ int main(int argc, const char **argv)
   if (talk_to_cluster) {
     r = rados.ioctx_create(poolname, io_ctx);
     if (r < 0) {
-      cerr << "error opening pool " << poolname << " (err=" << r << ")" << std::endl;
+      cerr << "error opening pool " << poolname << ": " << strerror(-r) << std::endl;
       exit(1);
     }
   }
@@ -1057,7 +1057,7 @@ int main(int argc, const char **argv)
        opt_cmd == OPT_COPY)) {
     r = rbd.open(io_ctx, image, imgname);
     if (r < 0) {
-      cerr << "error opening image " << imgname << ": " << strerror(r) << std::endl;
+      cerr << "error opening image " << imgname << ": " << strerror(-r) << std::endl;
       exit(1);
     }
   }
@@ -1073,7 +1073,7 @@ int main(int argc, const char **argv)
   if (opt_cmd == OPT_COPY || opt_cmd == OPT_IMPORT) {
     r = rados.ioctx_create(dest_poolname, dest_io_ctx);
     if (r < 0) {
-      cerr << "error opening pool " << dest_poolname << " (err=" << r << ")" << std::endl;
+      cerr << "error opening pool " << dest_poolname << ": " << strerror(-r) << std::endl;
       exit(1);
     }
   }
