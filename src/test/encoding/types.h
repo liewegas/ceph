@@ -44,7 +44,7 @@ TYPE(pool_stat_t)
 TYPE(pg_history_t)
 TYPE(pg_info_t)
 TYPE(pg_interval_t)
-TYPE(pg_query_t)
+//TYPE(pg_query_t)
 TYPE(pg_log_entry_t)
 TYPE(pg_log_t)
 TYPE(pg_missing_t::item)
@@ -131,6 +131,10 @@ TYPE(rgw_obj)
 #include "rgw/rgw_log.h"
 TYPE(rgw_log_entry)
 TYPE(rgw_intent_log_entry)
+
+#include "librbd/cls_rbd.h"
+TYPE(cls_rbd_parent)
+TYPE(cls_rbd_snap)
 
 #endif
 

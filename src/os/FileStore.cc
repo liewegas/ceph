@@ -696,7 +696,6 @@ FileStore::FileStore(const std::string &base, const std::string &jdev, const cha
   logger(NULL),
   m_filestore_btrfs_clone_range(g_conf->filestore_btrfs_clone_range),
   m_filestore_btrfs_snap (g_conf->filestore_btrfs_snap ),
-  m_filestore_btrfs_trans(g_conf->filestore_btrfs_trans),
   m_filestore_commit_timeout(g_conf->filestore_commit_timeout),
   m_filestore_fiemap(g_conf->filestore_fiemap),
   m_filestore_flusher (g_conf->filestore_flusher ),
@@ -707,6 +706,7 @@ FileStore::FileStore(const std::string &base, const std::string &jdev, const cha
   m_filestore_fiemap_threshold(g_conf->filestore_fiemap_threshold),
   m_filestore_sync_flush(g_conf->filestore_sync_flush),
   m_filestore_flusher_max_fds(g_conf->filestore_flusher_max_fds),
+  m_filestore_flush_min(g_conf->filestore_flush_min),
   m_filestore_max_sync_interval(g_conf->filestore_max_sync_interval),
   m_filestore_min_sync_interval(g_conf->filestore_min_sync_interval),
   do_update(do_update),
@@ -2373,11 +2373,6 @@ int FileStore::do_transactions(list<Transaction*> &tls, uint64_t op_seq)
     ops += (*p)->get_num_ops();
   }
 
-  int id = _transaction_start(bytes, ops);
-  if (id < 0) {
-    return id;
-  }
-    
   int trans_num = 0;
   for (list<Transaction*>::iterator p = tls.begin();
        p != tls.end();
@@ -2387,7 +2382,6 @@ int FileStore::do_transactions(list<Transaction*> &tls, uint64_t op_seq)
       break;
   }
   
-  _transaction_finish(id);
   return r;
 }
 
@@ -2420,52 +2414,6 @@ unsigned FileStore::apply_transactions(list<Transaction*> &tls,
   return r;
 }
 
-
-// btrfs transaction start/end interface
-
-int FileStore::_transaction_start(uint64_t bytes, uint64_t ops)
-{
-  if (!btrfs || !btrfs_trans_start_end ||
-      !m_filestore_btrfs_trans)
-    return 0;
-
-  int fd = ::open(basedir.c_str(), O_RDONLY);
-  if (fd < 0) {
-    int err = errno;
-    dout(0) << "transaction_start got " << cpp_strerror(err) << " from btrfs open" << dendl;
-    assert(0 == "couldn't open basedir");
-  }
-
-  int r = ::ioctl(fd, BTRFS_IOC_TRANS_START);
-  if (r < 0) {
-    int err = errno;
-    dout(0) << "transaction_start got " << cpp_strerror(err) << " from btrfs ioctl" << dendl;    
-    TEMP_FAILURE_RETRY(::close(fd));
-    return -err;
-  }
-  dout(10) << "transaction_start " << fd << dendl;
-
-  char fn[PATH_MAX];
-  snprintf(fn, sizeof(fn), "%s/current/trans.%d", basedir.c_str(), fd);
-  ::mknod(fn, 0644, 0);
-
-  return fd;
-}
-
-void FileStore::_transaction_finish(int fd)
-{
-  if (!btrfs || !btrfs_trans_start_end ||
-      !m_filestore_btrfs_trans)
-    return;
-
-  char fn[PATH_MAX];
-  snprintf(fn, sizeof(fn), "%s/current/trans.%d", basedir.c_str(), fd);
-  ::unlink(fn);
-  
-  dout(10) << "transaction_finish " << fd << dendl;
-  ::ioctl(fd, BTRFS_IOC_TRANS_END);
-  TEMP_FAILURE_RETRY(::close(fd));
-}
 
 void FileStore::_set_replay_guard(int fd,
 				  const SequencerPosition& spos,
@@ -3172,7 +3120,7 @@ int FileStore::_write(coll_t cid, const hobject_t& oid,
     r = bl.length();
 
   // flush?
-  if (
+  if ((ssize_t)len < m_filestore_flush_min ||
 #ifdef HAVE_SYNC_FILE_RANGE
       !m_filestore_flusher || !queue_flusher(fd, offset, len)
 #else
@@ -4333,6 +4281,36 @@ int FileStore::_collection_setattrs(coll_t cid, map<string,bufferptr>& aset)
   return r;
 }
 
+int FileStore::_collection_remove_recursive(const coll_t &cid,
+					    const SequencerPosition &spos)
+{
+  struct stat st;
+  int r = collection_stat(cid, &st);
+  if (r < 0) {
+    if (r == -ENOENT)
+      return 0;
+    return r;
+  }
+
+  vector<hobject_t> objects;
+  hobject_t max;
+  r = 0;
+  while (!max.is_max()) {
+    r = collection_list_partial(cid, max, 200, 300, 0, &objects, &max);
+    if (r < 0)
+      return r;
+    for (vector<hobject_t>::iterator i = objects.begin();
+	 i != objects.end();
+	 ++i) {
+      assert(_check_replay_guard(cid, *i, spos));
+      r = _remove(cid, *i, spos);
+      if (r < 0)
+	return r;
+    }
+  }
+  return _destroy_collection(cid);
+}
+
 int FileStore::_collection_rename(const coll_t &cid, const coll_t &ncid,
 				  const SequencerPosition& spos)
 {
@@ -4340,16 +4318,21 @@ int FileStore::_collection_rename(const coll_t &cid, const coll_t &ncid,
   get_cdir(cid, old_coll, sizeof(old_coll));
   get_cdir(ncid, new_coll, sizeof(new_coll));
 
-  if (_check_replay_guard(ncid, spos) < 0)
-    return 0;
+  if (_check_replay_guard(ncid, spos) < 0) {
+    return _collection_remove_recursive(cid, spos);
+  }
 
   int ret = 0;
   if (::rename(old_coll, new_coll)) {
     if (replaying && !btrfs_stable_commits &&
 	(errno == EEXIST || errno == ENOTEMPTY))
-      ret = 0;   // crashed between rename and set_replay_guard
+      ret = _collection_remove_recursive(cid, spos);
     else
       ret = -errno;
+
+    dout(10) << "collection_rename '" << cid << "' to '" << ncid << "'"
+	     << ": ret = " << ret << dendl;
+    return ret;
   }
 
   if (ret >= 0) {
@@ -4733,12 +4716,14 @@ void FileStore::handle_conf_change(const struct md_config_t *conf,
   if (changed.count("filestore_min_sync_interval") ||
       changed.count("filestore_max_sync_interval") ||
       changed.count("filestore_flusher_max_fds") ||
+      changed.count("filestore_flush_min") ||
       changed.count("filestore_kill_at")) {
     Mutex::Locker l(lock);
     m_filestore_min_sync_interval = conf->filestore_min_sync_interval;
     m_filestore_max_sync_interval = conf->filestore_max_sync_interval;
     m_filestore_flusher = conf->filestore_flusher;
     m_filestore_flusher_max_fds = conf->filestore_flusher_max_fds;
+    m_filestore_flush_min = conf->filestore_flush_min;
     m_filestore_sync_flush = conf->filestore_sync_flush;
     m_filestore_kill_at.set(conf->filestore_kill_at);
   }

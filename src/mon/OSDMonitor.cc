@@ -1844,6 +1844,57 @@ bool OSDMonitor::prepare_command(MMonCommand *m)
 	}
       } while (false);
     }
+    else if (m->cmd.size() >= 5 && m->cmd[1] == "crush" && m->cmd[2] == "move") {
+      do {
+	// osd crush move <name> [<loc1> [<loc2> ...]]
+	string name = m->cmd[3];
+	map<string,string> loc;
+	for (unsigned i = 4; i < m->cmd.size(); ++i) {
+	  const char *s = m->cmd[i].c_str();
+	  const char *pos = strchr(s, '=');
+	  if (!pos)
+	    break;
+	  string key(s, 0, pos-s);
+	  string value(pos+1);
+	  if (value.length())
+	    loc[key] = value;
+	  else
+	    loc.erase(key);
+	}
+
+	dout(0) << "moving crush item name '" << name << "' to location " << loc << dendl;
+	bufferlist bl;
+	if (pending_inc.crush.length())
+	  bl = pending_inc.crush;
+	else
+	  osdmap.crush->encode(bl);
+
+	CrushWrapper newcrush;
+	bufferlist::iterator p = bl.begin();
+	newcrush.decode(p);
+
+	if (!newcrush.name_exists(name.c_str())) {
+	  err = -ENOENT;
+	  ss << "item " << name << " dne";
+	  break;
+	}
+	int id = newcrush.get_item_id(name.c_str());
+
+	if (!newcrush.check_item_loc(g_ceph_context, id, loc, (int *)NULL)) {
+	  err = newcrush.move_bucket(g_ceph_context, id, loc);
+	  if (err >= 0) {
+	    ss << "moved item id " << id << " name '" << name << "' to location " << loc << " in crush map";
+	    pending_inc.crush.clear();
+	    newcrush.encode(pending_inc.crush);
+	    getline(ss, rs);
+	    paxos->wait_for_commit(new Monitor::C_Command(mon, m, 0, rs, paxos->get_version()));
+	    return true;
+	  }
+	} else {
+	    ss << "no need to move item id " << id << " name '" << name << "' to location " << loc << " in crush map";
+	}
+      } while (false);
+    }
     else if (m->cmd.size() > 3 && m->cmd[1] == "crush" && (m->cmd[2] == "rm" || m->cmd[2] == "remove")) {
       do {
 	// osd crush rm <id>
@@ -1957,11 +2008,9 @@ bool OSDMonitor::prepare_command(MMonCommand *m)
       return prepare_unset_flag(m, CEPH_OSDMAP_NOIN);
     }
     else if (m->cmd[1] == "cluster_snap" && m->cmd.size() == 3) {
-      pending_inc.cluster_snapshot = m->cmd[2];
-      ss << "creating cluster snap " << m->cmd[2];
-      getline(ss, rs);
-      paxos->wait_for_commit(new Monitor::C_Command(mon, m, 0, rs, paxos->get_version()));
-      return true;
+      // ** DISABLE THIS FOR NOW **
+      ss << "cluster snapshot currently disabled (broken implementation)";
+      // ** DISABLE THIS FOR NOW **
     }
     else if (m->cmd[1] == "down" && m->cmd.size() >= 3) {
       bool any = false;
@@ -2467,7 +2516,7 @@ bool OSDMonitor::preprocess_pool_op(MPoolOp *m)
 
   if (!osdmap.get_pg_pool(m->pool)) {
     dout(10) << "attempt to delete non-existent pool id " << m->pool << dendl;
-    _pool_op_reply(m, -ENODATA, osdmap.get_epoch());
+    _pool_op_reply(m, -ENOENT, osdmap.get_epoch());
     return true;
   }
   

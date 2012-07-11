@@ -26,7 +26,7 @@
                                + bucket-id)
     log rm                     remove log object
     usage show                 show usage (by user, date range)
-    usage trim                 show usage (by user, date range)
+    usage trim                 trim usage (by user, date range)
     temp remove                remove temporary objects that were created up to
                                specified date (and optional time)
   options:
@@ -45,10 +45,9 @@
      --bucket=<bucket>
      --pool=<pool>
      --object=<object>
-     --date=<yyyy-mm-dd>
-     --start-date=<yyyy-mm-dd>
-     --end-date=<yyyy-mm-dd>
-     --time=<HH:MM:SS>
+     --date=<date>
+     --start-date=<date>
+     --end-date=<date>
      --bucket-id=<bucket-id>
      --format=<format>         specify output format for certain operations: xml,
                                json
@@ -61,11 +60,14 @@
      --skip-zero-entries       log show only dumps entries that don't have zero value
                                in one of the numeric field
      --yes-i-really-mean-it    required for certain operations
-  --conf/-c        Read configuration from the given configuration file
-  -d               Run in foreground, log to stderr.
-  -f               Run in foreground, log to usual location.
-  --id/-i          set ID portion of my name
-  --name/-n        set name (TYPE.ID)
-  --version        show version and quit
+  
+  <date> := "YYYY-MM-DD[ hh:mm:ss]"
+  
+    --conf/-c        Read configuration from the given configuration file
+    -d               Run in foreground, log to stderr.
+    -f               Run in foreground, log to usual location.
+    --id/-i          set ID portion of my name
+    --name/-n        set name (TYPE.ID)
+    --version        show version and quit
   
   [1]

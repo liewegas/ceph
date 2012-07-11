@@ -166,6 +166,22 @@ int cls_read(cls_method_context_t hctx, int ofs, int len,
   return *outdatalen;
 }
 
+int cls_get_request_origin(cls_method_context_t hctx, entity_inst_t *origin)
+{
+  ReplicatedPG::OpContext **pctx = static_cast<ReplicatedPG::OpContext **>(hctx);
+  *origin = (*pctx)->op->request->get_orig_source_inst();
+  return 0;
+}
+
+int cls_cxx_create(cls_method_context_t hctx, bool exclusive)
+{
+  ReplicatedPG::OpContext **pctx = (ReplicatedPG::OpContext **)hctx;
+  vector<OSDOp> ops(1);
+  ops[0].op.op = CEPH_OSD_OP_CREATE;
+  ops[0].op.flags = (exclusive ? CEPH_OSD_OP_FLAG_EXCL : 0);
+  return (*pctx)->pg->do_osd_ops(*pctx, ops);
+}
+
 int cls_cxx_stat(cls_method_context_t hctx, uint64_t *size, time_t *mtime)
 {
   ReplicatedPG::OpContext **pctx = (ReplicatedPG::OpContext **)hctx;
@@ -317,7 +333,6 @@ int cls_cxx_map_get_vals(cls_method_context_t hctx, const string &start_obj,
   OSDOp& op = ops[0];
   int ret;
 
-  string start_after;
   bufferlist inbl;
 
   ::encode(start_obj, op.indata);

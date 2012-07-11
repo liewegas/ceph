@@ -21,7 +21,7 @@ full ``root`` privileges. For example::
 	sudo useradd -d /home/chef -m chef
 	sudo passwd chef
 	
-To provide full privileges, add the following to ``/etc/sudoers.d/chef``. 
+To provide full privileges, add the following to ``/etc/sudoers.d/chef``. ::
 
 	echo "chef ALL = (root) NOPASSWD:ALL" | sudo tee /etc/sudoers.d/chef
 	sudo chmod 0440 /etc/sudoers.d/chef
@@ -96,7 +96,7 @@ The key is only used by ``apt``, so remove it from the ``root`` keyring by
 typing ``Y`` when prompted to delete it.
 
 Install the Opscode keyring, Chef and Chef server on the host designated
-as your Chef Server.
+as your Chef Server. ::
 
 	sudo apt-get update && sudo apt-get upgrade && sudo apt-get install opscode-keyring chef chef-server
 
@@ -147,7 +147,7 @@ and paste the following line into your command line::
 The key is only used by ``apt``, so remove it from the ``root`` keyring by
 typing ``Y`` when prompted to delete it.
 
-Install the Opscode keyring and Chef on all hosts other than the Chef Server.
+Install the Opscode keyring and Chef on all hosts other than the Chef Server. ::
 
 	sudo apt-get update && sudo apt-get upgrade && sudo apt-get install opscode-keyring chef
 
@@ -173,7 +173,7 @@ permissions for the user that installed the Chef server. Copy them from the
 ``/etc/chef`` directory to the ``~/.chef`` directory. Then, change their 
 ownership to the current user. ::
 	
-	sudo cp /etc/chef/validation.pem /etc/chef/webui.pem ~/.chef && sudo chown ${UID}:${GROUPS[0]} ~/.chef/*.pem
+	sudo cp /etc/chef/validation.pem /etc/chef/webui.pem ~/.chef && sudo chown $(id -u):$(id -g) ~/.chef/*.pem
 
 From the current user's home directory, configure ``knife`` with an initial 
 API client. :: 
@@ -209,6 +209,21 @@ default value so that it points to the ``.chef`` directory.
 *Please enter the path to a chef repository (or leave blank):*
 Leave the entry field blank and press **Enter**.
 
+
+Add a Cookbook Path
+-------------------
+Add ``cookbook_path`` to the ``~/.chef/knife.rb`` configuration file
+on your Chef workstation. For example::
+
+	cookbook_path '/home/{user-name}/chef-cookbooks/'
+	
+Then create the path if it doesn't already exist. ::
+
+	mkdir /home/{user-name}/chef-cookbooks
+	
+This is where you will store local copies of cookbooks before uploading
+them to the Chef server.
+
 Copy ``validation.pem`` to Nodes
 --------------------------------
 Copy the ``/etc/chef/validation.pem`` file from your Chef server to
@@ -216,7 +231,7 @@ each Chef Node. In a command line shell on the Chef Server, for each node,
 replace ``{nodename}`` in the following line with the node's host name and 
 execute it. ::
 
-	sudo cat /etc/chef/validation.pem | ssh -t -t {nodename} "exec sudo tee /etc/chef/validation.pem >/dev/null"
+	sudo cat /etc/chef/validation.pem | ssh {nodename} "exec sudo tee /etc/chef/validation.pem >/dev/null"
 
 Run ``chef-client`` on each Chef Node
 -------------------------------------

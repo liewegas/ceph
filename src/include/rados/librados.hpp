@@ -136,6 +136,12 @@ namespace librados
     void src_cmpxattr(const std::string& src_oid,
 		      const char *name, int op, uint64_t v);
     void exec(const char *cls, const char *method, bufferlist& inbl);
+    /**
+     * Guard operation with a check that object version == ver
+     *
+     * @param ver [in] version to check
+     */
+    void assert_version(uint64_t ver);
 
   protected:
     ObjectOperationImpl *impl;
@@ -475,6 +481,7 @@ namespace librados
     static void version(int *major, int *minor, int *extra);
 
     Rados();
+    explicit Rados(IoCtx& ioctx);
     ~Rados();
 
     int init(const char * const id);
@@ -497,6 +504,7 @@ namespace librados
     int pool_delete(const char *name);
     int pool_delete_async(const char *name, PoolAsyncCompletion *c);
     int64_t pool_lookup(const char *name);
+    int pool_reverse_lookup(int64_t id, std::string *name);
 
     uint64_t get_instance_id();
 

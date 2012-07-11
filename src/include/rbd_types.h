@@ -22,17 +22,21 @@
 
 
 /* New-style rbd image 'foo' consists of objects
- *   rbd_header.foo         - image metadata
+ *   rbd_id.foo              - id of image
+ *   rbd_header.<id>         - image metadata
  *   rbd_data.<id>.00000000
  *   rbd_data.<id>.00000001
- *   ...                    - data
+ *   ...                     - data
  */
 
 #define RBD_HEADER_PREFIX      "rbd_header."
 #define RBD_DATA_PREFIX        "rbd_data."
+#define RBD_ID_PREFIX          "rbd_id."
 
-#define RBD_FEATURES_INCOMPATIBLE 0
-#define RBD_FEATURES_ALL 0
+#define RBD_FEATURE_LAYERING      1
+
+#define RBD_FEATURES_INCOMPATIBLE (RBD_FEATURE_LAYERING)
+#define RBD_FEATURES_ALL          (RBD_FEATURE_LAYERING)
 
 /*
  * old-style rbd image 'foo' consists of objects

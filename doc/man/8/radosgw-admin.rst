@@ -29,10 +29,20 @@ Commands
   Modify a user
 
 :command:`user info`
-  Display information of a user
+  Display information of a user, and any potentially available
+  subusers and keys
 
 :command:`user rm`
   Remove a user
+
+:command:`subuser create`
+  Create a new subuser (primarily useful for clients using the Swift API)
+
+:command:`subuser modify`
+  Modify a subuser
+
+:command:`subuser rm`
+  Remove a subuser
 
 :command:`bucket list`
   List all buckets
@@ -40,11 +50,23 @@ Commands
 :command:`bucket unlink`
   Remove a bucket
 
+:command:`key create`
+  Create an access key
+
+:command:`key rm`
+  Remove an access key
+
 :command:`policy`
   Display bucket/object policy
 
 :command:`log show`
   Show the log of a bucket (with a specified date)
+
+:command:`usage show`
+  Show the usage information (with optional user and date range)
+
+:command:`usage trim`
+  Trim usage information (with optional user and date range)
 
 
 Options
@@ -62,11 +84,11 @@ Options
 
 .. option:: --uid=uid
 
-   The S3 user/access key.
+   The radosgw user ID.
 
 .. option:: --secret=secret
 
-   The S3 secret.
+   The secret associated with a given key.
 
 .. option:: --display-name=name
 
@@ -86,15 +108,15 @@ Options
 
 .. option:: --date=yyyy-mm-dd
 
-   The date need for some commands
+   The date needed for some commands
 
-.. option:: --os-user=group:name
+.. option:: --start-date=yyyy-mm-dd
 
-   The OpenStack user (only needed for use with OpenStack)
+   The start date needed for some commands
 
-.. option:: --os-secret=key
+.. option:: --end-date=yyyy-mm-dd
 
-   The OpenStack key
+   The end date needed for some commands
 
 .. option:: --auth-uid=auid
 
@@ -127,15 +149,28 @@ Remove a bucket::
 
         $ radosgw-admin bucket unlink --bucket=foo
 
-Show the logs of a bucket from April 1st 2011::
+Show the logs of a bucket from April 1st, 2012::
 
-        $ radosgw-admin log show --bucket=foo --date=2011=04-01
+        $ radosgw-admin log show --bucket=foo --date=2012=04-01
+
+Show usage information for user from March 1st to (but not including) April 1st, 2012::
+
+        $ radosgw-admin usage show --uid=johnny \
+                        --start-date=2012-03-01 --end-date=2012-04-01
+
+Show only summary of usage information for all users::
+
+        $ radosgw-admin usage show --show-log-entries=false
+
+Trim usage information for user until March 1st, 2012::
+
+        $ radosgw-admin usage trim --uid=johnny --end-date=2012-04-01
 
 Availability
 ============
 
 **radosgw-admin** is part of the Ceph distributed file system.  Please
-refer to the Ceph wiki at http://ceph.newdream.net/wiki for more
+refer to the Ceph documentation at http://ceph.com/docs for more
 information.
 
 See also

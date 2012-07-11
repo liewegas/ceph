@@ -23,9 +23,9 @@ cluster to ensure that the storage hosts are running smoothly.
    init/index
    cephfs/index
    rbd/rbd
+   radosgw/index
    ops/index
    rec/index
-   config
    control
    api/index
    source/index
@@ -34,4 +34,5 @@ cluster to ensure that the storage hosts are running smoothly.
    architecture
    faq
    papers
+   release-notes
    appendix/index

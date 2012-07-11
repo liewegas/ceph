@@ -314,8 +314,6 @@ public:
   int do_transactions(list<Transaction*> &tls, uint64_t op_seq);
   unsigned apply_transaction(Transaction& t, Context *ondisk=0);
   unsigned apply_transactions(list<Transaction*>& tls, Context *ondisk=0);
-  int _transaction_start(uint64_t bytes, uint64_t ops);
-  void _transaction_finish(int id);
   unsigned _do_transaction(Transaction& t, uint64_t op_seq, int trans_num);
 
   int queue_transaction(Sequencer *osr, Transaction* t);
@@ -425,6 +423,8 @@ public:
   int _collection_setattr(coll_t c, const char *name, const void *value, size_t size);
   int _collection_rmattr(coll_t c, const char *name);
   int _collection_setattrs(coll_t cid, map<string,bufferptr> &aset);
+  int _collection_remove_recursive(const coll_t &cid,
+				   const SequencerPosition &spos);
   int _collection_rename(const coll_t &cid, const coll_t &ncid,
 			 const SequencerPosition& spos);
 
@@ -477,7 +477,6 @@ private:
 			  const std::set <std::string> &changed);
   bool m_filestore_btrfs_clone_range;
   bool m_filestore_btrfs_snap;
-  bool m_filestore_btrfs_trans;
   float m_filestore_commit_timeout;
   bool m_filestore_fiemap;
   bool m_filestore_flusher;
@@ -488,6 +487,7 @@ private:
   int m_filestore_fiemap_threshold;
   bool m_filestore_sync_flush;
   int m_filestore_flusher_max_fds;
+  int m_filestore_flush_min;
   double m_filestore_max_sync_interval;
   double m_filestore_min_sync_interval;
   int do_update;

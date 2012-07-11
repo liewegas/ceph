@@ -23,6 +23,9 @@ extern "C" {
 #include "include/err.h"
 #include "include/encoding.h"
 
+
+#include "common/Mutex.h"
+
 #include "include/assert.h"
 #define BUG_ON(x) assert(!(x))
 
@@ -47,6 +50,7 @@ inline static void decode(crush_rule_step &s, bufferlist::iterator &p)
 
 using namespace std;
 class CrushWrapper {
+  mutable Mutex mapper_lock;
 public:
   struct crush_map *crush;
   std::map<int, string> type_map; /* bucket/device type names */
@@ -54,8 +58,8 @@ public:
   std::map<int, string> rule_name_map;
 
   /* reverse maps */
-  mutable bool have_rmaps;
-  mutable std::map<string, int> type_rmap, name_rmap, rule_name_rmap;
+  bool have_rmaps;
+  std::map<string, int> type_rmap, name_rmap, rule_name_rmap;
 
 private:
   void build_rmaps() {
@@ -75,7 +79,8 @@ public:
   CrushWrapper(const CrushWrapper& other);
   const CrushWrapper& operator=(const CrushWrapper& other);
 
-  CrushWrapper() : crush(0), have_rmaps(false) {
+  CrushWrapper() : mapper_lock("CrushWrapper::mapper_lock"),
+		   crush(0), have_rmaps(false) {
     create();
   }
   ~CrushWrapper() {
@@ -216,6 +221,30 @@ public:
     return ret;
   }
 
+
+  /**
+   * returns the (type, name) of the parent bucket of id
+   */
+  pair<string,string> get_immediate_parent(int id);
+
+  /**
+   * get the fully qualified location of a device by successively finding
+   * parents beginning at ID and ending at highest type number specified in
+   * the CRUSH map which assumes that if device foo is under device bar, the
+   * type_id of foo < bar where type_id is the integer specified in the CRUSH map
+   *
+   * returns the location in the form of (type=foo) where type is a type of bucket
+   * specified in the CRUSH map and foo is a name specified in the CRUSH map
+   */
+  map<string, string> get_full_location(int id);
+
+  /**
+   * returns (type_id, type) of all parent buckets between id and
+   * default, can be used to check for anomolous CRUSH maps
+   */
+  map<int, string> get_parent_hierarchy(int id);
+
+
   /**
    * insert an item into the map at a specific position
    *
@@ -247,6 +276,19 @@ public:
    * @return 0 for success, negative on error
    */
   int insert_item(CephContext *cct, int id, float weight, string name, map<string,string>& loc);
+
+  /**
+   * move a bucket in the hierarchy to the given location
+   *
+   * This has the same location and ancestor creation behavior as
+   * insert_item(), but will relocate the specified existing bucket.
+   *
+   * @param cct cct
+   * @param id bucket id
+   * @param loc location (map of type to bucket names)
+   * @return 0 for success, negative on error
+   */
+  int move_bucket(CephContext *cct, int id, map<string,string>& loc);
 
   /**
    * add or update an item's position in the map
@@ -419,6 +461,51 @@ private:
       return (crush_bucket *)(-ENOENT);
     return ret;
   }
+  /**
+   * detach a bucket from its parent and adjust the parent weight
+   *
+   * returns the weight of the detached bucket
+   **/
+  int detach_bucket(CephContext *cct, int item){
+    if (!crush)
+      return (-EINVAL);
+
+    if (item > 0)
+      return (-EINVAL);
+
+    // check that the bucket that we want to detach exists
+    assert( get_bucket(item) );
+
+    // get the bucket's weight
+    crush_bucket *b = get_bucket(item);
+    unsigned bucket_weight = b->weight;
+
+    // zero out the bucket weight
+    adjust_item_weight(cct, item, 0);
+
+    // get where the bucket is located
+    pair<string, string> bucket_location = get_immediate_parent(item);
+
+    // get the id of the parent bucket
+    int parent_id = get_item_id( (bucket_location.second).c_str() );
+
+    // get the parent bucket
+    crush_bucket *parent_bucket = get_bucket(parent_id);
+
+    // remove the bucket from the parent
+    crush_bucket_remove_item(parent_bucket, item);
+
+    // check that we're happy
+    int test_weight = 0;
+    map<string,string> test_location;
+    test_location[ bucket_location.first ] = (bucket_location.second);
+
+    bool successful_detach = !(check_item_loc(cct, item, test_location, &test_weight));
+    assert(successful_detach);
+    assert(test_weight == 0);
+
+    return bucket_weight;
+  }
 
 public:
   int get_max_buckets() const {
@@ -521,6 +608,7 @@ public:
   }
   void do_rule(int rule, int x, vector<int>& out, int maxout,
 	       const vector<__u32>& weight) const {
+    Mutex::Locker l(mapper_lock);
     int rawout[maxout];
     int numrep = crush_do_rule(crush, rule, x, rawout, maxout, &weight[0], weight.size());
     if (numrep < 0)

@@ -347,13 +347,13 @@ OPTION(filestore_max_inline_xattrs, OPT_U32, 2)
 
 OPTION(filestore_max_sync_interval, OPT_DOUBLE, 5)    // seconds
 OPTION(filestore_min_sync_interval, OPT_DOUBLE, .01)  // seconds
-OPTION(filestore_btrfs_trans, OPT_BOOL, false)
 OPTION(filestore_btrfs_snap, OPT_BOOL, true)
 OPTION(filestore_btrfs_clone_range, OPT_BOOL, true)
 OPTION(filestore_fsync_flushes_journal_data, OPT_BOOL, false)
 OPTION(filestore_fiemap, OPT_BOOL, false)     // (try to) use fiemap
 OPTION(filestore_flusher, OPT_BOOL, true)
 OPTION(filestore_flusher_max_fds, OPT_INT, 512)
+OPTION(filestore_flush_min, OPT_INT, 65536)
 OPTION(filestore_sync_flush, OPT_BOOL, false)
 OPTION(filestore_journal_parallel, OPT_BOOL, false)
 OPTION(filestore_journal_writeahead, OPT_BOOL, false)

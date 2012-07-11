@@ -20,11 +20,8 @@ System commands
 
 ::
 
-	$ ceph stop
-
-Cleanly shuts down the cluster.  ::
-
 	$ ceph -s
+        $ ceph status
 
 Shows an overview of the current status of the cluster.  ::
 
@@ -120,14 +117,18 @@ Dump the osd map. Valid formats for -f are "plain" and "json". If no
 Dump the osd map as a tree with one line per osd containing weight
 and state. ::
 
-	$ ceph osd crush add <id> <name> <weight> [<loc1> [<loc2> ...]]
+	$ ceph osd crush set <id> <name> <weight> [<loc1> [<loc2> ...]]
 
-Add a new item with the given id/name/weight at the specified
+Add or move a new item (osd) with the given id/name/weight at the specified
 location. ::
 
 	$ ceph osd crush remove <id>
 
 Remove an existing item from the crush map. ::
+
+        $ ceph osd crush move <id> <loc1> [<loc2> ...]
+
+Move an existing bucket from one position in the hierarchy to another.  ::
 
 	$ ceph osd crush reweight <name> <weight>
 
@@ -263,6 +264,14 @@ TODO: what does this actually do ::
 
 Sends a repair command to osdN. To send the command to all osds, use ``*``.
 TODO: what does this actually do
+
+::
+
+	$ ceph osd tell N bench [BYTES_PER_WRITE] [TOTAL_BYTES]
+
+Runs a simple throughput benchmark against osdN, writing ``TOTAL_BYTES``
+in write requests of ``BYTES_PER_WRITE`` each. By default, the test
+writes 1 GB in total in 4-MB increments.
 
 MDS subsystem
 -------------

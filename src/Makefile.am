@@ -673,6 +673,12 @@ unittest_daemon_config_LDADD =  ${UNITTEST_LDADD} ${LIBGLOBAL_LDA}
 unittest_daemon_config_CXXFLAGS = ${CRYPTO_CFLAGS} ${AM_CXXFLAGS} ${UNITTEST_CXXFLAGS}
 check_PROGRAMS += unittest_daemon_config
 
+unittest_osd_osdcap_SOURCES = test/osd/osdcap.cc
+unittest_osd_osdcap_LDFLAGS = $(PTHREAD_CFLAGS) ${AM_LDFLAGS}
+unittest_osd_osdcap_LDADD =  ${UNITTEST_LDADD} ${LIBGLOBAL_LDA} libosd.a
+unittest_osd_osdcap_CXXFLAGS = ${CRYPTO_CFLAGS} ${AM_CXXFLAGS} ${UNITTEST_CXXFLAGS}
+check_PROGRAMS += unittest_osd_osdcap
+
 #if WITH_RADOSGW
 #unittest_librgw_SOURCES = test/librgw.cc
 #unittest_librgw_LDFLAGS = -lrt $(PTHREAD_CFLAGS) -lcurl ${AM_LDFLAGS}
@@ -1157,7 +1163,7 @@ libosd_a_SOURCES = \
 	osd/ReplicatedPG.cc \
 	osd/Ager.cc \
 	osd/OSD.cc \
-	osd/OSDCaps.cc \
+	osd/OSDCap.cc \
 	osd/Watch.cc \
 	osd/ClassHandler.cc \
 	osd/OpRequest.cc
@@ -1261,6 +1267,7 @@ noinst_HEADERS = \
 	common/admin_socket_client.h \
 	common/shared_cache.hpp \
 	common/simple_cache.hpp \
+	common/sharedptr_registry.hpp \
         common/MemoryModel.h\
         common/Mutex.h\
 	common/PrebufferedStreambuf.h\
@@ -1365,6 +1372,7 @@ noinst_HEADERS = \
 	librados/IoCtxImpl.h\
 	librados/PoolAsyncCompletionImpl.h\
 	librados/RadosClient.h\
+	librbd/cls_rbd.h\
 	librbd/cls_rbd_client.h\
 	librbd/LibrbdWriteback.h\
 	logrotate.conf\
@@ -1578,7 +1586,7 @@ noinst_HEADERS = \
         osd/Ager.h\
 	osd/ClassHandler.h\
         osd/OSD.h\
-        osd/OSDCaps.h\
+        osd/OSDCap.h\
         osd/OSDMap.h\
         osd/ObjectVersioner.h\
 	osd/OpRequest.h\
@@ -1686,5 +1694,5 @@ project.tgz: clean
 	tar czvf project.tgz README emit output
 
 submit-coverity:
-	scp project.tgz ceph.newdream.net:ceph.newdream.net/coverity/`git describe`.tgz
-	echo "v2;ceph;"`cat .coverity.build.pass`";MAIL;http://ceph.newdream.net/coverity/"`git describe`.tgz | mail build@submit.scan.coverity.com
+	scp project.tgz ceph.newdream.net:ceph.com/coverity/`git describe`.tgz
+	echo "v2;ceph;"`cat .coverity.build.pass`";MAIL;http://ceph.com/coverity/"`git describe`.tgz | mail build@submit.scan.coverity.com
