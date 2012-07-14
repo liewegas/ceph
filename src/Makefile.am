@@ -1051,7 +1051,6 @@ libcommon_files = \
 	msg/Pipe.cc \
 	msg/SimpleMessenger.cc \
 	msg/msg_types.cc \
-	msg/tcp.cc \
 	os/hobject.cc \
 	osd/OSDMap.cc \
 	osd/osd_types.cc \
@@ -1568,7 +1567,6 @@ noinst_HEADERS = \
 	msg/Pipe.h\
         msg/SimpleMessenger.h\
         msg/msg_types.h\
-        msg/tcp.h\
 	objclass/objclass.h\
 	obsync/obsync\
 	obsync/boto_tool\
