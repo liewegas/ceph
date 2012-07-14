@@ -356,6 +356,18 @@ int Pipe::accept()
       }
 
       if (connect.connect_seq == existing->connect_seq) {
+	// dup connection attempt?
+	if (existing->state == STATE_OPEN ||
+	    existing->state == STATE_STANDBY) {
+	  ldout(msgr->cct,10) << "accept connection race, existing " << existing << ".cseq " << existing->connect_seq
+			      << " == " << connect.connect_seq << ", OPEN|STANDBY, RETRY_SESSION" << dendl;
+	  reply.tag = CEPH_MSGR_TAG_RETRY_SESSION;
+	  reply.connect_seq = existing->connect_seq;  // so we can send it below..
+	  existing->pipe_lock.Unlock();
+	  msgr->lock.Unlock();
+	  goto reply;
+	}
+
 	// connection race?
 	if (peer_addr < msgr->my_inst.addr ||
 	    existing->policy.server ||
@@ -379,14 +391,12 @@ int Pipe::accept()
 	  ldout(msgr->cct,10) << "accept connection race, existing " << existing << ".cseq " << existing->connect_seq
 		   << " == " << connect.connect_seq << ", sending WAIT" << dendl;
 	  assert(peer_addr > msgr->my_inst.addr);
-	  if (!(existing->state == STATE_CONNECTING ||
-		existing->state == STATE_OPEN))
+	  if (!(existing->state == STATE_CONNECTING))
 	    lderr(msgr->cct) << "accept race bad state, would send wait, existing=" << existing->state
 			     << " " << existing << ".cseq=" << existing->connect_seq
 			     << " == " << connect.connect_seq
 			     << dendl;
-	  assert(existing->state == STATE_CONNECTING ||
-		 existing->state == STATE_OPEN);
+	  assert(existing->state == STATE_CONNECTING);
 	  reply.tag = CEPH_MSGR_TAG_WAIT;
 	  existing->pipe_lock.Unlock();
 	  msgr->lock.Unlock();
