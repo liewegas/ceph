@@ -41,7 +41,7 @@ class MGetPoolStats;
 class RatioMonitor;
 class TextTable;
 
-class PGMonitor : public SequencePaxosService {
+class PGMonitor : public PaxosService {
 public:
   PGMap pg_map;
 
@@ -58,7 +58,6 @@ private:
   // propose pending update to peers
   void update_trim();
   void encode_pending(MonitorDBStore::Transaction *t);
-  virtual void encode_full(MonitorDBStore::Transaction *t);
   void update_logger();
 
   bool preprocess_query(PaxosServiceMessage *m);  // true if processed.
@@ -137,7 +136,7 @@ private:
 
 public:
   PGMonitor(Monitor *mn, Paxos *p, const string& service_name)
-    : SequencePaxosService(mn, p, service_name),
+    : PaxosService(mn, p, service_name),
       need_check_down_pgs(false)
   { }
   ~PGMonitor() { }

@@ -156,74 +156,36 @@ void PGMonitor::update_from_paxos(bool *need_bootstrap)
     return;
   assert(version >= pg_map.version);
 
-  /* Obtain latest full pgmap version, if available and whose version is
-   * greater than the current pgmap's version.
-   */
-  version_t latest_full = get_version_latest_full();
-  if ((latest_full > 0) && (latest_full > pg_map.version)) {
-    bufferlist latest_bl;
-    int err = get_version_full(latest_full, latest_bl);
-    assert(err == 0);
-    dout(7) << __func__ << " loading latest full pgmap v"
-	    << latest_full << dendl;
-    try {
-      PGMap tmp_pg_map;
-      bufferlist::iterator p = latest_bl.begin();
-      tmp_pg_map.decode(p);
-      pg_map = tmp_pg_map;
-    } catch (const std::exception& e) {
-      dout(0) << __func__ << ": error parsing update: "
-	      << e.what() << dendl;
-      assert(0 == "update_from_paxos: error parsing update");
-      return;
-    }
-  }
+  // read meta
+  epoch_t last_pg_scan = pg_map.last_pg_scan;
 
-  // walk through incrementals
   while (version > pg_map.version) {
-    bufferlist bl;
-    int err = get_version(pg_map.version+1, bl);
-    assert(err == 0);
-    assert(bl.length());
-
-    dout(7) << "update_from_paxos  applying incremental " << pg_map.version+1 << dendl;
-    PGMap::Incremental inc;
-    try {
-      bufferlist::iterator p = bl.begin();
-      inc.decode(p);
-    }
-    catch (const std::exception &e) {
-      dout(0) << "update_from_paxos: error parsing "
-	      << "incremental update: " << e.what() << dendl;
-      assert(0 == "update_from_paxos: error parsing incremental update");
-      return;
+    // load full state?
+    if (pg_map.version == 0) {
+      dout(10) << __func__ << " v0, read_full" << dendl;
+      pg_map.read_full(mon->store);
+      goto out;
     }
 
-    pg_map.apply_incremental(g_ceph_context, inc);
-    
-    dout(10) << pg_map << dendl;
-
-    if (inc.pg_scan)
-      last_sent_pg_create.clear();  // reset pg_create throttle timer
+    // incremental state?
+    dout(10) << __func__ << " read_incremental" << dendl;
+    int r = pg_map.read_incremental(g_ceph_context, mon->store);
+    if (r == -ENOENT) {
+      dout(10) << __func__ << " failed to read_incremental, read_full" << dendl;
+      pg_map.read_full(mon->store);
+      goto out;
+    }
+    assert(r == 0);
   }
+
+  dout(10) << __func__ << " read_meta" << dendl;
+  pg_map.read_meta(mon->store);
+
+ out:
+  if (last_pg_scan != pg_map.last_pg_scan)
+    last_sent_pg_create.clear();  // reset pg_create throttle timer
 
   assert(version == pg_map.version);
-
-  /* If we dump the summaries onto the k/v store, they hardly would be useful
-   * without a tool created with reading them in mind.
-   * Comment this out until we decide what is the best course of action.
-   *
-  // dump pgmap summaries?  (useful for debugging)
-  if (0) {
-    stringstream ds;
-    pg_map.dump(ds);
-    bufferlist d;
-    d.append(ds);
-    mon->store->put_bl_sn(d, "pgmap_dump", version);
-  }
-  */
-
-  update_trim();
 
   if (mon->osdmon()->osdmap.get_epoch()) {
     map_pg_creates();
@@ -281,25 +243,13 @@ void PGMonitor::encode_pending(MonitorDBStore::Transaction *t)
   assert(get_last_committed() + 1 == version);
   pending_inc.stamp = ceph_clock_now(g_ceph_context);
 
-  bufferlist bl;
-  pending_inc.encode(bl, mon->get_quorum_features());
+  pending_inc.write_incremental(t, mon->get_quorum_features());
 
-  put_version(t, version, bl);
   put_last_committed(t, version);
 }
 
-void PGMonitor::encode_full(MonitorDBStore::Transaction *t)
-{
-  dout(10) << __func__ << " pgmap v " << pg_map.version << dendl;
-  assert(get_last_committed() == pg_map.version);
-
-  bufferlist full_bl;
-  pg_map.encode(full_bl, mon->get_quorum_features());
-
-  put_version_full(t, pg_map.version, full_bl);
-  put_version_latest_full(t, pg_map.version);
-}
-
+#warning fix trim
+#if 0
 void PGMonitor::update_trim()
 {
   unsigned max = g_conf->mon_max_pgmap_epochs;
@@ -307,7 +257,7 @@ void PGMonitor::update_trim()
   if (mon->is_leader() && (version > max))
     set_trim_to(version - max);
 }
-
+#endif
 
 bool PGMonitor::preprocess_query(PaxosServiceMessage *m)
 {
