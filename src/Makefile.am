@@ -1470,6 +1470,7 @@ libmon_a_SOURCES = \
 	mon/Monitor.cc \
 	mon/Paxos.cc \
 	mon/PaxosService.cc \
+	mon/SequencePaxosService.cc \
 	mon/OSDMonitor.cc \
 	mon/MDSMonitor.cc \
 	mon/MonmapMonitor.cc \
@@ -1998,6 +1999,7 @@ noinst_HEADERS = \
         mon/Paxos.h\
         mon/PaxosService.h\
 	mon/QuorumService.h\
+	mon/SequencePaxosService.h\
         mon/Session.h\
         mon/mon_types.h\
 	mount/canonicalize.c\

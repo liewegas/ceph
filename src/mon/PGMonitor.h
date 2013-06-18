@@ -25,7 +25,7 @@
 using namespace std;
 
 #include "PGMap.h"
-#include "PaxosService.h"
+#include "SequencePaxosService.h"
 #include "include/types.h"
 #include "include/utime.h"
 #include "msg/Messenger.h"
@@ -41,7 +41,7 @@ class MGetPoolStats;
 class RatioMonitor;
 class TextTable;
 
-class PGMonitor : public PaxosService {
+class PGMonitor : public SequencePaxosService {
 public:
   PGMap pg_map;
 
@@ -137,7 +137,9 @@ private:
 
 public:
   PGMonitor(Monitor *mn, Paxos *p, const string& service_name)
-  : PaxosService(mn, p, service_name), need_check_down_pgs(false) { }
+    : SequencePaxosService(mn, p, service_name),
+      need_check_down_pgs(false)
+  { }
   ~PGMonitor() { }
 
   virtual void on_restart();

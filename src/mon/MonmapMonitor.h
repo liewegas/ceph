@@ -27,7 +27,7 @@ using namespace std;
 #include "include/types.h"
 #include "msg/Messenger.h"
 
-#include "PaxosService.h"
+#include "SequencePaxosService.h"
 #include "MonMap.h"
 #include "MonitorDBStore.h"
 
@@ -36,10 +36,10 @@ class MMonMap;
 class MMonCommand;
 class MMonJoin;
 
-class MonmapMonitor : public PaxosService {
+class MonmapMonitor : public SequencePaxosService {
  public:
   MonmapMonitor(Monitor *mn, Paxos *p, const string& service_name)
-    : PaxosService(mn, p, service_name)
+    : SequencePaxosService(mn, p, service_name)
   {
   }
   MonMap pending_map; //the pending map awaiting passage

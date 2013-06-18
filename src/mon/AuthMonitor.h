@@ -22,7 +22,7 @@ using namespace std;
 #include "include/ceph_features.h"
 #include "include/types.h"
 #include "msg/Messenger.h"
-#include "mon/PaxosService.h"
+#include "mon/SequencePaxosService.h"
 #include "mon/Monitor.h"
 #include "mon/MonitorDBStore.h"
 
@@ -34,7 +34,7 @@ class KeyRing;
 
 #define MIN_GLOBAL_ID 0x1000
 
-class AuthMonitor : public PaxosService {
+class AuthMonitor : public SequencePaxosService {
   void auth_usage(stringstream& ss);
   enum IncType {
     GLOBAL_ID,
@@ -151,7 +151,7 @@ private:
   void check_rotate();
  public:
   AuthMonitor(Monitor *mn, Paxos *p, const string& service_name)
-    : PaxosService(mn, p, service_name), last_rotating_ver(0),
+    : SequencePaxosService(mn, p, service_name), last_rotating_ver(0),
       max_global_id(0), last_allocated_id(0),
       format_version(0)
   {}

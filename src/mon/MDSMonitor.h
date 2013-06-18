@@ -27,7 +27,7 @@ using namespace std;
 
 #include "mds/MDSMap.h"
 
-#include "PaxosService.h"
+#include "SequencePaxosService.h"
 #include "Session.h"
 
 #include "messages/MMDSBeacon.h"
@@ -36,7 +36,7 @@ class MMDSGetMap;
 class MMonCommand;
 class MMDSLoadTargets;
 
-class MDSMonitor : public PaxosService {
+class MDSMonitor : public SequencePaxosService {
  public:
   // mds maps
   MDSMap mdsmap;          // current
@@ -115,7 +115,7 @@ class MDSMonitor : public PaxosService {
 
 public:
   MDSMonitor(Monitor *mn, Paxos *p, string service_name)
-    : PaxosService(mn, p, service_name)
+    : SequencePaxosService(mn, p, service_name)
   {
   }
 

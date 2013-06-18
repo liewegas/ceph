@@ -21,14 +21,14 @@ using namespace std;
 
 #include "include/types.h"
 #include "msg/Messenger.h"
-#include "PaxosService.h"
+#include "SequencePaxosService.h"
 
 #include "common/LogEntry.h"
 #include "messages/MLog.h"
 
 class MMonCommand;
 
-class LogMonitor : public PaxosService {
+class LogMonitor : public SequencePaxosService {
 private:
   multimap<utime_t,LogEntry> pending_log;
   LogSummary pending_summary, summary;
@@ -79,7 +79,7 @@ private:
 
  public:
   LogMonitor(Monitor *mn, Paxos *p, const string& service_name) 
-    : PaxosService(mn, p, service_name) { }
+    : SequencePaxosService(mn, p, service_name) { }
   
   void tick();  // check state, take actions
 
