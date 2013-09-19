@@ -694,6 +694,9 @@ void pg_pool_t::dump(Formatter *f) const
     f->dump_string(name.c_str(), i->second);
   }
   f->close_section();
+  f->dump_unsigned("bloom_false_positive_probability", get_bloom_fpp());
+  f->dump_unsigned("bloom_period", bloom_period);
+  f->dump_unsigned("bloom_count", bloom_count);
 }
 
 
@@ -898,7 +901,7 @@ void pg_pool_t::encode(bufferlist& bl, uint64_t features) const
     return;
   }
 
-  ENCODE_START(10, 5, bl);
+  ENCODE_START(11, 5, bl);
   ::encode(type, bl);
   ::encode(size, bl);
   ::encode(crush_ruleset, bl);
@@ -926,12 +929,15 @@ void pg_pool_t::encode(bufferlist& bl, uint64_t features) const
   ::encode(read_tier, bl);
   ::encode(write_tier, bl);
   ::encode(properties, bl);
+  ::encode(bloom_fpp_micro, bl);
+  ::encode(bloom_period, bl);
+  ::encode(bloom_count, bl);
   ENCODE_FINISH(bl);
 }
 
 void pg_pool_t::decode(bufferlist::iterator& bl)
 {
-  DECODE_START_LEGACY_COMPAT_LEN(7, 5, 5, bl);
+  DECODE_START_LEGACY_COMPAT_LEN(11, 5, 5, bl);
   ::decode(type, bl);
   ::decode(size, bl);
   ::decode(crush_ruleset, bl);
@@ -996,6 +1002,15 @@ void pg_pool_t::decode(bufferlist::iterator& bl)
   if (struct_v >= 10) {
     ::decode(properties, bl);
   }
+  if (struct_v >= 11) {
+    ::decode(bloom_fpp_micro, bl);
+    ::decode(bloom_period, bl);
+    ::decode(bloom_count, bl);
+  } else {
+    bloom_fpp_micro = 0;
+    bloom_period = 0;
+    bloom_count = 0;
+  }
   DECODE_FINISH(bl);
   calc_pg_masks();
 }
@@ -1039,6 +1054,9 @@ void pg_pool_t::generate_test_instances(list<pg_pool_t*>& o)
   a.write_tier = 1;
   a.properties["p-1"] = "v-1";
   a.properties["empty"] = string();
+  a.bloom_fpp_micro = 6000;
+  a.bloom_period = 3600;
+  a.bloom_count = 8;
   o.push_back(new pg_pool_t(a));
 }
 
@@ -1071,6 +1089,9 @@ ostream& operator<<(ostream& out, const pg_pool_t& p)
     out << " write_tier " << p.write_tier;
   if (p.cache_mode)
     out << " cache_mode " << p.get_cache_mode_name();
+  if (p.bloom_count) {
+    out << " bloom " << p.get_bloom_fpp() << "% " << p.bloom_period << "s x" << p.bloom_count;
+  }
   return out;
 }
 
