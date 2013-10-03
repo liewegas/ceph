@@ -1671,7 +1671,7 @@ void pg_history_t::generate_test_instances(list<pg_history_t*>& o)
 
 void pg_info_t::encode(bufferlist &bl) const
 {
-  ENCODE_START(28, 26, bl);
+  ENCODE_START(29, 26, bl);
   ::encode(pgid, bl);
   ::encode(last_update, bl);
   ::encode(last_complete, bl);
@@ -1682,12 +1682,13 @@ void pg_info_t::encode(bufferlist &bl) const
   ::encode(purged_snaps, bl);
   ::encode(last_epoch_started, bl);
   ::encode(last_user_version, bl);
+  ::encode(hit_set_history, bl);
   ENCODE_FINISH(bl);
 }
 
 void pg_info_t::decode(bufferlist::iterator &bl)
 {
-  DECODE_START_LEGACY_COMPAT_LEN(28, 26, 26, bl);
+  DECODE_START_LEGACY_COMPAT_LEN(29, 26, 26, bl);
   if (struct_v < 23) {
     old_pg_t opgid;
     ::decode(opgid, bl);
@@ -1721,6 +1722,8 @@ void pg_info_t::decode(bufferlist::iterator &bl)
     ::decode(last_user_version, bl);
   else
     last_user_version = last_update.version;
+  if (struct_v >= 29)
+    ::decode(hit_set_history, bl);
   DECODE_FINISH(bl);
 }
 
@@ -1746,6 +1749,10 @@ void pg_info_t::dump(Formatter *f) const
   f->dump_int("dne", dne());
   f->dump_int("incomplete", is_incomplete());
   f->dump_int("last_epoch_started", last_epoch_started);
+
+  f->open_object_section("hit_set_history");
+  hit_set_history.dump(f);
+  f->close_section();
 }
 
 void pg_info_t::generate_test_instances(list<pg_info_t*>& o)
@@ -1761,9 +1768,16 @@ void pg_info_t::generate_test_instances(list<pg_info_t*>& o)
   o.back()->last_user_version = 2;
   o.back()->log_tail = eversion_t(7, 8);
   o.back()->last_backfill = hobject_t(object_t("objname"), "key", 123, 456, -1, "");
-  list<pg_stat_t*> s;
-  pg_stat_t::generate_test_instances(s);
-  o.back()->stats = *s.back();
+  {
+    list<pg_stat_t*> s;
+    pg_stat_t::generate_test_instances(s);
+    o.back()->stats = *s.back();
+  }
+  {
+    list<pg_hit_set_history_t*> s;
+    pg_hit_set_history_t::generate_test_instances(s);
+    o.back()->hit_set_history = *s.back();
+  }
 }
 
 // -- pg_notify_t --

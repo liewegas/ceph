@@ -1431,6 +1431,7 @@ struct pg_info_t {
   pg_stat_t stats;
 
   pg_history_t history;
+  pg_hit_set_history_t hit_set_history;
 
   pg_info_t()
     : last_epoch_started(0), last_user_version(0),
