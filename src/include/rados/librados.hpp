@@ -591,7 +591,11 @@ namespace librados
 		     std::list<librados::locker_t> *lockers);
 
 
+    /// Start enumerating objects for a pool
     ObjectIterator objects_begin();
+    /// Start enumerating objects for a pool starting from a hash position
+    ObjectIterator objects_begin(uint32_t start_hash_position);
+    /// Iterator indicating the end of a pool
     const ObjectIterator& objects_end() const;
 
     uint64_t get_last_version();
