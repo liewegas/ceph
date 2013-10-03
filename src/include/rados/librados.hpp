@@ -71,6 +71,13 @@ namespace librados
     ObjectIterator &operator++(); // Preincrement
     ObjectIterator operator++(int); // Postincrement
     friend class IoCtx;
+
+    /// get current hash position of the iterator
+    uint32_t get_hash_position() const;
+
+    /// get current hash position of the iterator, rounded to the current pg
+    uint32_t get_pg_hash_position() const;
+
   private:
     void get_next();
     std::tr1::shared_ptr < ObjListCtx > ctx;
