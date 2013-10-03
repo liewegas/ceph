@@ -396,6 +396,26 @@ namespace librados
      */
     void list_snaps(snap_set_t *out_snaps, int *prval);
 
+    /**
+     * List available hit set objects
+     *
+     * @param uint32_t [in] hash position to query
+     * @param pls [out] list of available intervals
+     * @param prval [out] return value
+     */
+    void list_hit_sets(uint32_t hash, list< pair<time_t, time_t> > *pls,
+		       int *prval);
+
+    /**
+     * Retrievet hit set for a given hash, and time
+     *
+     * @param uint32_t [in] hash position
+     * @param stamp [in] time interval that falls within the hit set's interval
+     * @param pbl [out] buffer to store the result in
+     * @param prval [out] return value
+     */
+    void get_hit_set(uint32_t hash, time_t stamp,
+		     bufferlist *pbl, int *prval);
   };
 
   /* IoCtx : This is a context in which we can perform I/O.
