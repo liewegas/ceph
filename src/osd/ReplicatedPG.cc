@@ -7170,6 +7170,11 @@ void ReplicatedPG::on_change(ObjectStore::Transaction *t)
 {
   dout(10) << "on_change" << dendl;
 
+  if (hit_set && hit_set->insert_count() == 0) {
+    dout(20) << " discarding empty hit_set" << dendl;
+    hit_set.reset(NULL);
+  }
+
   // requeue everything in the reverse order they should be
   // reexamined.
 
@@ -7240,6 +7245,10 @@ void ReplicatedPG::on_change(ObjectStore::Transaction *t)
 void ReplicatedPG::on_role_change()
 {
   dout(10) << "on_role_change" << dendl;
+  if (get_role() != 0 && hit_set) {
+    dout(10) << " clearing hit set" << dendl;
+    hit_set.reset(NULL);
+  }
 }
 
 

@@ -22,8 +22,9 @@
 #include "include/assert.h" 
 #include "common/cmdparse.h"
 
-#include "PG.h"
+#include "HitSet.h"
 #include "OSD.h"
+#include "PG.h"
 #include "Watch.h"
 #include "OpRequest.h"
 
@@ -291,6 +292,9 @@ protected:
   void repop_ack(RepGather *repop,
                  int result, int ack_type,
                  int fromosd, eversion_t pg_complete_thru=eversion_t(0,0));
+
+  // hot/cold tracking
+  boost::scoped_ptr<HitSet> hit_set;
 
   /// true if we can send an ondisk/commit for v
   bool already_complete(eversion_t v) {
