@@ -97,18 +97,35 @@ public:
   struct OpContext;
   class CopyCallback;
 
+  /**
+   * CopyResults stores the object metadata of interest to a copy initiator.
+   */
+  struct CopyResults {
+    utime_t mtime; ///< the copy source's mtime
+    size_t object_size; ///< the copied object's size
+    bool started_temp_obj; ///< true if the callback needs to delete temp object
+    /**
+     * Final transaction; if non-empty the callback must execute it before any
+     * other accesses to the object (in order to complete the copy).
+     */
+    ObjectStore::Transaction final_tx;
+    string category; ///< The copy source's category
+    version_t user_version; ///< The copy source's user version
+    CopyResults() : object_size(0), started_temp_obj(false),
+	user_version(0) {}
+  };
+
   struct CopyOp {
     CopyCallback *cb;
     ObjectContextRef obc;
     hobject_t src;
     object_locator_t oloc;
-    version_t version;
+
+    CopyResults *results;
 
     tid_t objecter_tid;
 
     object_copy_cursor_t cursor;
-    uint64_t size;
-    utime_t mtime;
     map<string,bufferlist> attrs;
     bufferlist data;
     map<string,bufferlist> omap;
@@ -120,12 +137,15 @@ public:
 
     CopyOp(CopyCallback *cb_, ObjectContextRef _obc, hobject_t s, object_locator_t l,
            version_t v, const hobject_t& dest)
-      : cb(cb_), obc(_obc), src(s), oloc(l), version(v),
+      : cb(cb_), obc(_obc), src(s), oloc(l),
+        results(NULL),
 	objecter_tid(0),
-	size(0),
 	rval(-1),
 	temp_oid(dest)
-    {}
+    {
+      results = new CopyResults();
+      results->user_version = v;
+    }
   };
   typedef boost::shared_ptr<CopyOp> CopyOpRef;
 
@@ -135,29 +155,19 @@ public:
    * one and give an instance of the class to start_copy.
    *
    * The implementer is responsible for making sure that the CopyCallback
-   * can associate itself with the correct copy operation. The presence
-   * of the closing Transaction ensures that write operations can be performed
-   * atomically with the copy being completed (which doing them in separate
-   * transactions would not allow); if you are doing the copy for a read
-   * op you will have to generate a separate op to finish the copy with.
+   * can associate itself with the correct copy operation.
    */
-  /// return code, total object size, data in temp object?, final Transaction
-  typedef boost::tuple<int, size_t, bool, ObjectStore::Transaction> CopyResults;
-  class CopyCallback : public GenContext<CopyResults&> {
+  typedef boost::tuple<int, CopyResults*> CopyCallbackResults;
+  class CopyCallback : public GenContext<CopyCallbackResults> {
   protected:
     CopyCallback() {}
     /**
      * results.get<0>() is the return code: 0 for success; -ECANCELLED if
      * the operation was cancelled by the local OSD; -errno for other issues.
-     * results.get<1>() is the total size of the object (for updating pg stats)
-     * results.get<2>() indicates whether we have already written data to
-     * the temp object (so it needs to get cleaned up, if the return code
-     * indicates a failure)
-     * results.get<3>() is a Transaction; if non-empty you need to perform
-     * its results before any other accesses to the object in order to
-     * complete the copy.
+     * results.get<1>() is a pointer to a CopyResults object, which you are
+     * responsible for deleting.
      */
-    virtual void finish(CopyResults& results_) = 0;
+    virtual void finish(CopyCallbackResults results_) = 0;
 
   public:
     /// Provide the final size of the copied object to the CopyCallback
@@ -166,16 +176,18 @@ public:
 
   class CopyFromCallback: public CopyCallback {
   public:
-    CopyResults results;
+    CopyResults *results;
+    int retval;
     OpContext *ctx;
     hobject_t temp_obj;
     CopyFromCallback(OpContext *ctx_, const hobject_t& temp_obj_) :
-      ctx(ctx_), temp_obj(temp_obj_) {}
+      results(NULL), retval(0), ctx(ctx_), temp_obj(temp_obj_) {}
     ~CopyFromCallback() {}
 
-    virtual void finish(CopyResults& results_) {
-      results = results_;
-      int r = results.get<0>();
+    virtual void finish(CopyCallbackResults results_) {
+      results = results_.get<1>();
+      int r = results_.get<0>();
+      retval = r;
       if (r >= 0) {
 	ctx->pg->execute_ctx(ctx);
       }
@@ -186,13 +198,49 @@ public:
 	}
 	ctx->pg->close_op_ctx(ctx);
       }
+      delete results;
     }
 
-    bool is_temp_obj_used() { return results.get<2>(); }
-    uint64_t get_data_size() { return results.get<1>(); }
-    int get_result() { return results.get<0>(); }
+    bool is_temp_obj_used() { return results->started_temp_obj; }
+    uint64_t get_data_size() { return results->object_size; }
+    int get_result() { return retval; }
   };
   friend class CopyFromCallback;
+
+  class PromoteCallback: public CopyCallback {
+    OpRequestRef op;
+    ObjectContextRef obc;
+    hobject_t temp_obj;
+    ReplicatedPG *pg;
+  public:
+    PromoteCallback(OpRequestRef op_, ObjectContextRef obc_,
+                    const hobject_t& temp_obj_,
+                    ReplicatedPG *pg_) :
+      op(op_), obc(obc_), temp_obj(temp_obj_), pg(pg_) {}
+
+    virtual void finish(CopyCallbackResults results) {
+      CopyResults* results_data = results.get<1>();
+      int r = results.get<0>();
+      if (r >= 0) {
+	pg->finish_promote(results_data, obc, temp_obj);
+      } else {
+	// we need to get rid of the op in the blocked queue
+	map<hobject_t,list<OpRequestRef> >::iterator blocked_iter;
+	blocked_iter = pg->waiting_for_blocked_object.find(obc->obs.oi.soid);
+	assert(blocked_iter != pg->waiting_for_blocked_object.end());
+	assert(blocked_iter->second.begin()->get() == op.get());
+	blocked_iter->second.pop_front();
+	if (blocked_iter->second.empty()) {
+	  pg->waiting_for_blocked_object.erase(blocked_iter);
+	}
+	if (r != -ECANCELED) { // on cancel the client will resend
+	  pg->osd->reply_op_error(op, r);
+	}
+      }
+      delete results_data;
+    }
+  };
+  friend class PromoteCallback;
 
   boost::scoped_ptr<PGBackend> pgbackend;
   PGBackend *get_pgbackend() {
@@ -410,6 +458,7 @@ public:
    * State on the PG primary associated with the replicated mutation
    */
   class RepGather {
+    bool is_done;
   public:
     xlist<RepGather*>::item queue_item;
     int nref;
@@ -422,7 +471,7 @@ public:
 
     tid_t rep_tid;
 
-    bool applying, applied, aborted, done;
+    bool applying, applied, aborted;
 
     set<int>  waitfor_ack;
     //set<int>  waitfor_nvram;
@@ -431,6 +480,8 @@ public:
     //bool sent_nvram;
     bool sent_disk;
     
+    Context *ondone; ///< if set, this Context will be activated when repop is done
+
     utime_t   start;
     
     eversion_t          pg_local_last_complete;
@@ -440,14 +491,16 @@ public:
     
     RepGather(OpContext *c, ObjectContextRef pi, tid_t rt, 
 	      eversion_t lc) :
+      is_done(false),
       queue_item(this),
       nref(1),
       ctx(c), obc(pi),
       rep_tid(rt), 
-      applying(false), applied(false), aborted(false), done(false),
+      applying(false), applied(false), aborted(false),
       sent_ack(false),
       //sent_nvram(false),
       sent_disk(false),
+      ondone(NULL),
       pg_local_last_complete(lc),
       queue_snap_trimmer(false) { }
 
@@ -464,6 +517,14 @@ public:
 	delete this;
 	//generic_dout(0) << "deleting " << this << dendl;
       }
+    }
+    void mark_done() {
+      is_done = true;
+      if (ondone)
+	ondone->complete(0);
+    }
+    bool done() {
+      return is_done;
     }
   };
 
@@ -846,8 +907,19 @@ protected:
 				   uint64_t offset, uint64_t length, bool count_bytes);
   void add_interval_usage(interval_set<uint64_t>& s, object_stat_sum_t& st);
 
+  /**
+   * This helper function is called from do_op if the ObjectContext lookup fails.
+   * @returns true if the caching code is handling the Op, false otherwise.
+   */
   inline bool maybe_handle_cache(OpRequestRef op, ObjectContextRef obc, int r);
+  /**
+   * This helper function tells the client to redirect their request elsewhere.
+   */
   void do_cache_redirect(OpRequestRef op, ObjectContextRef obc);
+  /**
+   * This function starts up a copy from
+   */
+  void promote_object(OpRequestRef op, ObjectContextRef obc);
 
   int prepare_transaction(OpContext *ctx);
   
@@ -989,7 +1061,19 @@ protected:
   // -- copyfrom --
   map<hobject_t, CopyOpRef> copy_ops;
 
-  int start_copy(CopyCallback *cb, ObjectContextRef obc, hobject_t src,
+  int fill_in_copy_get(bufferlist::iterator& bp, OSDOp& op,
+                       object_info_t& oi, bool classic);
+  /**
+   * To copy an object, call start_copy.
+   *
+   * @param cb: The CopyCallback to be activated when the copy is complete
+   * @param obc: The ObjectContext we are copying into
+   * @param src: The source object
+   * @param oloc: the source object locator
+   * @param version: the version of the source object to copy (0 for any)
+   * @param temp_dest_oid: the temporary object to use for large objects
+   */
+  void start_copy(CopyCallback *cb, ObjectContextRef obc, hobject_t src,
                  object_locator_t oloc, version_t version,
                  const hobject_t& temp_dest_oid);
   void process_copy_chunk(hobject_t oid, tid_t tid, int r);
@@ -997,7 +1081,9 @@ protected:
   void _copy_some(ObjectContextRef obc, CopyOpRef cop);
   void _build_finish_copy_transaction(CopyOpRef cop,
                                       ObjectStore::Transaction& t);
-  int finish_copyfrom(OpContext *ctx);
+  void finish_copyfrom(OpContext *ctx);
+  void finish_promote(CopyResults *results, ObjectContextRef obc,
+                      hobject_t& temp_obj);
   void cancel_copy(CopyOpRef cop);
   void cancel_copy_ops();
 
@@ -1144,6 +1230,17 @@ public:
 
   void wait_for_blocked_object(const hobject_t& soid, OpRequestRef op);
   void kick_object_context_blocked(ObjectContextRef obc);
+
+  struct C_KickBlockedObject : public Context {
+    ObjectContextRef obc;
+    ReplicatedPG *pg;
+    C_KickBlockedObject(ObjectContextRef obc_, ReplicatedPG *pg_) :
+      obc(obc_), pg(pg_) {}
+  protected:
+    void finish(int r) {
+      pg->kick_object_context_blocked(obc);
+    }
+  };
 
   void mark_all_unfound_lost(int what);
   eversion_t pick_newest_available(const hobject_t& oid);

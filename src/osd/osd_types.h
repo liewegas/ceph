@@ -1934,6 +1934,43 @@ struct object_copy_cursor_t {
 };
 WRITE_CLASS_ENCODER(object_copy_cursor_t)
 
+/**
+ * object_copy_data_t
+ *
+ * Return data from a copy request. The semantics are a litte strange
+ * right now to accommodate the implicit encoding that was previously used
+ * in its place.
+ *
+ * In particular, the sender unconditionally fills in the cursor (from what
+ * it receives and sends), the size, and the mtime, but is responsible for
+ * figuring out whether it should put any data in the in_attrs, data, or
+ * omap members (corresponding to xattrs, object data, and the omap entries)
+ * based on external data (the client includes a max amount to return with
+ * the copy request). The client then looks into the attrs, data, and/or omap
+ * based on the contents of the cursor. Note the change from in_attrs to attrs --
+ * this is the result of some silly interface differences which were
+ * previously elided because bufferlists and bufferptrs encode on the wire the
+ * same way.
+ */
+struct object_copy_data_t {
+  object_copy_cursor_t cursor;
+  uint64_t size;
+  utime_t mtime;
+  map<string, bufferlist> attrs;
+  bufferlist data;
+  map<string, bufferlist> omap;
+  string category;
+public:
+  object_copy_data_t() : size((uint64_t)-1) {}
+
+  static void generate_test_instances(list<object_copy_data_t*>& o);
+  void encode_classic(bufferlist& bl) const;
+  void decode_classic(bufferlist::iterator& bl);
+  void encode(bufferlist& bl) const;
+  void decode(bufferlist::iterator& bl);
+  void dump(Formatter *f) const;
+};
+WRITE_CLASS_ENCODER(object_copy_data_t)
 
 /**
  * pg creation info
