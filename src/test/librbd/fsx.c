@@ -116,8 +116,8 @@ rbd_image_t	image;			/* handle for our test image */
 
 char	dirpath[1024];
 
-off_t		file_size = 0;
-off_t		biggest = 0;
+loff_t		file_size = 0;
+loff_t		biggest = 0;
 char		state[256];
 unsigned long	testcalls = 0;		/* calls to function "test" */
 
@@ -361,9 +361,9 @@ prterrcode(char *prefix, int code)
 }
 
 void
-save_buffer(char *buffer, off_t bufferlength, int fd)
+save_buffer(char *buffer, loff_t bufferlength, int fd)
 {
-	off_t ret;
+	loff_t ret;
 	ssize_t byteswritten;
 
 	if (fd <= 0 || bufferlength == 0)
@@ -374,8 +374,8 @@ save_buffer(char *buffer, off_t bufferlength, int fd)
 		exit(67);
 	}
 
-	ret = lseek(fd, (off_t)0, SEEK_SET);
-	if (ret == (off_t)-1)
+	ret = lseek64(fd, (loff_t)0, SEEK_SET);
+	if (ret == (loff_t)-1)
 		prterr("save_buffer: lseek 0");
 	
 	byteswritten = write(fd, buffer, (size_t)bufferlength);
@@ -478,14 +478,14 @@ check_trunc_hack(void)
 {
 	rbd_image_info_t statbuf;
 
-	rbd_resize(image, (off_t)0);
-	rbd_resize(image, (off_t)100000);
+	rbd_resize(image, (loff_t)0);
+	rbd_resize(image, (loff_t)100000);
 	rbd_stat(image, &statbuf, sizeof(statbuf));
-	if (statbuf.size != (off_t)100000) {
+	if (statbuf.size != (loff_t)100000) {
  		prt("no extend on truncate! not posix!\n");
  		exit(130);
  	}
-	rbd_resize(image, (off_t)0);
+	rbd_resize(image, (loff_t)0);
 }
 
 int
@@ -637,7 +637,7 @@ void
 dowrite(unsigned offset, unsigned size)
 {
 	ssize_t ret;
-	off_t newsize;
+	loff_t newsize;
 
 	offset -= offset % writebdy;
 	if (o_direct)
