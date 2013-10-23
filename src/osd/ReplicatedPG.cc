@@ -2747,6 +2747,21 @@ int ReplicatedPG::do_osd_ops(OpContext *ctx, vector<OSDOp>& ops)
       }
       break;
 
+    case CEPH_OSD_OP_CACHE_FLUSH:
+      ++ctx->num_write;
+      {
+	if (pool.info.cache_mode == pg_pool_t::CACHEMODE_NONE) {
+	  result = -EINVAL;
+	  break;
+	}
+	if (oi.is_dirty()) {
+	  assert(0 == "flush not implemented yet");
+	} else {
+	  result = 0;
+	}
+      }
+      break;
+
     case CEPH_OSD_OP_CACHE_EVICT:
       ++ctx->num_write;
       {
