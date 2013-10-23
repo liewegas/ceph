@@ -1212,39 +1212,43 @@ bool ReplicatedPG::maybe_handle_cache(OpRequestRef op, ObjectContextRef obc,
     // we're already doing something with this object
     return false;
   }
+
   switch(pool.info.cache_mode) {
   case pg_pool_t::CACHEMODE_NONE:
     return false;
-    break;
+
   case pg_pool_t::CACHEMODE_WRITEBACK:
-    if (obc.get() && obc->obs.exists) { // we have the object already
+    if (obc.get() && obc->obs.exists) {
       return false;
-    } else if (can_skip_promote(op, obc)) {
-      return false;
-    } else { // try and promote!
-      promote_object(op, obc);
-      return true;
     }
-    break;
+    if (can_skip_promote(op, obc)) {
+      return false;
+    }
+    promote_object(op, obc);
+    return true;
+
   case pg_pool_t::CACHEMODE_INVALIDATE_FORWARD:
     do_cache_redirect(op, obc);
     return true;
-    break;
+
   case pg_pool_t::CACHEMODE_READONLY: // TODO: clean this case up
-    if (!obc.get() && r == -ENOENT) { // we don't have the object and op's a read
+    if (!obc.get() && r == -ENOENT) {
+      // we don't have the object and op's a read
       promote_object(op, obc);
       return true;
-    } else if (obc.get() && obc->obs.exists) { // we have the object locally
-      return false;
-    } else if (!r) { // it must be a write
-      do_cache_redirect(op, obc);
-      return true;
-    } else { // crap, there was a failure of some kind
+    }
+    if (obc.get() && obc->obs.exists) { // we have the object locally
       return false;
     }
-    break;
+    if (!r) { // it must be a write
+      do_cache_redirect(op, obc);
+      return true;
+    }
+    // crap, there was a failure of some kind
+    return false;
+
   default:
-    assert(0);
+    assert(0 == "unrecognized cache_mode");
   }
   return false;
 }
@@ -1254,7 +1258,11 @@ bool ReplicatedPG::can_skip_promote(OpRequestRef op, ObjectContextRef obc)
   MOSDOp *m = static_cast<MOSDOp*>(op->get_req());
   if (m->ops.empty())
     return false;
-  if (m->ops[0].op.op == CEPH_OSD_OP_DELETE)
+  // if we get a delete with FAILOK we can skip promote.  without
+  // FAILOK we still need to promote (or do something smarter) to
+  // determine whether to return ENOENT or 0.
+  if (m->ops[0].op.op == CEPH_OSD_OP_DELETE &&
+      (m->ops[0].op.flags & CEPH_OSD_OP_FLAG_FAILOK))
     return true;
   return false;
 }
