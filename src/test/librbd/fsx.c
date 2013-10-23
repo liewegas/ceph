@@ -116,29 +116,29 @@ rbd_image_t	image;			/* handle for our test image */
 
 char	dirpath[1024];
 
-loff_t		file_size = 0;
-loff_t		biggest = 0;
+int64_t		file_size = 0;
+int64_t		biggest = 0;
 char		state[256];
-unsigned long	testcalls = 0;		/* calls to function "test" */
+int64_t	testcalls = 0;		/* calls to function "test" */
 
-unsigned long	simulatedopcount = 0;	/* -b flag */
+int64_t	simulatedopcount = 0;	/* -b flag */
 int	closeprob = 0;			/* -c flag */
 int	debug = 0;			/* -d flag */
-unsigned long	debugstart = 0;		/* -D flag */
+int64_t	debugstart = 0;		/* -D flag */
 int	flush = 0;			/* -f flag */
 int	do_fsync = 0;			/* -y flag */
-unsigned long	maxfilelen = 256 * 1024;	/* -l flag */
+int64_t	maxfilelen = 256 * 1024;	/* -l flag */
 int	sizechecks = 1;			/* -n flag disables them */
 int	maxoplen = 64 * 1024;		/* -o flag */
 int	quiet = 0;			/* -q flag */
-unsigned long progressinterval = 0;	/* -p flag */
+int64_t progressinterval = 0;	/* -p flag */
 int	readbdy = 1;			/* -r flag */
 int	style = 0;			/* -s flag */
 int	prealloc = 0;			/* -x flag */
 int	truncbdy = 1;			/* -t flag */
 int	writebdy = 1;			/* -w flag */
-long	monitorstart = -1;		/* -m flag */
-long	monitorend = -1;		/* -m flag */
+int64_t	monitorstart = -1;		/* -m flag */
+int64_t	monitorend = -1;		/* -m flag */
 int	lite = 0;			/* -L flag */
 long	numops = -1;			/* -N flag */
 int	randomoplen = 1;		/* -O flag disables it */
@@ -159,7 +159,7 @@ int page_size;
 int page_mask;
 int mmap_mask;
 #ifdef AIO
-int aio_rw(int rw, int fd, char *buf, unsigned len, unsigned offset);
+int aio_rw(int rw, int fd, char *buf, int64_t len, int64_t offset);
 #define READ 0
 #define WRITE 1
 #define fsxread(a,b,c,d)	aio_rw(READ, a,b,c,d)
@@ -173,9 +173,9 @@ FILE *	fsxlogf = NULL;
 int badoff = -1;
 int closeopen = 0;
 
-static void *round_ptr_up(void *ptr, unsigned long align, unsigned long offset)
+static void *round_ptr_up(void *ptr, int64_t align, int64_t offset)
 {
-	unsigned long ret = (unsigned long)ptr;
+	long ret = (long)ptr;
 
 	ret = ((ret + align - 1) & ~(align - 1));
 	ret += offset;
@@ -384,8 +384,8 @@ save_buffer(char *buffer, loff_t bufferlength, int fd)
 			prterr("save_buffer write");
 		else
 			warn("save_buffer: short write, 0x%x bytes instead of 0x%llx\n",
-			     (unsigned)byteswritten,
-			     (unsigned long long)bufferlength);
+			     (int64_t)byteswritten,
+			     (int64_t)bufferlength);
 	}
 }
 
@@ -412,13 +412,13 @@ report_failure(int status)
 				        *(((unsigned char *)(cp)) + 1)))
 
 void
-check_buffers(char *good_buf, char *temp_buf, unsigned offset, unsigned size)
+check_buffers(char *good_buf, char *temp_buf, int64_t offset, int64_t size)
 {
 	unsigned char c, t;
-	unsigned i = 0;
-	unsigned n = 0;
-	unsigned op = 0;
-	unsigned bad = 0;
+	int64_t i = 0;
+	int64_t n = 0;
+	int64_t op = 0;
+	int64_t bad = 0;
 
 	if (memcmp(good_buf + offset, temp_buf, size) != 0) {
 		prt("READ BAD DATA: offset = 0x%x, size = 0x%x, fname = %s\n",
@@ -464,10 +464,10 @@ check_size(void)
 	if ((ret = rbd_stat(image, &statbuf, sizeof(statbuf))) < 0) {
 		prterrcode("check_size: fstat", ret);
 	}
-	if ((uint64_t)file_size != statbuf.size) {
+	if (file_size != (int64_t)statbuf.size) {
 		prt("Size error: expected 0x%llx stat 0x%llx\n",
-		    (unsigned long long)file_size,
-		    (unsigned long long)statbuf.size);
+		    file_size,
+		    (int64_t)statbuf.size);
 		report_failure(120);
 	}
 }
@@ -539,7 +539,7 @@ create_image()
 }
 
 void
-doflush(unsigned offset, unsigned size)
+doflush(int64_t offset, int64_t size)
 {
 	if (o_direct == O_DIRECT)
 		return;
@@ -548,7 +548,7 @@ doflush(unsigned offset, unsigned size)
 }
 
 void
-doread(unsigned offset, unsigned size)
+doread(int64_t offset, int64_t size)
 {
 	int ret;
 
@@ -595,9 +595,10 @@ doread(unsigned offset, unsigned size)
 
 
 void
-check_eofpage(char *s, unsigned offset, char *p, int size)
+check_eofpage(char *s, int64_t offset, char *p, int size)
 {
-	unsigned long last_page, should_be_zero;
+	unsigned long last_page;
+	unsigned long should_be_zero;
 
 	if (offset + size <= (file_size & ~page_mask))
 		return;
@@ -607,7 +608,7 @@ check_eofpage(char *s, unsigned offset, char *p, int size)
 	 * beyond the true end of the file mapping
 	 * (as required by mmap def in 1996 posix 1003.1)
 	 */
-	last_page = ((unsigned long)p + (offset & page_mask) + size) & ~page_mask;
+	last_page = ((long)p + (offset & page_mask) + size) & ~page_mask;
 
 	for (should_be_zero = last_page + (file_size & page_mask);
 	     should_be_zero < last_page + page_size;
@@ -622,7 +623,7 @@ check_eofpage(char *s, unsigned offset, char *p, int size)
 
 
 void
-gendata(char *original_buf, char *good_buf, unsigned offset, unsigned size)
+gendata(char *original_buf, char *good_buf, int64_t offset, int64_t size)
 {
 	while (size--) {
 		good_buf[offset] = testcalls % 256; 
@@ -634,7 +635,7 @@ gendata(char *original_buf, char *good_buf, unsigned offset, unsigned size)
 
 
 void
-dowrite(unsigned offset, unsigned size)
+dowrite(int64_t offset, int64_t size)
 {
 	ssize_t ret;
 	loff_t newsize;
@@ -696,9 +697,9 @@ dowrite(unsigned offset, unsigned size)
 
 
 void
-dotruncate(unsigned size)
+dotruncate(int64_t size)
 {
-	int oldsize = file_size;
+	int64_t oldsize = file_size;
 	int ret;
 
 	size -= size % truncbdy;
@@ -708,7 +709,7 @@ dotruncate(unsigned size)
 			prt("truncating to largest ever: 0x%x\n", size);
 	}
 
-	log4(OP_TRUNCATE, size, (unsigned)file_size, 0);
+	log4(OP_TRUNCATE, size, (int64_t)file_size, 0);
 
 	if (size > file_size)
 		memset(good_buf + file_size, '\0', size - file_size);
@@ -722,7 +723,8 @@ dotruncate(unsigned size)
 	if ((progressinterval && testcalls % progressinterval == 0) ||
 	    (debug && (monitorstart == -1 || monitorend == -1 ||
 		      size <= monitorend)))
-		prt("%lu trunc\tfrom 0x%x to 0x%x\n", testcalls, oldsize, size);
+		prt("%lu trunc\tfrom 0x%llx to 0x%llx\n", testcalls,
+		    oldsize, size);
 	if ((ret = rbd_resize(image, size)) < 0) {
 		prt("rbd_resize: %x\n", size);
 		prterrcode("dotruncate: ftruncate", ret);
@@ -731,11 +733,11 @@ dotruncate(unsigned size)
 }
 
 void
-do_punch_hole(unsigned offset, unsigned length)
+do_punch_hole(int64_t offset, int64_t length)
 {
-	unsigned end_offset;
-	int max_offset = 0;
-	int max_len = 0;
+	int64_t end_offset;
+	int64_t max_offset = 0;
+	int64_t max_len = 0;
 	int ret;
 
 	if (length == 0) {
@@ -745,7 +747,7 @@ do_punch_hole(unsigned offset, unsigned length)
 		return;
 	}
 
-	if (file_size <= (loff_t)offset) {
+	if (file_size <= offset) {
 		if (!quiet && testcalls > simulatedopcount)
 			prt("skipping hole punch off the end of the file\n");
 			log4(OP_SKIPPED, OP_PUNCH_HOLE, offset, length);
@@ -765,9 +767,9 @@ do_punch_hole(unsigned offset, unsigned length)
 		prt("%lu punch\tfrom 0x%x to 0x%x, (0x%x bytes)\n", testcalls,
 			offset, offset+length, length);
 	}
-	if ((ret = rbd_discard(image, (unsigned long long) offset,
-			       (unsigned long long) length)) < 0) {
-		prt("%punch hole: %x to %x\n", offset, length);
+	if ((ret = rbd_discard(image, offset,
+			       length)) < 0) {
+		prt("%punch hole: %llx to %llx\n", offset, length);
 		prterrcode("do_punch_hole: discard", ret);
 		report_failure(161);
 	}
@@ -924,11 +926,11 @@ writefileimage()
 			prterrcode("writefileimage: write", ret);
 		else
 			prt("short write: 0x%x bytes instead of 0x%llx\n",
-			    ret, (unsigned long long)file_size);
+			    ret, file_size);
 		report_failure(172);
 	}
 	if (lite ? 0 : (ret = rbd_resize(image, file_size)) < 0) {
-		prt("rbd_resize: %llx\n", (unsigned long long)file_size);
+		prt("rbd_resize: %llx\n", file_size);
 		prterrcode("writefileimage: rbd_resize", ret);
 		report_failure(173);
 	}
@@ -981,17 +983,17 @@ do {					\
 		(off) %= (size);	\
 	else				\
 		(off) = 0;		\
-	if ((unsigned)(off) + (unsigned)(len) > (unsigned)(size))	\
+	if ((int64_t)(off) + (int64_t)(len) > (int64_t)(size))	\
 		(len) = (size) - (off);	\
 } while (0)
 
 void
 test(void)
 {
-	unsigned long	offset;
-	unsigned long	size = maxoplen;
-	unsigned long	rv = random();
-	unsigned long	op;
+	int64_t	offset;
+	int64_t	size = maxoplen;
+	int64_t	rv = random();
+	int64_t	op;
 
 	if (simulatedopcount > 0 && testcalls == simulatedopcount)
 		writefileimage();
@@ -999,7 +1001,7 @@ test(void)
 	testcalls++;
 
 	if (closeprob)
-		closeopen = (rv >> 3) < (1u << 28) / (unsigned)closeprob;
+		closeopen = (rv >> 3) < (1ll << 28) / (int64_t)closeprob;
 
 	if (debugstart > 0 && testcalls >= debugstart)
 		debug = 1;
@@ -1208,7 +1210,7 @@ int aio_setup()
 }
 
 int
-__aio_rw(int rw, int fd, char *buf, unsigned len, unsigned offset)
+__aio_rw(int rw, int fd, char *buf, int64_t len, int64_t offset)
 {
 	struct io_event event;
 	static struct timespec ts;
@@ -1274,7 +1276,7 @@ out_error:
 	return -1;
 }
 
-int aio_rw(int rw, int fd, char *buf, unsigned len, unsigned offset)
+int aio_rw(int rw, int fd, char *buf, int64_t len, int64_t offset)
 {
 	int ret;
 
@@ -1537,17 +1539,17 @@ main(int argc, char **argv)
 	temp_buf = round_ptr_up(temp_buf, writebdy, 0);
 	memset(temp_buf, '\0', maxfilelen);
 	if (lite) {	/* zero entire existing file */
-		ssize_t written;
+		int64_t written;
 
-		written = rbd_write(image, 0, (size_t)maxfilelen, good_buf);
-		if (written != (ssize_t)maxfilelen) {
+		written = rbd_write(image, 0, maxfilelen, good_buf);
+		if (written != maxfilelen) {
 			if (written < 0) {
 				prterrcode(iname, written);
 				warn("main: error on write");
 			} else
 				warn("main: short write, 0x%x bytes instead "
-					"of 0x%lx\n",
-					(unsigned)written,
+					"of 0x%ullx\n",
+					written,
 					maxfilelen);
 			exit(98);
 		}
