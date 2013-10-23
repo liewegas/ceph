@@ -1219,6 +1219,8 @@ bool ReplicatedPG::maybe_handle_cache(OpRequestRef op, ObjectContextRef obc,
   case pg_pool_t::CACHEMODE_WRITEBACK:
     if (obc.get() && obc->obs.exists) { // we have the object already
       return false;
+    } else if (can_skip_promote(op, obc)) {
+      return false;
     } else { // try and promote!
       promote_object(op, obc);
       return true;
@@ -1244,6 +1246,16 @@ bool ReplicatedPG::maybe_handle_cache(OpRequestRef op, ObjectContextRef obc,
   default:
     assert(0);
   }
+  return false;
+}
+
+bool ReplicatedPG::can_skip_promote(OpRequestRef op, ObjectContextRef obc)
+{
+  MOSDOp *m = static_cast<MOSDOp*>(op->get_req());
+  if (m->ops.empty())
+    return false;
+  if (m->ops[0].op.op == CEPH_OSD_OP_DELETE)
+    return true;
   return false;
 }
 
