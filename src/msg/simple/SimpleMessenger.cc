@@ -463,6 +463,16 @@ void SimpleMessenger::submit_message(Message *m, PipeConnection *con,
     *_dout << dendl;
     m->clear_payload();
   }
+  if ((cct->_conf->ms_blackhole_mon && dest_type == CEPH_ENTITY_TYPE_MON)||
+      (cct->_conf->ms_blackhole_osd && dest_type == CEPH_ENTITY_TYPE_OSD)||
+      (cct->_conf->ms_blackhole_mds && dest_type == CEPH_ENTITY_TYPE_MDS)||
+      (cct->_conf->ms_blackhole_client &&
+       dest_type == CEPH_ENTITY_TYPE_CLIENT)) {
+    ldout(cct, 0) << __func__ << ceph_entity_type_name(dest_type)
+		  << " blackhole " << *m << dendl;
+    m->put();
+    return;
+  }
 
   // existing connection?
   if (con) {

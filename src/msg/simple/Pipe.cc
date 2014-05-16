@@ -1731,6 +1731,16 @@ void Pipe::reader()
 	continue;
       }
 
+      md_config_t *conf = msgr->cct->_conf;
+      if ((conf->ms_blackhole_mon && peer_type == CEPH_ENTITY_TYPE_MON)||
+	  (conf->ms_blackhole_osd && peer_type == CEPH_ENTITY_TYPE_OSD)||
+	  (conf->ms_blackhole_mds && peer_type == CEPH_ENTITY_TYPE_MDS)||
+	  (conf->ms_blackhole_client && peer_type == CEPH_ENTITY_TYPE_CLIENT)) {
+	ldout(msgr->cct, 10) << __func__ << " blackhole " << *m << dendl;
+	m->put();
+	continue;
+      }
+
       // check received seq#.  if it is old, drop the message.  
       // note that incoming messages may skip ahead.  this is convenient for the client
       // side queueing because messages can't be renumbered, but the (kernel) client will

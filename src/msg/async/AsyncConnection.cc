@@ -771,6 +771,18 @@ void AsyncConnection::process()
           }
           state = STATE_OPEN;
 
+	  md_config_t *conf = msgr->cct->_conf;
+	  if ((conf->ms_blackhole_mon && peer_type == CEPH_ENTITY_TYPE_MON)||
+	      (conf->ms_blackhole_osd && peer_type == CEPH_ENTITY_TYPE_OSD)||
+	      (conf->ms_blackhole_mds && peer_type == CEPH_ENTITY_TYPE_MDS)||
+	      (conf->ms_blackhole_client &&
+	       peer_type == CEPH_ENTITY_TYPE_CLIENT)) {
+	    ldout(async_msgr->cct, 10) << __func__ << " blackhole " << *message
+				       << dendl;
+	    message->put();
+	    break;
+	  }
+
           logger->inc(l_msgr_recv_messages);
           logger->inc(l_msgr_recv_bytes, cur_msg_size + sizeof(ceph_msg_header) + sizeof(ceph_msg_footer));
 
@@ -1904,6 +1916,19 @@ int AsyncConnection::send_message(Message *m)
 		      << *m << " -- " << m << " con "
 		      << m->get_connection().get()
 		      << dendl;
+
+  auto cct = async_msgr->cct;
+  if ((cct->_conf->ms_blackhole_mon && peer_type == CEPH_ENTITY_TYPE_MON)||
+      (cct->_conf->ms_blackhole_osd && peer_type == CEPH_ENTITY_TYPE_OSD)||
+      (cct->_conf->ms_blackhole_mds && peer_type == CEPH_ENTITY_TYPE_MDS)||
+      (cct->_conf->ms_blackhole_client &&
+       peer_type == CEPH_ENTITY_TYPE_CLIENT)) {
+    lgeneric_subdout(cct, ms,
+		     0) << __func__ << ceph_entity_type_name(peer_type)
+			<< " blackhole " << *m << dendl;
+    m->put();
+    return 0;
+  }
 
   // optimistic think it's ok to encode(actually may broken now)
   if (!m->get_priority())
