@@ -34,7 +34,7 @@
 
 class MOSDPing : public Message {
 
-  static const int HEAD_VERSION = 4;
+  static const int HEAD_VERSION = 5;
   static const int COMPAT_VERSION = 4;
 
  public:
@@ -62,14 +62,21 @@ class MOSDPing : public Message {
   epoch_t map_epoch = 0;
   __u8 op = 0;
   utime_t stamp;
-  uint32_t min_message_size;
+  epoch_t up_from = 0, consumed_epoch = 0;
 
-  MOSDPing(const uuid_d& f, epoch_t e, __u8 o, utime_t s, uint32_t min_message)
+  uint32_t min_message_size = 0;
+
+  MOSDPing(const uuid_d& f, epoch_t e, __u8 o, utime_t s,
+	   epoch_t upf, epoch_t ce,
+	   uint32_t min_message)
     : Message(MSG_OSD_PING, HEAD_VERSION, COMPAT_VERSION),
-      fsid(f), map_epoch(e), op(o), stamp(s), min_message_size(min_message)
+      fsid(f), map_epoch(e), op(o), stamp(s),
+      up_from(upf),
+      consumed_epoch(ce),
+     min_message_size(min_message)
   { }
   MOSDPing()
-    : Message(MSG_OSD_PING, HEAD_VERSION, COMPAT_VERSION), min_message_size(0)
+    : Message(MSG_OSD_PING, HEAD_VERSION, COMPAT_VERSION)
   {}
 private:
   ~MOSDPing() override {}
@@ -85,6 +92,13 @@ public:
     int payload_mid_length = p.get_off();
     uint32_t size;
     ::decode(size, p);
+
+    if (header.version >= 5) {
+      ::decode(up_from, p);
+      ::decode(consumed_epoch, p);
+      payload_mid_length += 8;
+    }
+
     p.advance(size);
     min_message_size = size + payload_mid_length;
   }
@@ -99,6 +113,10 @@ public:
       s = min_message_size - payload.length();
     }
     ::encode((uint32_t)s, payload);
+
+    ::encode(up_from, payload);
+    ::encode(consumed_epoch, payload);
+
     if (s) {
       // this should be big enough for normal min_message padding sizes. since
       // we are targetting jumbo ethernet frames around 9000 bytes, 16k should
@@ -120,6 +138,8 @@ public:
     out << "osd_ping(" << get_op_name(op)
 	<< " e" << map_epoch
 	<< " stamp " << stamp
+	<< " up_from " << up_from
+	<< " consumed " << consumed_epoch
 	<< ")";
   }
 };

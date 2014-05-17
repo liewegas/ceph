@@ -4544,7 +4544,9 @@ void OSD::handle_osd_ping(MOSDPing *m)
 
       Message *r = new MOSDPing(monc->get_fsid(),
 				curmap->get_epoch(),
-				MOSDPing::PING_REPLY, m->stamp,
+				MOSDPing::PING_REPLY,
+				m->stamp, service.get_up_epoch(),
+				service.get_min_pg_epoch(),
 				cct->_conf->osd_heartbeat_min_size);
       m->get_connection()->send_message(r);
 
@@ -4563,6 +4565,8 @@ void OSD::handle_osd_ping(MOSDPing *m)
 				  curmap->get_epoch(),
 				  MOSDPing::YOU_DIED,
 				  m->stamp,
+				  service.get_up_epoch(),
+				  service.get_min_pg_epoch(),
 				  cct->_conf->osd_heartbeat_min_size);
 	m->get_connection()->send_message(r);
       }
@@ -4739,16 +4743,24 @@ void OSD::heartbeat()
     if (i->second.first_tx == utime_t())
       i->second.first_tx = now;
     dout(30) << "heartbeat sending ping to osd." << peer << dendl;
-    i->second.con_back->send_message(new MOSDPing(monc->get_fsid(),
-					  service.get_osdmap()->get_epoch(),
-					  MOSDPing::PING, now,
-					  cct->_conf->osd_heartbeat_min_size));
+    i->second.con_back->send_message(
+      new MOSDPing(
+	monc->get_fsid(),
+	service.get_osdmap()->get_epoch(),
+	MOSDPing::PING, now,
+	service.get_up_epoch(),
+	service.get_min_pg_epoch(),
+	cct->_conf->osd_heartbeat_min_size));
 
     if (i->second.con_front)
-      i->second.con_front->send_message(new MOSDPing(monc->get_fsid(),
-					     service.get_osdmap()->get_epoch(),
-					     MOSDPing::PING, now,
-					  cct->_conf->osd_heartbeat_min_size));
+      i->second.con_front->send_message(
+	new MOSDPing(
+	  monc->get_fsid(),
+	  service.get_osdmap()->get_epoch(),
+	  MOSDPing::PING, now,
+	  service.get_up_epoch(),
+	  service.get_min_pg_epoch(),
+	  cct->_conf->osd_heartbeat_min_size));
   }
 
   logger->set(l_osd_hb_to, heartbeat_peers.size());
