@@ -8283,7 +8283,8 @@ void OSD::handle_pg_notify(OpRequestRef op)
 	new PG::CephPeeringEvt(
 	  it->first.epoch_sent, it->first.query_epoch,
 	  PG::MNotifyRec(pg_shard_t(from, it->first.from), it->first,
-          op->get_req()->get_connection()->get_features())))
+			 op->get_req()->get_connection()->get_features(),
+			 m->get_recv_stamp())))
       );
   }
 }

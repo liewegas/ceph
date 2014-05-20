@@ -1813,8 +1813,10 @@ protected:
     pg_shard_t from;
     pg_notify_t notify;
     uint64_t features;
-    MNotifyRec(pg_shard_t from, const pg_notify_t &notify, uint64_t f) :
-      from(from), notify(notify), features(f) {}
+    utime_t rx_stamp;
+    MNotifyRec(pg_shard_t from, const pg_notify_t &notify, uint64_t f,
+	       utime_t t) :
+      from(from), notify(notify), features(f), rx_stamp(t) {}
     void print(std::ostream *out) const {
       *out << "MNotifyRec from " << from << " notify: " << notify
         << " features: 0x" << hex << features << dec;
