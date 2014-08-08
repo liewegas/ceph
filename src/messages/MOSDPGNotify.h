@@ -25,7 +25,7 @@
 
 class MOSDPGNotify : public Message {
 
-  static const int HEAD_VERSION = 5;
+  static const int HEAD_VERSION = 6;
   static const int COMPAT_VERSION = 2;
 
   epoch_t epoch;
@@ -94,6 +94,13 @@ public:
       ::encode(p->first.from, payload);
       ::encode(p->first.to, payload);
     }
+
+    // v6 adds readable_delta
+    for (vector<pair<pg_notify_t, pg_interval_map_t> >::iterator p = pg_list.begin();
+	 p != pg_list.end();
+	 ++p) {
+      ::encode(p->first.readable_delta, payload);
+    }
   }
   void decode_payload() {
     epoch_t query_epoch;
@@ -139,6 +146,15 @@ public:
 	   i++) {
 	::decode(i->first.from, p);
 	::decode(i->first.to, p);
+      }
+    }
+
+    // v6 adds readable_delta
+    if (header.version >= 6) {
+      for (vector<pair<pg_notify_t, pg_interval_map_t> >::iterator i = pg_list.begin();
+	   i != pg_list.end();
+	   i++) {
+	::decode(i->first.readable_delta, p);
       }
     }
   }
