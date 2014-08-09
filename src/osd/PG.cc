@@ -5345,7 +5345,12 @@ void PG::start_peering_interval(
   }
   clear_primary_state();
 
-    
+  // make readable_until value for the current interval accurate; we
+  // will need it shortly.
+  utime_t now = ceph_clock_now(NULL);
+  prune_past_readable_until(now);
+  recalc_readable_until(now, is_primary());
+
   // pg->on_*
   on_change(t);
 
