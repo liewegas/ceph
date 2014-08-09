@@ -109,11 +109,6 @@ peers should send messages to the downed OSD telling it the news.
 TODO
 ====
 
-#. add heartbeat infrastructure so that we can calculate the
-   readable_until value for an active pg
-#. suspend ops if we have passed the readable_until time
-#. resume ops if we get the relevant heartbeats
-#. share readable_until values along with notify
-#. inherit previous intervals' readable_until on pg activation
-
 #. stress test tool
+
+- heartbeat base case for new connections?
