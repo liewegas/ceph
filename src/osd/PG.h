@@ -672,6 +672,20 @@ public:
     return readable_until;
   }
 
+  /// get current bounds on readability <after this, before this>
+  pair<utime_t,utime_t> get_readable_from_until() {
+    utime_t from, to;
+    assert(!readable_until.empty());
+    map<epoch_t,utime_t>::reverse_iterator p = readable_until.rbegin();
+    assert(p->first == info.history.same_interval_since);
+    to = p->second;
+    for (++p; p != readable_until.rend(); ++p) {
+      if (p->second > from)
+	from = p->second;
+    }
+    return make_pair(from, to);
+  }
+
   // [primary only] content recovery state
  protected:
   struct PriorSet {
