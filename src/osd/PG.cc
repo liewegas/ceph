@@ -563,6 +563,7 @@ void PG::proc_replica_readable_until(pg_shard_t from,
 				     utime_t rx_stamp,
 				     const map<epoch_t,utime_t>& delta)
 {
+  dout(20) << __func__ << " got " << delta << " from osd." << from << dendl;
   for (map<epoch_t,utime_t>::const_iterator p = delta.begin();
        p != delta.end();
        ++p) {
@@ -571,6 +572,7 @@ void PG::proc_replica_readable_until(pg_shard_t from,
     else
       peer_readable_until[p->first][from] = rx_stamp + p->second;
   }
+  dout(20) << __func__ << " now " << peer_readable_until << dendl;
 }
 
 void PG::remove_snap_mapped_object(
