@@ -195,6 +195,15 @@ void PGPool::update(OSDMapRef map)
     << dendl;
 }
 
+utime_t PGPool::get_readable_interval()
+{
+  // use the heartbeat interval for now.  later, we should perhaps let
+  // users override this on a per-pool basis.
+  return utime_t(g_conf->osd_heartbeat_grace, 0);
+}
+
+/////////////////////////////////
+
 PG::PG(OSDService *o, OSDMapRef curmap,
        const PGPool &_pool, spg_t p) :
   osd(o),
