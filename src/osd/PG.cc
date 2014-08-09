@@ -396,6 +396,57 @@ void PG::prune_past_readable_until(utime_t now)
   }
 }
 
+/// calculate readable_until for the current interval only
+void PG::recalc_readable_until(utime_t now, bool queue_on_missing_hb)
+{
+  epoch_t start = info.history.same_interval_since;
+  utime_t cutoff = now - pool.get_readable_interval();
+  if (is_primary()) {
+    utime_t min;
+    bool all = true;
+    for (vector<HeartbeatStampsRef>::iterator p = hb_stamps.begin();
+	 p != hb_stamps.end();
+	 ++p) {
+      utime_t lap;
+      if (queue_on_missing_hb)
+	lap = (*p)->sample_last_acked_ping_or_queue(cutoff, this);
+      else
+	lap = (*p)->sample_last_acked_ping();
+      if (lap == utime_t()) {
+	dout(20) << __func__ << " no lap for osd." << (*p)->osd << dendl;
+	all = false;
+      }
+      if (lap < min || p == hb_stamps.begin()) {
+	min = lap;
+      }
+    }
+    if (hb_stamps.empty())  // if we are alone, we are readable
+      readable_until[start] = now + pool.get_readable_interval();
+    else if (all && min != utime_t())
+      readable_until[start] = min + pool.get_readable_interval();
+    else
+      readable_until[start] = utime_t();
+  } else if (is_replica()) {
+    assert(hb_stamps.size() == 1);
+    utime_t r;
+    if (queue_on_missing_hb)
+      r = hb_stamps[0]->sample_last_reply_or_queue(cutoff, this);
+    else
+      r = hb_stamps[0]->sample_last_reply();
+    if (r == utime_t()) {
+      dout(20) << __func__ << " no replies for osd." << hb_stamps[0]->osd
+	       << dendl;
+      readable_until[start] = utime_t();
+    } else {
+      readable_until[start] = r + pool.get_readable_interval();
+    }
+  } else {
+    readable_until[start] = utime_t();
+  }
+  dout(20) << __func__ << " " << readable_until
+	   << (queue_on_missing_hb ? " queue_on_missing_hb" : "") << dendl;
+}
+
 void PG::proc_master_log(
   ObjectStore::Transaction& t, pg_info_t &oinfo,
   pg_log_t &olog, pg_missing_t& omissing, pg_shard_t from)
