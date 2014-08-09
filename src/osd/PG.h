@@ -663,8 +663,20 @@ public:
 
   set<int> blocked_by; ///< osds we are blocked by (for pg stats)
 
+  /// lower bound on how much longer we will remain readable
+  map<epoch_t,utime_t> readable_until;  ///< interval start -> readable_until
+
   /// initialize hb_stamps peer set based on role, acting
   void init_hb_stamps();
+
+  /// prune prior intervals' past readable_until values
+  void prune_past_readable_until(utime_t now);
+
+  const map<epoch_t,utime_t>& get_readable_until(utime_t now) {
+    prune_past_readable_until(now);
+    recalc_readable_until(now, false);
+    return readable_until;
+  }
 
   // [primary only] content recovery state
  protected:
