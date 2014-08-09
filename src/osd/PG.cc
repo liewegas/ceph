@@ -6077,6 +6077,11 @@ PG::RecoveryState::Reset::Reset(my_context ctx)
   context< RecoveryMachine >().log_enter(state_name);
   PG *pg = context< RecoveryMachine >().pg;
 
+  // make readable_until value for the prior interval accurate
+  utime_t now = ceph_clock_now(NULL);
+  pg->prune_past_readable_until(now);
+  pg->recalc_readable_until(now, pg->is_primary());
+
   pg->flushes_in_progress = 0;
   pg->set_last_peering_reset();
 }
