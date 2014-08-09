@@ -411,6 +411,115 @@ void PG::prune_past_readable_until(utime_t now)
   }
 }
 
+void PG::recalc_prior_readable_until(utime_t now, const PriorSet *prior_set)
+{
+  OSDMapRef osdmap = get_osdmap();
+  const bool ec_pool = pool.info.is_erasure();
+
+  // note: this is similar to BuildPrior, but different: we need to
+  // consider a different range of past_intervals (ones that may still
+  // be readable), and we only care about the OSDs that aren't in our
+  // current prior set.
+  for (std::map<epoch_t,pg_interval_t>::iterator p =
+	 past_intervals.lower_bound(info.history.oldest_interval_readable);
+       p != past_intervals.end();
+       ++p) {
+    if (p->first == info.history.same_interval_since)
+      break;
+    const pg_interval_t& interval = p->second;
+    dout(20) << __func__ << " interval " << interval.first << "-"
+	     << interval.last << " " << interval.acting
+	     << (interval.maybe_went_rw ? " maybe_went_rw" : "") << dendl;
+
+    // we can completely ignore intervals that didn't go read/write or
+    // had no members
+    if (!interval.maybe_went_rw || interval.acting.empty()) {
+      map<epoch_t,utime_t>::iterator q = readable_until.find(p->first);
+      if (q != readable_until.end()) {
+	dout(20) << __func__ << "  clearing readable_until" << dendl;
+	readable_until.erase(q);
+      }
+      continue;
+    }
+
+    set<int> actingset;
+    set<int> possibly_readable;
+    for (unsigned i=0; i<interval.acting.size(); i++) {
+      int o = interval.acting[i];
+      if (o == CRUSH_ITEM_NONE)
+	continue;
+      actingset.insert(o);
+      if (o == osd->whoami)
+	continue;
+      pg_shard_t so(o, ec_pool ? shard_id_t(i) : shard_id_t::NO_SHARD);
+      if (peer_info.count(so)) {
+	continue;  // we probed => they know about this interval
+      }
+      if (possibly_readable.count(o))
+	continue;  // already have this one
+      if (!osdmap->exists(o))
+	continue;  // doesn't exist; not readable
+      const osd_info_t *pinfo = &osdmap->get_info(o);
+      if (osdmap->is_up(o) &&
+	  pinfo->up_from > interval.first) {
+	dout(30) << __func__ << "  osd." << o << " restarted in "
+		 << pinfo->up_from << dendl;
+	continue;  // it restarted; clearly not readable for this interval
+      }
+      HeartbeatStampsRef hsr = osd->get_hb_stamps(o);
+      if (hsr->consumed_epoch > interval.last) {
+	dout(30) << __func__ << "  osd." << o << " consumed_epoch "
+		 << hsr->consumed_epoch << dendl;
+	continue;  // its PG knows interval ended; not readable
+      }
+      possibly_readable.insert(o);
+    }
+
+    if (possibly_readable.empty()) {
+      dout(20) << __func__ << "  no stale, advancing first_interval_readable "
+	       << (interval.last + 1) << dendl;
+      readable_until.erase(interval.first);
+      info.history.oldest_interval_readable = interval.last + 1;
+      dirty_info = true;
+      continue;
+    }
+
+    dout(20) << __func__ << "  possibly_readable " << possibly_readable
+	     << " peer_readable_until " << peer_readable_until << dendl;
+
+    // we need readable_until from just *one* member of this interval
+    // (even me) to draw a conclusion.  if there are multiple values,
+    // pick the min.
+    bool any = false;
+    utime_t min_readable_until;
+    if (actingset.count(osd->whoami)) {
+      min_readable_until = readable_until[interval.first];
+      any = true;
+      dout(20) << __func__ << "  starting with my own " << min_readable_until
+	       << " (" << readable_until << ")" << dendl;
+    }
+    map<pg_shard_t, utime_t>& pru = peer_readable_until[interval.first];
+    for (map<pg_shard_t,utime_t>::iterator q = pru.begin();
+	 q != pru.end();
+	 ++q) {
+      if (actingset.count(q->first.osd)) {
+	if (!any || q->second < min_readable_until)
+	  min_readable_until = q->second;
+	any = true;
+      }
+    }
+    if (!any) {
+      dout(20) << __func__ << "  no readable_until for " << interval.acting
+	       << ", assuming a full interval" << dendl;
+      min_readable_until = now + pool.get_readable_interval();
+    }
+    readable_until[interval.first] = min_readable_until;
+    dout(20) << __func__ << "  " << interval.first << "="
+	     << min_readable_until << dendl;
+  }
+  dout(20) << __func__ << " " << readable_until << dendl;
+}
+
 /// calculate readable_until for the current interval only
 void PG::recalc_readable_until(utime_t now, bool queue_on_missing_hb)
 {
@@ -6438,6 +6547,9 @@ void PG::RecoveryState::Peering::exit()
   context< RecoveryMachine >().log_exit(state_name, enter_time);
   pg->state_clear(PG_STATE_PEERING);
   pg->clear_probe_targets();
+
+  pg->recalc_prior_readable_until(ceph_clock_now(),
+				  context< Peering >().prior_set.get());
 
   utime_t dur = ceph_clock_now() - enter_time;
   pg->osd->recoverystate_perf->tinc(rs_peering_latency, dur);

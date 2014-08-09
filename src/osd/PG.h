@@ -1033,6 +1033,10 @@ public:
   void trim_past_intervals();
   void build_prior(std::unique_ptr<PriorSet> &prior_set);
 
+  /// recalculate readable_until (for past intervals)
+  void recalc_prior_readable_until(utime_t now,
+				   const PriorSet *prior_set);
+
   void remove_down_peer_info(const OSDMapRef osdmap);
 
   bool adjust_need_up_thru(const OSDMapRef osdmap);
