@@ -664,11 +664,11 @@ public:
   void prune_past_readable_until(utime_t now);
 
   /// recalculate readable_until (for current interval)
-  void recalc_readable_until(utime_t now, bool queue_on_missing_hb);
+  void recalc_current_readable_until(utime_t now, bool queue_on_missing_hb);
 
   const map<epoch_t,utime_t>& get_readable_until(utime_t now) {
     prune_past_readable_until(now);
-    recalc_readable_until(now, false);
+    recalc_current_readable_until(now, false);
     return readable_until;
   }
 
