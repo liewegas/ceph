@@ -676,6 +676,9 @@ public:
   /// recalculate readable_until (for current interval)
   void recalc_current_readable_until(utime_t now, bool queue_on_missing_hb);
 
+  /// recalculate readable_until (for past intervals)
+  void recalc_prior_readable_until(utime_t now);
+
   const map<epoch_t,utime_t>& get_readable_until(utime_t now) {
     prune_past_readable_until(now);
     recalc_current_readable_until(now, false);
@@ -1033,10 +1036,6 @@ public:
   void generate_past_intervals();
   void trim_past_intervals();
   void build_prior(std::unique_ptr<PriorSet> &prior_set);
-
-  /// recalculate readable_until (for past intervals)
-  void recalc_prior_readable_until(utime_t now,
-				   const PriorSet *prior_set);
 
   void remove_down_peer_info(const OSDMapRef osdmap);
 

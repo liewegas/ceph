@@ -411,7 +411,7 @@ void PG::prune_past_readable_until(utime_t now)
   }
 }
 
-void PG::recalc_prior_readable_until(utime_t now, const PriorSet *prior_set)
+void PG::recalc_prior_readable_until(utime_t now)
 {
   OSDMapRef osdmap = get_osdmap();
   const bool ec_pool = pool.info.is_erasure();
