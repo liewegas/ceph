@@ -521,7 +521,7 @@ void PG::recalc_prior_readable_until(utime_t now, const PriorSet *prior_set)
 }
 
 /// calculate readable_until for the current interval only
-void PG::recalc_readable_until(utime_t now, bool queue_on_missing_hb)
+void PG::recalc_current_readable_until(utime_t now, bool queue_on_missing_hb)
 {
   epoch_t start = info.history.same_interval_since;
   utime_t cutoff = now - pool.get_readable_interval();
@@ -2267,7 +2267,7 @@ bool PG::check_unreadable()
   prune_past_readable_until(now);
   pair<utime_t,utime_t> rup = get_readable_from_until();
   if (now <= rup.first || now >= rup.second) {
-    recalc_readable_until(now, true);
+    recalc_current_readable_until(now, true);
     rup = get_readable_from_until();
   }
   dout(20) << __func__ << " rup " << rup << dendl;
@@ -5536,7 +5536,7 @@ void PG::start_peering_interval(
   // will need it shortly.
   utime_t now = ceph_clock_now();
   prune_past_readable_until(now);
-  recalc_readable_until(now, is_primary());
+  recalc_current_readable_until(now, is_primary());
 
   // pg->on_*
   on_change(t);
@@ -6274,7 +6274,7 @@ PG::RecoveryState::Reset::Reset(my_context ctx)
   // make readable_until value for the prior interval accurate
   utime_t now = ceph_clock_now();
   pg->prune_past_readable_until(now);
-  pg->recalc_readable_until(now, pg->is_primary());
+  pg->recalc_current_readable_until(now, pg->is_primary());
 
   pg->flushes_in_progress = 0;
   pg->set_last_peering_reset();
