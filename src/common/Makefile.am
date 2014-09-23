@@ -13,6 +13,7 @@ libcommon_la_SOURCES = \
 	common/admin_socket_client.cc \
 	common/cmdparse.cc \
 	common/escape.c \
+	common/feature_set.cc \
 	common/io_priority.cc \
 	common/Clock.cc \
 	common/Throttle.cc \
@@ -71,6 +72,7 @@ libcommon_la_SOURCES = \
 	common/addr_parsing.c \
 	common/hobject.cc \
 	common/bloom_filter.cc \
+	common/feature_set.cc \
 	common/linux_version.c \
 	common/module.c
 

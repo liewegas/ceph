@@ -278,6 +278,11 @@ unittest_bloom_filter_CXXFLAGS = $(UNITTEST_CXXFLAGS)
 unittest_bloom_filter_LDADD = $(UNITTEST_LDADD) $(CEPH_GLOBAL)
 check_PROGRAMS += unittest_bloom_filter
 
+unittest_feature_set_SOURCES = test/common/test_feature_set.cc
+unittest_feature_set_CXXFLAGS = $(UNITTEST_CXXFLAGS)
+unittest_feature_set_LDADD = $(UNITTEST_LDADD) $(CEPH_GLOBAL)
+check_PROGRAMS += unittest_feature_set
+
 unittest_histogram_SOURCES = test/common/histogram.cc
 unittest_histogram_CXXFLAGS = $(UNITTEST_CXXFLAGS)
 unittest_histogram_LDADD = $(UNITTEST_LDADD) $(CEPH_GLOBAL)
