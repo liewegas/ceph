@@ -19,6 +19,7 @@
 #include <ostream>
 #include <list>
 
+#include "include/assert.h"
 #include "include/encoding.h"
 
 namespace ceph {
@@ -30,6 +31,13 @@ namespace ceph {
 
   public:
     feature_set_t() : features(0) {}
+
+    /// initialize the set with a 0-terminated array of features
+    feature_set_t(int *features) {
+      assert(features);
+      for (int *p = features; *p; p++)
+	add(*p);
+    }
 
     feature_set_t(const feature_set_t &o) : features(o.features) {}
     const feature_set_t& operator=(const feature_set_t& o) {
