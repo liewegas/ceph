@@ -1,5 +1,6 @@
 libcommon_la_SOURCES = \
 	ceph_ver.c \
+	common/ceph_features.c \
 	common/DecayCounter.cc \
 	common/LogClient.cc \
 	common/LogEntry.cc \
