@@ -106,6 +106,7 @@ public:
     crush->choose_total_tries = 19;
     crush->chooseleaf_descend_once = 0;
     crush->chooseleaf_vary_r = 0;
+    crush->straw_calc_version = 0;
   }
   void set_tunables_bobtail() {
     crush->choose_local_tries = 0;
@@ -113,6 +114,7 @@ public:
     crush->choose_total_tries = 50;
     crush->chooseleaf_descend_once = 1;
     crush->chooseleaf_vary_r = 0;
+    crush->straw_calc_version = 0;
   }
   void set_tunables_firefly() {
     crush->choose_local_tries = 0;
@@ -120,13 +122,22 @@ public:
     crush->choose_total_tries = 50;
     crush->chooseleaf_descend_once = 1;
     crush->chooseleaf_vary_r = 1;
+    crush->straw_calc_version = 0;
+  }
+  void set_tunables_hammer() {
+    crush->choose_local_tries = 0;
+    crush->choose_local_fallback_tries = 0;
+    crush->choose_total_tries = 50;
+    crush->chooseleaf_descend_once = 1;
+    crush->chooseleaf_vary_r = 1;
+    crush->straw_calc_version = 1;
   }
 
   void set_tunables_legacy() {
     set_tunables_argonaut();
   }
   void set_tunables_optimal() {
-    set_tunables_firefly();
+    set_tunables_hammer();
   }
   void set_tunables_default() {
     set_tunables_bobtail();
@@ -167,13 +178,21 @@ public:
     crush->chooseleaf_vary_r = n;
   }
 
+  int get_straw_calc_version() const {
+    return crush->straw_calc_version;
+  }
+  void set_straw_calc_version(int n) {
+    crush->straw_calc_version = n;
+  }
+
   bool has_argonaut_tunables() const {
     return
       crush->choose_local_tries == 2 &&
       crush->choose_local_fallback_tries == 5 &&
       crush->choose_total_tries == 19 &&
       crush->chooseleaf_descend_once == 0 &&
-      crush->chooseleaf_vary_r == 0;
+      crush->chooseleaf_vary_r == 0 &&
+      crush->straw_calc_version == 0;
   }
   bool has_bobtail_tunables() const {
     return
@@ -181,7 +200,8 @@ public:
       crush->choose_local_fallback_tries == 0 &&
       crush->choose_total_tries == 50 &&
       crush->chooseleaf_descend_once == 1 &&
-      crush->chooseleaf_vary_r == 0;
+      crush->chooseleaf_vary_r == 0 &&
+      crush->straw_calc_version == 0;
   }
   bool has_firefly_tunables() const {
     return
@@ -189,7 +209,17 @@ public:
       crush->choose_local_fallback_tries == 0 &&
       crush->choose_total_tries == 50 &&
       crush->chooseleaf_descend_once == 1 &&
-      crush->chooseleaf_vary_r == 1;
+      crush->chooseleaf_vary_r == 1 &&
+      crush->straw_calc_version == 0;
+  }
+  bool has_hammer_tunables() const {
+    return
+      crush->choose_local_tries == 0 &&
+      crush->choose_local_fallback_tries == 0 &&
+      crush->choose_total_tries == 50 &&
+      crush->chooseleaf_descend_once == 1 &&
+      crush->chooseleaf_vary_r == 1 &&
+      crush->straw_calc_version == 1;
   }
 
   bool has_optimal_tunables() const {
