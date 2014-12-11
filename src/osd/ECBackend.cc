@@ -832,7 +832,6 @@ void ECBackend::handle_sub_write(
     op.trim_rollback_to,
     !(op.t.empty()),
     localt);
-  localt->append(op.t);
   if (on_local_applied_sync) {
     dout(10) << "Queueing onreadable_sync: " << on_local_applied_sync << dendl;
     localt->register_on_applied_sync(on_local_applied_sync);
@@ -848,7 +847,10 @@ void ECBackend::handle_sub_write(
       new SubWriteApplied(this, msg, op.tid, op.at_version)));
   localt->register_on_applied(
     new ObjectStore::C_DeleteTransaction(localt));
-  get_parent()->queue_transaction(localt, msg);
+  list<ObjectStore::Transaction*> tls;
+  tls.push_back(localt);
+  tls.push_back(&op.t);
+  get_parent()->queue_transactions(tls, msg);
 }
 
 void ECBackend::handle_sub_read(

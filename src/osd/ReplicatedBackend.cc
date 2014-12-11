@@ -570,7 +570,6 @@ void ReplicatedBackend::submit_transaction(
     trim_rollback_to,
     true,
     &local_t);
-  (*op_t).append(local_t);
   
   op_t->register_on_applied_sync(on_local_applied_sync);
   op_t->register_on_applied(
@@ -581,8 +580,11 @@ void ReplicatedBackend::submit_transaction(
   op_t->register_on_commit(
     parent->bless_context(
       new C_OSD_OnOpCommit(this, &op)));
-      
-  parent->queue_transaction(op_t, op.op);
+
+  list<ObjectStore::Transaction*> tls;
+  tls.push_back(op_t);
+  tls.push_back(&local_t);
+  parent->queue_transactions(tls, op.op);
   delete t;
 }
 

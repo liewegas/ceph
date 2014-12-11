@@ -8011,14 +8011,16 @@ void ReplicatedBackend::sub_op_modify(OpRequestRef op)
   
   op->mark_started();
 
-  rm->opt.append(rm->localt);
   rm->opt.register_on_commit(
     parent->bless_context(
       new C_OSD_RepModifyCommit(this, rm)));
   rm->opt.register_on_applied(
     parent->bless_context(
       new C_OSD_RepModifyApply(this, rm)));
-  parent->queue_transaction(&(rm->opt), op);
+  list<ObjectStore::Transaction*> tls;
+  tls.push_back(&(rm->opt));
+  tls.push_back(&(rm->localt));
+  parent->queue_transactions(tls, op);
   // op is cleaned up by oncommit/onapply when both are executed
 }
 
