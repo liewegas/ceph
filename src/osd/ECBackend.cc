@@ -652,7 +652,7 @@ bool ECBackend::handle_message(
   switch (_op->get_req()->get_type()) {
   case MSG_OSD_EC_WRITE: {
     MOSDECSubOpWrite *op = static_cast<MOSDECSubOpWrite*>(_op->get_req());
-    handle_sub_write(op->op.from, _op, op->op);
+    handle_sub_write(op->op->from, _op, *op->op);
     return true;
   }
   case MSG_OSD_EC_WRITE_REPLY: {
@@ -810,7 +810,7 @@ void ECBackend::handle_sub_write(
     get_temp_coll(localt);
     add_temp_objs(op.temp_added);
   }
-  if (op.t.empty()) {
+  if (op.t->empty()) {
     for (set<hobject_t>::iterator i = op.temp_removed.begin();
 	 i != op.temp_removed.end();
 	 ++i) {
@@ -830,9 +830,8 @@ void ECBackend::handle_sub_write(
     op.updated_hit_set_history,
     op.trim_to,
     op.trim_rollback_to,
-    !(op.t.empty()),
+    !(op.t->empty()),
     localt);
-  localt->append(op.t);
   if (on_local_applied_sync) {
     dout(10) << "Queueing onreadable_sync: " << on_local_applied_sync << dendl;
     localt->register_on_applied_sync(on_local_applied_sync);
@@ -848,7 +847,13 @@ void ECBackend::handle_sub_write(
       new SubWriteApplied(this, msg, op.tid, op.at_version)));
   localt->register_on_applied(
     new ObjectStore::C_DeleteTransaction(localt));
-  get_parent()->queue_transaction(localt, msg);
+  localt->register_on_applied(
+    new ObjectStore::C_DeleteTransaction(op.t));
+  list<ObjectStore::Transaction*> tls;
+  tls.push_back(localt);
+  tls.push_back(op.t);
+  op.t = NULL;  // NOTE: we steal the txn from the caller's ECSubWrite
+  get_parent()->queue_transactions(tls, msg);
 }
 
 void ECBackend::handle_sub_read(
@@ -1501,13 +1506,13 @@ void ECBackend::check_op(Op *op)
 }
 
 void ECBackend::start_write(Op *op) {
-  map<shard_id_t, ObjectStore::Transaction> trans;
+  map<shard_id_t, ObjectStore::Transaction*> trans;
   for (set<pg_shard_t>::const_iterator i =
 	 get_parent()->get_actingbackfill_shards().begin();
        i != get_parent()->get_actingbackfill_shards().end();
        ++i) {
-    trans[i->shard];
-    trans[i->shard].set_use_tbl(parent->transaction_use_tbl());
+    trans[i->shard] = new ObjectStore::Transaction;
+    trans[i->shard]->set_use_tbl(parent->transaction_use_tbl());
   }
   op->t->generate_transactions(
     op->unstable_hash_infos,
@@ -1526,7 +1531,7 @@ void ECBackend::start_write(Op *op) {
        ++i) {
     op->pending_apply.insert(*i);
     op->pending_commit.insert(*i);
-    map<shard_id_t, ObjectStore::Transaction>::iterator iter =
+    map<shard_id_t, ObjectStore::Transaction*>::iterator iter =
       trans.find(i->shard);
     assert(iter != trans.end());
     bool should_send = get_parent()->should_send_op(*i, op->hoid);
@@ -1534,14 +1539,18 @@ void ECBackend::start_write(Op *op) {
       should_send ?
       get_info().stats :
       parent->get_shard_info().find(*i)->second.stats;
+    ObjectStore::Transaction *t = iter->second;
+    if (!should_send)
+      delete t;
+    trans.erase(iter);
 
-    ECSubWrite sop(
+    ECSubWrite *sop = new ECSubWrite(
       get_parent()->whoami_shard(),
       op->tid,
       op->reqid,
       op->hoid,
       stats,
-      should_send ? iter->second : ObjectStore::Transaction(),
+      t,
       op->version,
       op->trim_to,
       op->trim_rollback_to,
@@ -1553,9 +1562,10 @@ void ECBackend::start_write(Op *op) {
       handle_sub_write(
 	get_parent()->whoami_shard(),
 	op->client_op,
-	sop,
+	*sop,
 	op->on_local_applied_sync);
       op->on_local_applied_sync = 0;
+      delete sop;
     } else {
       MOSDECSubOpWrite *r = new MOSDECSubOpWrite(sop);
       r->set_priority(cct->_conf->osd_client_op_priority);
@@ -1564,6 +1574,11 @@ void ECBackend::start_write(Op *op) {
       get_parent()->send_message_osd_cluster(
 	i->osd, r, get_parent()->get_epoch());
     }
+  }
+  // release unused Transactions
+  while (!trans.empty()) {
+    delete trans.begin()->second;
+    trans.erase(trans.begin());
   }
 }
 
