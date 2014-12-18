@@ -633,6 +633,7 @@ public:
   void save_if_dirty(const std::set<entity_name_t> &tgt_sessions,
                      MDSGatherBuilder *gather_bld);
 };
+WRITE_CLASS_ENCODER_FEATURES(SessionMap);
 
 
 #endif
