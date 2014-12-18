@@ -1,5 +1,5 @@
 #include "include/CompatSet.h"
-TYPE(CompatSet)
+TYPE_FEATUREFUL(CompatSet)
 
 #include "include/filepath.h"
 TYPE(filepath)
@@ -34,7 +34,7 @@ TYPE(SloppyCRCMap)
 
 #include "msg/msg_types.h"
 TYPE(entity_name_t)
-TYPE(entity_addr_t)
+TYPE_FEATUREFUL(entity_addr_t)
 
 #include "osd/OSDMap.h"
 TYPE(osd_info_t)
@@ -76,7 +76,7 @@ TYPE(pg_nls_response_t)
 TYPE(object_copy_cursor_t)
 TYPE_FEATUREFUL(object_copy_data_t)
 TYPE(pg_create_t)
-TYPE(watch_info_t)
+TYPE_FEATUREFUL(watch_info_t)
 TYPE_FEATUREFUL(object_info_t)
 TYPE(SnapSet)
 TYPE_FEATUREFUL(ObjectRecoveryInfo)
@@ -374,7 +374,7 @@ TYPE_FEATUREFUL(rados::cls::lock::locker_info_t)
 #include "cls/lock/cls_lock_ops.h"
 TYPE(cls_lock_lock_op)
 TYPE(cls_lock_unlock_op)
-TYPE(cls_lock_break_op)
+TYPE_FEATUREFUL(cls_lock_break_op)
 TYPE(cls_lock_get_info_op)
 TYPE_FEATUREFUL(cls_lock_get_info_reply)
 TYPE(cls_lock_list_locks_reply)
