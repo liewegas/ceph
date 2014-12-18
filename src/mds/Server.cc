@@ -7244,7 +7244,8 @@ void Server::_logged_slave_rename(MDRequestRef& mdr,
       (*p)->state_clear(CDir::STATE_EXPORTBOUND);
 
     if (reply) {
-      ::encode(exported_client_map, reply->inode_export);
+      ::encode(exported_client_map, reply->inode_export,
+		mdr->session->connection->get_features());
       reply->inode_export.claim_append(inodebl);
       reply->inode_export_v = srcdnl->get_inode()->inode.version;
     }
