@@ -1103,6 +1103,7 @@ int librados::IoCtxImpl::watch(const object_t& oid,
   set_sync_op_version(objver);
 
   if (r < 0) {
+    delete linger_op->watch_context;
     objecter->linger_cancel(linger_op);
   }
 
@@ -1141,6 +1142,8 @@ int librados::IoCtxImpl::unwatch(uint64_t cookie)
   wr.watch(cookie, CEPH_OSD_WATCH_OP_UNWATCH);
   objecter->mutate(linger_op->target.base_oid, oloc, wr,
 		   snapc, ceph_clock_now(client->cct), 0, NULL, &onfinish, &ver);
+
+  delete linger_op->watch_context;
   objecter->linger_cancel(linger_op);
 
   int r = onfinish.wait();
