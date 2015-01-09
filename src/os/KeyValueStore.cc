@@ -2399,16 +2399,15 @@ int KeyValueStore::_collection_remove_recursive(const coll_t &cid,
   vector<ghobject_t> objects;
   ghobject_t max;
   while (!max.is_max()) {
-    int r = collection_list_partial(cid, max, 200, 300, 0, &objects, &max);
+    r = collection_list_partial(cid, max, 200, 300, 0, &objects, &max);
     if (r < 0)
-      return r;
+      goto out;
 
     for (vector<ghobject_t>::iterator i = objects.begin();
          i != objects.end(); ++i) {
       r = _remove(cid, *i, t);
-
       if (r < 0)
-        return r;
+	goto out;
     }
   }
 
@@ -2418,6 +2417,7 @@ int KeyValueStore::_collection_remove_recursive(const coll_t &cid,
     t.set_collections(collections);
   }
 
+ out:
   dout(10) << __func__ << " " << cid  << " r = " << r << dendl;
   return r;
 }
