@@ -206,6 +206,7 @@ class KeyValueStore : public ObjectStore,
 
   Finisher ondisk_finisher;
 
+  RWLock collections_lock;
   set<coll_t> collections;
 
   Mutex lock;

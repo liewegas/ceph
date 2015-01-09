@@ -521,6 +521,7 @@ KeyValueStore::KeyValueStore(const std::string &base,
   fsid_fd(-1), current_fd(-1),
   backend(NULL),
   ondisk_finisher(g_ceph_context),
+  collections_lock("KeyValueStore::collections_lock"),
   lock("KeyValueStore::lock"),
   default_osr("default"),
   op_queue_len(0), op_queue_bytes(0),
@@ -687,6 +688,7 @@ int KeyValueStore::mkfs()
       goto close_fsid_fd;
     }
 
+    RWLock::RLocker rl(collections_lock);
     bufferlist bl;
     ::encode(collections, bl);
     KeyValueDB::Transaction t = store->get_transaction();
@@ -949,8 +951,11 @@ int KeyValueStore::mount()
       goto close_current_fd;
     }
     bufferlist::iterator p = values["collections"].begin();
-    ::decode(collections, p);
-    dout(20) << "collections: " << collections << dendl;
+    {
+      RWLock::WLocker l(collections_lock);
+      ::decode(collections, p);
+      dout(20) << "collections: " << collections << dendl;
+    }
 
     StripObjectMap *dbomap = new StripObjectMap(store);
     ret = dbomap->init(do_update);
@@ -2234,7 +2239,7 @@ int KeyValueStore::_create_collection(coll_t c, BufferTransaction &t)
   int r = 0;
   bufferlist bl;
 
-  Mutex::Locker l(lock);
+  RWLock::WLocker l(collections_lock);
   if (collections.count(c)) {
     r = -EEXIST;
     goto out;
@@ -2256,11 +2261,13 @@ int KeyValueStore::_destroy_collection(coll_t c, BufferTransaction &t)
   uint64_t modified_object = 0;
   vector<ghobject_t> oids;
   bufferlist bl;
-  Mutex::Locker l(lock);
 
-  if (!collections.count(c)) {
-    r = -ENOENT;
-    goto out;
+  {
+    RWLock::RLocker l(collections_lock);
+    if (!collections.count(c)) {
+      r = -ENOENT;
+      goto out;
+    }
   }
 
   // All modified objects are marked deleted
@@ -2293,8 +2300,11 @@ int KeyValueStore::_destroy_collection(coll_t c, BufferTransaction &t)
     }
   }
 
-  collections.erase(c);
-  t.set_collections(collections);
+  {
+    RWLock::WLocker l(collections_lock);
+    collections.erase(c);
+    t.set_collections(collections);
+  }
   r = 0;
 
 out:
@@ -2380,8 +2390,11 @@ int KeyValueStore::_collection_remove_recursive(const coll_t &cid,
   dout(15) << __func__ << " " << cid << dendl;
   int r = 0;
 
-  if (collections.count(cid) == 0)
-    return -ENOENT;
+  {
+    RWLock::RLocker l(collections_lock);
+    if (collections.count(cid) == 0)
+      return -ENOENT;
+  }
 
   vector<ghobject_t> objects;
   ghobject_t max;
@@ -2399,8 +2412,11 @@ int KeyValueStore::_collection_remove_recursive(const coll_t &cid,
     }
   }
 
-  collections.erase(cid);
-  t.set_collections(collections);
+  {
+    RWLock::WLocker l(collections_lock);
+    collections.erase(cid);
+    t.set_collections(collections);
+  }
 
   dout(10) << __func__ << " " << cid  << " r = " << r << dendl;
   return r;
@@ -2409,6 +2425,7 @@ int KeyValueStore::_collection_remove_recursive(const coll_t &cid,
 int KeyValueStore::list_collections(vector<coll_t>& ls)
 {
   dout(10) << __func__ << " " << dendl;
+  RWLock::RLocker l(collections_lock);
   for (set<coll_t>::iterator p = collections.begin(); p != collections.end();
        ++p) {
     ls.push_back(*p);
@@ -2419,6 +2436,7 @@ int KeyValueStore::list_collections(vector<coll_t>& ls)
 bool KeyValueStore::collection_exists(coll_t c)
 {
   dout(10) << __func__ << " " << dendl;
+  RWLock::RLocker l(collections_lock);
   return collections.count(c);
 }
 
@@ -2756,10 +2774,13 @@ int KeyValueStore::_split_collection(coll_t cid, uint32_t bits, uint32_t rem,
 
     StripObjectMap::StripObjectHeaderRef header;
 
-    if (collections.count(cid) == 0)
-      return -ENOENT;
-    if (collections.count(dest) == 0)
-      return -ENOENT;
+    {
+      RWLock::RLocker l(collections_lock);
+      if (collections.count(cid) == 0)
+	return -ENOENT;
+      if (collections.count(dest) == 0)
+	return -ENOENT;
+    }
 
     vector<ghobject_t> objects;
     ghobject_t next, current;
