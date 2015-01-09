@@ -110,8 +110,8 @@ string GenericObjectMap::header_key(const coll_t &cid, const ghobject_t &oid)
   full_name.append(GHOBJECT_KEY_SEP_S);
 
   char buf[PATH_MAX];
-  char *t = buf;
-  char *end = t + sizeof(buf);
+  char *t;
+  char *end;
 
   // make field ordering match with ghobject_t compare operations
   t = buf;
