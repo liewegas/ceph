@@ -688,7 +688,6 @@ int KeyValueStore::mkfs()
       goto close_fsid_fd;
     }
 
-    RWLock::RLocker rl(collections_lock);
     bufferlist bl;
     ::encode(collections, bl);
     KeyValueDB::Transaction t = store->get_transaction();
@@ -951,11 +950,8 @@ int KeyValueStore::mount()
       goto close_current_fd;
     }
     bufferlist::iterator p = values["collections"].begin();
-    {
-      RWLock::WLocker l(collections_lock);
-      ::decode(collections, p);
-      dout(20) << "collections: " << collections << dendl;
-    }
+    ::decode(collections, p);
+    dout(20) << "collections: " << collections << dendl;
 
     StripObjectMap *dbomap = new StripObjectMap(store);
     ret = dbomap->init(do_update);
