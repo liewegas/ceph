@@ -163,10 +163,7 @@ public:
   }
   bool is_min() const {
     // this needs to match how it's constructed
-    return snap == 0 &&
-	   hash == 0 &&
-	   !max &&
-	   pool == INT64_MIN;
+    return *this == hobject_t();
   }
 
   static uint32_t _reverse_nibbles(uint32_t retval) {
