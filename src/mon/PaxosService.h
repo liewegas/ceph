@@ -50,11 +50,23 @@ class PaxosService {
    * be used mainly for store-related operations.
    */
   string service_name;
+
   /**
-   * If we are or have queued anything for proposal, this variable will be true
-   * until our proposal has been finished.
+   * Service states
    */
-  bool proposing;
+  enum {
+    STATE_IDLE,
+    STATE_PROPOSING,
+  } state;
+
+  const char *get_state_name() {
+    switch (state) {
+    case STATE_IDLE: return "idle";
+    case STATE_PROPOSING: return "proposing";
+    default: assert(0 == "bad state name");
+      return "???";
+    }
+  }
 
  protected:
   /**
@@ -169,7 +181,7 @@ protected:
   public:
     C_Committed(PaxosService *p) : ps(p) { }
     void finish(int r) {
-      ps->proposing = false;
+      ps->state = STATE_IDLE;
       if (r >= 0)
 	ps->_active();
       else if (r == -ECANCELED || r == -EAGAIN)
@@ -192,7 +204,7 @@ public:
    */
   PaxosService(Monitor *mn, Paxos *p, string name) 
     : mon(mn), paxos(p), service_name(name),
-      proposing(false),
+      state(STATE_IDLE),
       service_version(0), proposal_timer(0), have_pending(false),
       format_version(0),
       last_committed_name("last_committed"),
@@ -536,7 +548,10 @@ public:
    * @returns true if we are proposing; false otherwise.
    */
   bool is_proposing() {
-    return proposing;
+    return state == STATE_PROPOSING;
+  }
+  bool is_idle() {
+    return state == STATE_IDLE;
   }
 
   /**
@@ -548,7 +563,7 @@ public:
    */
   bool is_active() {
     return
-      !is_proposing() &&
+      is_idle() &&
       (paxos->is_active() || paxos->is_updating() || paxos->is_writing());
   }
 
@@ -585,7 +600,7 @@ public:
    */
   bool is_writeable() {
     return
-      !is_proposing() &&
+      is_idle() &&
       is_write_ready() &&
       (paxos->is_active() || paxos->is_updating() || paxos->is_writing());
   }
@@ -618,11 +633,10 @@ public:
    * @param c The callback to be awaken once we become active.
    */
   void wait_for_active(Context *c) {
-    if (!is_proposing()) {
+    if (is_proposing())
+      wait_for_finished_proposal(c);
+    else
       paxos->wait_for_active(c);
-      return;
-    }
-    wait_for_finished_proposal(c);
   }
 
   /**

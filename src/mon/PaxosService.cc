@@ -24,12 +24,14 @@
 
 #define dout_subsys ceph_subsys_paxos
 #undef dout_prefix
-#define dout_prefix _prefix(_dout, mon, paxos, service_name, get_first_committed(), get_last_committed())
-static ostream& _prefix(std::ostream *_dout, Monitor *mon, Paxos *paxos, string service_name,
+#define dout_prefix _prefix(_dout, mon, paxos, service_name, get_state_name(), get_first_committed(), get_last_committed())
+static ostream& _prefix(std::ostream *_dout, Monitor *mon, Paxos *paxos, const string& service_name, const char *state_name,
 			version_t fc, version_t lc) {
   return *_dout << "mon." << mon->name << "@" << mon->rank
 		<< "(" << mon->get_state_name()
-		<< ").paxosservice(" << service_name << " " << fc << ".." << lc << ") ";
+		<< ").paxosservice(" << service_name
+		<< " " << state_name
+		<< " " << fc << ".." << lc << ") ";
 }
 
 bool PaxosService::dispatch(PaxosServiceMessage *m)
@@ -170,7 +172,7 @@ void PaxosService::propose_pending()
 {
   dout(10) << "propose_pending" << dendl;
   assert(have_pending);
-  assert(!proposing);
+  assert(is_idle());
   assert(mon->is_leader());
   assert(is_active());
 
@@ -202,7 +204,7 @@ void PaxosService::propose_pending()
   }
 
   // apply to paxos
-  proposing = true;
+  state = STATE_PROPOSING;
   paxos->queue_pending_finisher(new C_Committed(this));
   paxos->trigger_propose();
 }
@@ -235,7 +237,7 @@ void PaxosService::restart()
     discard_pending();
     have_pending = false;
   }
-  proposing = false;
+  state = STATE_IDLE;
 
   on_restart();
 }
