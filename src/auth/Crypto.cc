@@ -117,21 +117,42 @@ public:
 
 class CryptoAESKeyHandler : public CryptoKeyHandler {
 public:
+  CryptoPP::AES::Encryption *enc_key;
+  CryptoPP::CBC_Mode_ExternalCipher::Encryption *enc_cbc;
+  CryptoPP::AES::Decryption *dec_key;
+  CryptoPP::CBC_Mode_ExternalCipher::Decryption *dec_cbc;
+
+  CryptoAESKeyHandler()
+    : enc_key(NULL), enc_cbc(NULL),
+      dec_key(NULL), dec_cbc(NULL) {}
+  ~CryptoAESKeyHandler() {
+    delete enc_key;
+    delete enc_cbc;
+    delete dec_key;
+    delete dec_cbc;
+  }
+
   int init(const bufferptr& s, ostringstream& err) {
     secret = s;
+
+    enc_key = new CryptoPP::AES::Encryption(
+      (byte*)secret.c_str(), CryptoPP::AES::DEFAULT_KEYLENGTH);
+    enc_cbc = new CryptoPP::CBC_Mode_ExternalCipher::Encryption(
+      *enc_key, (const byte*)CEPH_AES_IV);
+
+    dec_key = new CryptoPP::AES::Decryption(
+      (byte*)secret.c_str(), CryptoPP::AES::DEFAULT_KEYLENGTH);
+    dec_cbc = new CryptoPP::CBC_Mode_ExternalCipher::Decryption(
+      *dec_key, (const byte*)CEPH_AES_IV);
+
     return 0;
   }
 
   void encrypt(const bufferlist& in,
 	       bufferlist& out, std::string &error) const {
-    const unsigned char *key = (const unsigned char *)secret.c_str();
-
     string ciphertext;
-    CryptoPP::AES::Encryption aesEncryption(key, CryptoPP::AES::DEFAULT_KEYLENGTH);
-    CryptoPP::CBC_Mode_ExternalCipher::Encryption cbcEncryption(
-      aesEncryption, (const byte*)CEPH_AES_IV);
     CryptoPP::StringSink *sink = new CryptoPP::StringSink(ciphertext);
-    CryptoPP::StreamTransformationFilter stfEncryptor(cbcEncryption, sink);
+    CryptoPP::StreamTransformationFilter stfEncryptor(*enc_cbc, sink);
 
     for (std::list<bufferptr>::const_iterator it = in.buffers().begin();
 	 it != in.buffers().end(); ++it) {
@@ -151,15 +172,9 @@ public:
 
   void decrypt(const bufferlist& in,
 	       bufferlist& out, std::string &error) const {
-    const unsigned char *key = (const unsigned char *)secret.c_str();
-
-    CryptoPP::AES::Decryption aesDecryption(key, CryptoPP::AES::DEFAULT_KEYLENGTH);
-    CryptoPP::CBC_Mode_ExternalCipher::Decryption cbcDecryption(
-      aesDecryption, (const byte*)CEPH_AES_IV );
-
     string decryptedtext;
     CryptoPP::StringSink *sink = new CryptoPP::StringSink(decryptedtext);
-    CryptoPP::StreamTransformationFilter stfDecryptor(cbcDecryption, sink);
+    CryptoPP::StreamTransformationFilter stfDecryptor(*dec_cbc, sink);
     for (std::list<bufferptr>::const_iterator it = in.buffers().begin();
 	 it != in.buffers().end(); ++it) {
       const unsigned char *in_buf = (const unsigned char *)it->c_str();
