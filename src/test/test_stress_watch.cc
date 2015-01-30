@@ -40,7 +40,7 @@ public:
 
 struct WatcherUnwatcher : public Thread {
   string pool;
-  WatcherUnwatcher(string& _pool) : pool(_pool) {}
+  WatcherUnwatcher(string& _pool) : Thread("WatcherUnwatcher"), pool(_pool) {}
 
   void *entry() {
     Rados cluster;

@@ -24,6 +24,7 @@
 #include "Pipe.h"
 #include "SimpleMessenger.h"
 
+#include "include/stringify.h"
 #include "common/debug.h"
 #include "common/errno.h"
 
@@ -36,6 +37,13 @@
 /********************************************
  * Accepter
  */
+
+Accepter::Accepter(SimpleMessenger *r, uint64_t n)
+  : Thread("SimpleMessenger " + r->name + " accepter " +
+	   stringify(r->get_myinst())),
+    msgr(r), done(false), listen_sd(-1), nonce(n)
+{
+}
 
 int Accepter::bind(const entity_addr_t &bind_addr, const set<int>& avoid_ports)
 {

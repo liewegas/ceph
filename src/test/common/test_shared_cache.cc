@@ -51,11 +51,12 @@ public:
     enum in_method_t { LOOKUP, LOWER_BOUND } in_method;
 
     Thread_wait(SharedLRUTest& _cache, unsigned int _key, 
-                int _value, in_method_t _in_method) :
-      cache(_cache),
-      key(_key),
-      value(_value),
-      in_method(_in_method) { }
+                int _value, in_method_t _in_method)
+      : Thread("Thread_wait"),
+	cache(_cache),
+	key(_key),
+	value(_value),
+	in_method(_in_method) { }
 
     virtual void * entry() {
       switch (in_method) {

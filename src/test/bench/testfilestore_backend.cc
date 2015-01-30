@@ -18,7 +18,9 @@ struct C_DeleteTransWrapper : public Context {
 
 TestFileStoreBackend::TestFileStoreBackend(
   ObjectStore *os, bool write_infos)
-  : os(os), finisher(g_ceph_context), write_infos(write_infos)
+  : os(os),
+    finisher(g_ceph_context, "TestFileStoreBackend::finisher"),
+    write_infos(write_infos)
 {
   finisher.start();
 }

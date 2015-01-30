@@ -33,7 +33,9 @@
 class SafeTimerThread : public Thread {
   SafeTimer *parent;
 public:
-  SafeTimerThread(SafeTimer *s) : parent(s) {}
+  SafeTimerThread(SafeTimer *s, string name)
+    : Thread(name),
+      parent(s) {}
   void *entry() {
     parent->timer_thread();
     return NULL;
@@ -45,8 +47,9 @@ public:
 typedef std::multimap < utime_t, Context *> scheduled_map_t;
 typedef std::map < Context*, scheduled_map_t::iterator > event_lookup_map_t;
 
-SafeTimer::SafeTimer(CephContext *cct_, Mutex &l, bool safe_callbacks)
+SafeTimer::SafeTimer(CephContext *cct_, Mutex &l, string name, bool safe_callbacks)
   : cct(cct_), lock(l),
+    name(name),
     safe_callbacks(safe_callbacks),
     thread(NULL),
     stopping(false)
@@ -61,7 +64,7 @@ SafeTimer::~SafeTimer()
 void SafeTimer::init()
 {
   ldout(cct,10) << "init" << dendl;
-  thread = new SafeTimerThread(this);
+  thread = new SafeTimerThread(this, "SafeTimer " + name);
   thread->create();
 }
 

@@ -21,8 +21,8 @@ MDSUtility::MDSUtility() :
   Dispatcher(g_ceph_context),
   objecter(NULL),
   lock("MDSUtility::lock"),
-  timer(g_ceph_context, lock),
-  finisher(g_ceph_context, "MDSUtility"),
+  timer(g_ceph_context, lock, "MDSUtility::timer"),
+  finisher(g_ceph_context, "MDSUtility::finisher"),
   waiting_for_mds_map(NULL)
 {
   monc = new MonClient(g_ceph_context);

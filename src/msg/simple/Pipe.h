@@ -46,7 +46,7 @@ class DispatchQueue;
     class Reader : public Thread {
       Pipe *pipe;
     public:
-      Reader(Pipe *p) : pipe(p) {}
+      Reader(Pipe *p, string tname) : Thread(tname), pipe(p) {}
       void *entry() { pipe->reader(); return 0; }
     } reader_thread;
     friend class Reader;
@@ -58,7 +58,7 @@ class DispatchQueue;
     class Writer : public Thread {
       Pipe *pipe;
     public:
-      Writer(Pipe *p) : pipe(p) {}
+      Writer(Pipe *p, string tname) : Thread(tname), pipe(p) {}
       void *entry() { pipe->writer(); return 0; }
     } writer_thread;
     friend class Writer;
@@ -83,13 +83,7 @@ class DispatchQueue;
       bool stop_fast_dispatching_flag; // we need to stop fast dispatching
 
     public:
-      DelayedDelivery(Pipe *p)
-	: pipe(p),
-	  delay_lock("Pipe::DelayedDelivery::delay_lock"), flush_count(0),
-	  active_flush(false),
-	  stop_delayed_delivery(false),
-	  delay_dispatching(false),
-	  stop_fast_dispatching_flag(false) { }
+      DelayedDelivery(Pipe *p);
       ~DelayedDelivery() {
 	discard();
       }

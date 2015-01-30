@@ -176,7 +176,7 @@ class TestStub : public Dispatcher
     : Dispatcher(cct),
       monc(cct),
       lock(who.append("::lock").c_str()),
-      timer(cct, lock),
+      timer(cct, lock, "TestStub::timer"),
       do_shutdown(false),
       tick_seconds(0.0) { }
 };
@@ -1073,7 +1073,7 @@ int main(int argc, const char *argv[])
   register_async_signal_handler_oneshot(SIGTERM, handle_test_signal);
 
   shutdown_lock.Lock();
-  shutdown_timer = new SafeTimer(g_ceph_context, shutdown_lock);
+  shutdown_timer = new SafeTimer(g_ceph_context, shutdown_lock, "shutdown_timer");
   shutdown_timer->init();
   if (duration != 0) {
     std::cout << __func__

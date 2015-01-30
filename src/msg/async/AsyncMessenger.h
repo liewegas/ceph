@@ -19,6 +19,7 @@
 
 #include "include/types.h"
 #include "include/xlist.h"
+#include "include/stringify.h"
 
 #include <list>
 #include <map>
@@ -50,7 +51,8 @@ class Worker : public Thread {
  public:
   EventCenter center;
   Worker(CephContext *c, WorkerPool *p, int i)
-    : cct(c), pool(p), done(false), id(i), center(c) {
+    : Thread("AsyncMessenger::Worker " + stringify(i)),
+      cct(c), pool(p), done(false), id(i), center(c) {
     center.init(5000);
   }
   void *entry();

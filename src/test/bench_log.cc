@@ -2,6 +2,7 @@
 // vim: ts=8 sw=2 smarttab
 
 #include "include/types.h"
+#include "include/stringify.h"
 #include "common/Thread.h"
 #include "common/debug.h"
 #include "common/Clock.h"
@@ -13,7 +14,9 @@ struct T : public Thread {
   int num;
   set<int> myset;
   map<int,string> mymap;
-  T(int n) : num(n) {
+  T(int n)
+    : Thread("thread " + stringify(n)),
+      num(n) {
     myset.insert(123);
     myset.insert(456);
     mymap[1] = "foo";

@@ -73,10 +73,10 @@ librados::RadosClient::RadosClient(CephContext *cct_)
     instance_id(0),
     objecter(NULL),
     lock("librados::RadosClient::lock"),
-    timer(cct, lock),
+    timer(cct, lock, "librados::RadosClient::timer"),
     refcnt(1),
     log_last_version(0), log_cb(NULL), log_cb_arg(NULL),
-    finisher(new Finisher(cct))
+    finisher(new Finisher(cct, "librados::RadosClient::finisher"))
 {
 }
 

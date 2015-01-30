@@ -35,7 +35,8 @@ static void log_on_exit(void *p)
 }
 
 Log::Log(SubsystemMap *s)
-  : m_indirect_this(NULL),
+  : Thread("Log"),
+    m_indirect_this(NULL),
     m_subs(s),
     m_queue_mutex_holder(0),
     m_flush_mutex_holder(0),

@@ -31,8 +31,12 @@
 #define dout_prefix *_dout << "mds.beacon." << name << ' '
 
 
-Beacon::Beacon(CephContext *cct_, MonClient *monc_, std::string name_) :
-  Dispatcher(cct_), lock("Beacon"), monc(monc_), timer(g_ceph_context, lock), name(name_)
+Beacon::Beacon(CephContext *cct_, MonClient *monc_, std::string name_)
+  : Dispatcher(cct_),
+    lock("Beacon"),
+    monc(monc_),
+    timer(g_ceph_context, lock, "MDS::Beacon::timer"),
+    name(name_)
 {
   want_state = MDSMap::STATE_NULL;
   last_send = 0;

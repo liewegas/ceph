@@ -105,7 +105,8 @@ static void add_cleanup_file(const char *file)
 
 
 AdminSocket::AdminSocket(CephContext *cct)
-  : m_cct(cct),
+  : Thread("AdminSocket"),
+    m_cct(cct),
     m_sock_fd(-1),
     m_shutdown_rd_fd(-1),
     m_shutdown_wr_fd(-1),

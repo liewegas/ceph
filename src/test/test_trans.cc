@@ -24,6 +24,7 @@
 #define dout_prefix *_dout
 
 struct Foo : public Thread {
+  Foo() : Thread("Foo") {}
   void *entry() {
     dout(0) << "foo started" << dendl;
     sleep(1);

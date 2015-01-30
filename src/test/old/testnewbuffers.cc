@@ -13,7 +13,7 @@ using namespace std;
   class Th : public Thread {
   public:
 	bufferlist bl;
-	Th(bufferlist& o) : bl(o) { }
+        Th(bufferlist& o) : Thread("Th"), bl(o) { }
 	
 	void *entry() {
 	  //cout << "start" << endl;

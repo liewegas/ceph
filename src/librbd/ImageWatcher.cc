@@ -36,9 +36,9 @@ enum {
 ImageWatcher::ImageWatcher(ImageCtx &image_ctx)
   : m_image_ctx(image_ctx), m_watch_ctx(*this), m_handle(0),
     m_lock_owner_state(LOCK_OWNER_STATE_NOT_LOCKED),
-    m_finisher(new Finisher(image_ctx.cct)),
+    m_finisher(new Finisher(image_ctx.cct, "m_finisher")),
     m_timer_lock("librbd::ImageWatcher::m_timer_lock"),
-    m_timer(new SafeTimer(image_ctx.cct, m_timer_lock)),
+    m_timer(new SafeTimer(image_ctx.cct, m_timer_lock, "m_timer")),
     m_watch_lock("librbd::ImageWatcher::m_watch_lock"), m_watch_error(0),
     m_aio_request_lock("librbd::ImageWatcher::m_aio_request_lock"),
     m_retrying_aio_requests(false), m_retry_aio_context(NULL)

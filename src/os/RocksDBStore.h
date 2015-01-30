@@ -63,7 +63,8 @@ class RocksDBStore : public KeyValueDB {
   class CompactThread : public Thread {
     RocksDBStore *db;
   public:
-    CompactThread(RocksDBStore *d) : db(d) {}
+    CompactThread(RocksDBStore *d)
+      : Thread("RocksDBStore::compact_thread"), db(d) {}
     void *entry() {
       db->compact_thread_entry();
       return NULL;

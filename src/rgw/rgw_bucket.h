@@ -331,7 +331,9 @@ class RGWDataChangesLog {
     Cond cond;
 
   public:
-    ChangesRenewThread(CephContext *_cct, RGWDataChangesLog *_log) : cct(_cct), log(_log), lock("ChangesRenewThread") {}
+    ChangesRenewThread(CephContext *_cct, RGWDataChangesLog *_log)
+      : Thread("RGWDataChangesLog::renew_thread"),
+	cct(_cct), log(_log), lock("ChangesRenewThread") {}
     void *entry();
     void stop();
   };

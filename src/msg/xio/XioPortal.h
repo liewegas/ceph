@@ -129,11 +129,12 @@ private:
   friend class XioMessenger;
 
 public:
-  XioPortal(Messenger *_msgr) :
-  msgr(_msgr), ctx(NULL), server(NULL), submit_q(), xio_uri(""),
-  portal_id(NULL), _shutdown(false), drained(false),
-  magic(0),
-  special_handling(0)
+  XioPortal(Messenger *_msgr)
+    : Thread("XioMessenger::XioPortal"),
+      msgr(_msgr), ctx(NULL), server(NULL), submit_q(), xio_uri(""),
+      portal_id(NULL), _shutdown(false), drained(false),
+      magic(0),
+      special_handling(0)
     {
       pthread_spin_init(&sp, PTHREAD_PROCESS_PRIVATE);
       pthread_mutex_init(&mtx, NULL);

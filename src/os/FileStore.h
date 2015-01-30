@@ -168,7 +168,7 @@ private:
   void sync_entry();
   struct SyncThread : public Thread {
     FileStore *fs;
-    SyncThread(FileStore *f) : fs(f) {}
+    SyncThread(FileStore *f) : Thread("FileStore::sync_thread"), fs(f) {}
     void *entry() {
       fs->sync_entry();
       return 0;

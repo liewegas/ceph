@@ -41,6 +41,10 @@ private:
   list<Dispatcher*> dispatchers;
   list <Dispatcher*> fast_dispatchers;
 
+public:
+  /// logical name of the messenger
+  string name;
+
 protected:
   /// the "name" of the local daemon. eg client.99
   entity_inst_t my_inst;
@@ -125,8 +129,9 @@ public:
    * Messenger users should construct full implementations directly,
    * or use the create() function.
    */
-  Messenger(CephContext *cct_, entity_name_t w)
-    : my_inst(),
+  Messenger(CephContext *cct_, entity_name_t w, string lname)
+    : name(lname),
+      my_inst(),
       default_send_priority(CEPH_MSG_PRIO_DEFAULT), started(false),
       magic(0), cct(cct_),
       crcflags(get_default_crc_flags(cct->_conf))

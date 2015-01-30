@@ -37,10 +37,11 @@ protected:
     int64_t count;
     bool waited;
 
-    Thread_get(Throttle& _throttle, int64_t _count) : 
-      throttle(_throttle),
-      count(_count),
-      waited(false)
+    Thread_get(Throttle& _throttle, int64_t _count)
+      : Thread("Thread_get"),
+	throttle(_throttle),
+	count(_count),
+	waited(false)
     {
     }
     

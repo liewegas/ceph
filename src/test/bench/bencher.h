@@ -46,15 +46,16 @@ public:
     Backend *backend,
     uint64_t max_in_flight,
     uint64_t max_duration,
-    uint64_t max_ops) :
-    op_dist(op_gen),
-    stat_collector(stat_collector),
-    backend(backend),
-    max_in_flight(max_in_flight),
-    max_duration(max_duration),
-    max_ops(max_ops),
-    lock("Bencher::lock"),
-    open_ops(0)
+    uint64_t max_ops)
+    : Thread("Bencher"),
+      op_dist(op_gen),
+      stat_collector(stat_collector),
+      backend(backend),
+      max_in_flight(max_in_flight),
+      max_duration(max_duration),
+      max_ops(max_ops),
+      lock("Bencher::lock"),
+      open_ops(0)
   {}
   Bencher(
     Distribution<boost::tuple<std::string, uint64_t, uint64_t, OpType> > *op_gen,
@@ -62,15 +63,16 @@ public:
     Backend *backend,
     uint64_t max_in_flight,
     uint64_t max_duration,
-    uint64_t max_ops) :
-    op_dist(op_gen),
-    stat_collector(stat_collector),
-    backend(backend),
-    max_in_flight(max_in_flight),
-    max_duration(max_duration),
-    max_ops(max_ops),
-    lock("Bencher::lock"),
-    open_ops(0)
+    uint64_t max_ops)
+    : Thread("Bencher"),
+      op_dist(op_gen),
+      stat_collector(stat_collector),
+      backend(backend),
+      max_in_flight(max_in_flight),
+      max_duration(max_duration),
+      max_ops(max_ops),
+      lock("Bencher::lock"),
+      open_ops(0)
   {}
   Bencher(
     Distribution<std::string> *object_gen,
@@ -81,17 +83,18 @@ public:
     Backend *backend,
     uint64_t max_in_flight,
     uint64_t max_duration,
-    uint64_t max_ops) :
-    op_dist(
-      new FourTupleDist<std::string, uint64_t, uint64_t, OpType>(
-	object_gen, offset_gen, length_gen, op_type_gen)),
-    stat_collector(stat_collector),
-    backend(backend),
-    max_in_flight(max_in_flight),
-    max_duration(max_duration),
-    max_ops(max_ops),
-    lock("Bencher::lock"),
-    open_ops(0)
+    uint64_t max_ops)
+    : Thread("Bencher"),
+      op_dist(
+        new FourTupleDist<std::string, uint64_t, uint64_t, OpType>(
+	  object_gen, offset_gen, length_gen, op_type_gen)),
+      stat_collector(stat_collector),
+      backend(backend),
+      max_in_flight(max_in_flight),
+      max_duration(max_duration),
+      max_ops(max_ops),
+      lock("Bencher::lock"),
+      open_ops(0)
   {}
 
   void init(

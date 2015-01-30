@@ -87,7 +87,7 @@
 MDS::MDS(const std::string &n, Messenger *m, MonClient *mc) : 
   Dispatcher(m->cct),
   mds_lock("MDS::mds_lock"),
-  timer(m->cct, mds_lock),
+  timer(m->cct, mds_lock, "MDS::timer"),
   hb(NULL),
   beacon(m->cct, mc, n),
   authorize_handler_cluster_registry(new AuthAuthorizeHandlerRegistry(m->cct,
@@ -108,7 +108,7 @@ MDS::MDS(const std::string &n, Messenger *m, MonClient *mc) :
   log_client(m->cct, messenger, &mc->monmap, LogClient::NO_FLAGS),
   op_tracker(cct, m->cct->_conf->mds_enable_op_tracker, 
                      m->cct->_conf->osd_num_op_tracker_shard),
-  finisher(cct),
+  finisher(cct, "MDS::finisher"),
   osd_epoch_barrier(0),
   sessionmap(this),
   progress_thread(this),

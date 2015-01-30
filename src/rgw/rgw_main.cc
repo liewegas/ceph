@@ -831,7 +831,8 @@ public:
 class RGWProcessControlThread : public Thread {
   RGWProcess *pprocess;
 public:
-  RGWProcessControlThread(RGWProcess *_pprocess) : pprocess(_pprocess) {}
+  RGWProcessControlThread(RGWProcess *_pprocess)
+    : Thread("RGWProcessControllThread"), pprocess(_pprocess) {}
 
   void *entry() {
     pprocess->run();
@@ -1004,7 +1005,7 @@ int main(int argc, const char **argv)
     global_init_daemonize(g_ceph_context, 0);
   }
   Mutex mutex("main");
-  SafeTimer init_timer(g_ceph_context, mutex);
+  SafeTimer init_timer(g_ceph_context, mutex, "init_timer");
   init_timer.init();
   mutex.Lock();
   init_timer.add_event_after(g_conf->rgw_init_timeout, new C_InitTimeout);

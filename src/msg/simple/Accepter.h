@@ -31,7 +31,7 @@ class Accepter : public Thread {
   uint64_t nonce;
 
 public:
-  Accepter(SimpleMessenger *r, uint64_t n) : msgr(r), done(false), listen_sd(-1), nonce(n) {}
+  Accepter(SimpleMessenger *r, uint64_t n);
     
   void *entry();
   void stop();

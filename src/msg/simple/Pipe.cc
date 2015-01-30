@@ -22,6 +22,7 @@
 #include "Pipe.h"
 #include "SimpleMessenger.h"
 
+#include "include/stringify.h"
 #include "common/debug.h"
 #include "common/errno.h"
 
@@ -74,8 +75,10 @@ ostream& Pipe::_pipe_prefix(std::ostream *_dout) {
 
 Pipe::Pipe(SimpleMessenger *r, int st, PipeConnection *con)
   : RefCountedObject(r->cct),
-    reader_thread(this),
-    writer_thread(this),
+    reader_thread(this, "SimpleMessenger " + r->name + " " +
+		  stringify(peer_addr) + " Pipe::reader_thread"),
+    writer_thread(this, "SimpleMessenger " + r->name + " " +
+		  stringify(peer_addr) + " Pipe::writer_thread"),
     delay_thread(NULL),
     msgr(r),
     conn_id(r->dispatch_queue.get_id()),
@@ -176,6 +179,18 @@ void Pipe::join_reader()
   reader_thread.join();
   pipe_lock.Lock();
   reader_needs_join = false;
+}
+
+Pipe::DelayedDelivery::DelayedDelivery(Pipe *p)
+  : Thread("SimpleMessenger " + pipe->msgr->name + " " +
+	   stringify(p->peer_addr) + " delay_thread"),
+    pipe(p),
+    delay_lock("Pipe::DelayedDelivery::delay_lock"), flush_count(0),
+    active_flush(false),
+    stop_delayed_delivery(false),
+    delay_dispatching(false),
+    stop_fast_dispatching_flag(false)
+{
 }
 
 void Pipe::DelayedDelivery::discard()

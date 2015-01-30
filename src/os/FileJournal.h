@@ -332,7 +332,7 @@ private:
   class Writer : public Thread {
     FileJournal *journal;
   public:
-    Writer(FileJournal *fj) : journal(fj) {}
+    Writer(FileJournal *fj) : Thread("FileJournal::write_thread"), journal(fj) {}
     void *entry() {
       journal->write_thread_entry();
       return 0;
@@ -342,7 +342,9 @@ private:
   class WriteFinisher : public Thread {
     FileJournal *journal;
   public:
-    WriteFinisher(FileJournal *fj) : journal(fj) {}
+    WriteFinisher(FileJournal *fj)
+      : Thread("FileJournal::write_finish_thread"),
+	journal(fj) {}
     void *entry() {
       journal->write_finish_thread_entry();
       return 0;

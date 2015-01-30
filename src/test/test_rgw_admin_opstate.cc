@@ -811,7 +811,7 @@ int main(int argc, char *argv[]){
   common_init_finish(g_ceph_context);
   store = RGWStoreManager::get_storage(g_ceph_context, false, false);
   g_test = new admin_log::test_helper();
-  finisher = new Finisher(g_ceph_context);
+  finisher = new Finisher(g_ceph_context, "finisher");
 #ifdef GTEST
   ::testing::InitGoogleTest(&argc, argv);
 #endif

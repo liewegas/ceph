@@ -48,7 +48,7 @@ public:
 FakeWriteback::FakeWriteback(CephContext *cct, Mutex *lock, uint64_t delay_ns)
   : m_cct(cct), m_lock(lock), m_delay_ns(delay_ns)
 {
-  m_finisher = new Finisher(cct);
+  m_finisher = new Finisher(cct, "FakeWriteback::m_finisher");
   m_finisher->start();
 }
 

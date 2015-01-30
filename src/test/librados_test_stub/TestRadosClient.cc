@@ -5,6 +5,7 @@
 #include "test/librados_test_stub/TestIoCtxImpl.h"
 #include "librados/AioCompletionImpl.h"
 #include "include/assert.h"
+#include "include/stringify.h"
 #include "common/ceph_json.h"
 #include "common/Finisher.h"
 #include <boost/bind.hpp>
@@ -84,7 +85,7 @@ TestRadosClient::TestRadosClient(CephContext *cct)
 
   int concurrency = get_concurrency();
   for (int i = 0; i < concurrency; ++i) {
-    m_finishers.push_back(new Finisher(m_cct));
+    m_finishers.push_back(new Finisher(m_cct, "m_finishers " + stringify(i)));
     m_finishers.back()->start();
   }
 }

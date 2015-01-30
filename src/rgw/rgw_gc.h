@@ -31,7 +31,9 @@ class RGWGC {
     Cond cond;
 
   public:
-    GCWorker(CephContext *_cct, RGWGC *_gc) : cct(_cct), gc(_gc), lock("GCWorker") {}
+    GCWorker(CephContext *_cct, RGWGC *_gc)
+      : Thread("RGWGC::worker"),
+	cct(_cct), gc(_gc), lock("GCWorker") {}
     void *entry();
     void stop();
   };

@@ -10,7 +10,10 @@
 namespace librados {
 
 TestWatchNotify::TestWatchNotify(CephContext *cct)
-  : m_cct(cct), m_finisher(new Finisher(cct)), m_handle(), m_notify_id(),
+  : m_cct(cct),
+    m_finisher(new Finisher(cct, "m_finisher")),
+    m_handle(),
+    m_notify_id(),
     m_file_watcher_lock("librados::TestWatchNotify::m_file_watcher_lock") {
   m_finisher->start();
 }

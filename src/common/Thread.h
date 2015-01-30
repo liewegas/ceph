@@ -17,6 +17,7 @@
 #define CEPH_THREAD_H
 
 #include <pthread.h>
+#include <string>
 #include <sys/types.h>
 
 class Thread {
@@ -24,6 +25,7 @@ class Thread {
   pthread_t thread_id;
   pid_t pid;
   int ioprio_class, ioprio_priority;
+  std::string name;
 
   void *entry_wrapper();
 
@@ -31,7 +33,7 @@ class Thread {
   Thread(const Thread& other);
   const Thread& operator=(const Thread& other);
 
-  Thread();
+  Thread(std::string name);
   virtual ~Thread();
 
  protected:
@@ -51,6 +53,7 @@ class Thread {
   int join(void **prval = 0);
   int detach();
   int set_ioprio(int cls, int prio);
+  int set_name(std::string name);
 };
 
 #endif

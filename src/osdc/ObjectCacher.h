@@ -355,7 +355,9 @@ class ObjectCacher {
   class FlusherThread : public Thread {
     ObjectCacher *oc;
   public:
-    FlusherThread(ObjectCacher *o) : oc(o) {}
+    FlusherThread(ObjectCacher *o)
+      : Thread("ObjectCacher::flusher_thread"),
+	oc(o) {}
     void *entry() {
       oc->flusher_entry();
       return 0;

@@ -16,6 +16,7 @@
 
 #include "include/types.h"
 #include "include/utime.h"
+#include "include/stringify.h"
 #include "common/errno.h"
 #include "WorkQueue.h"
 
@@ -156,7 +157,10 @@ void ThreadPool::start_threads()
 {
   assert(_lock.is_locked());
   while (_threads.size() < _num_threads) {
-    WorkThread *wt = new WorkThread(this);
+    int id = _thread_id++;
+    string tname = "ThreadPool " + name + " " + stringify(id);
+    WorkThread *wt = new WorkThread(this, tname);
+    
     ldout(cct, 10) << "start_threads creating and starting " << wt << dendl;
     _threads.insert(wt);
 
@@ -336,8 +340,8 @@ void ShardedThreadPool::start_threads()
   assert(shardedpool_lock.is_locked());
   int32_t thread_index = 0;
   while (threads_shardedpool.size() < num_threads) {
-
-    WorkThreadSharded *wt = new WorkThreadSharded(this, thread_index);
+    string tname = "ThreadPool " + name + " shard " + stringify(thread_index);
+    WorkThreadSharded *wt = new WorkThreadSharded(this, thread_index, tname);
     ldout(cct, 10) << "start_threads creating and starting " << wt << dendl;
     threads_shardedpool.push_back(wt);
     wt->create();

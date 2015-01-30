@@ -559,7 +559,7 @@ public:
   bool agent_active;
   struct AgentThread : public Thread {
     OSDService *osd;
-    AgentThread(OSDService *o) : osd(o) {}
+    AgentThread(OSDService *o) : Thread("OSD::agent_thread"), osd(o) {}
     void *entry() {
       osd->agent_entry();
       return NULL;
@@ -1369,7 +1369,7 @@ private:
 
   struct T_Heartbeat : public Thread {
     OSD *osd;
-    T_Heartbeat(OSD *o) : osd(o) {}
+    T_Heartbeat(OSD *o) : Thread("OSD::heartbeat_thread"), osd(o) {}
     void *entry() {
       osd->heartbeat_entry();
       return 0;

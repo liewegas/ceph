@@ -12,6 +12,7 @@
  * 
  */
 
+#include "include/stringify.h"
 #include "msg/Message.h"
 #include "DispatchQueue.h"
 #include "SimpleMessenger.h"
@@ -27,6 +28,23 @@
 
 #undef dout_prefix
 #define dout_prefix *_dout << "-- " << msgr->get_myaddr() << " "
+
+DispatchQueue::DispatchQueue(CephContext *cct, SimpleMessenger *msgr, string tname)
+  : cct(cct), msgr(msgr),
+    lock("SimpleMessenger::DispatchQueue::lock"),
+    mqueue(cct->_conf->ms_pq_max_tokens_per_priority,
+	   cct->_conf->ms_pq_min_cost),
+    next_pipe_id(1),
+    dispatch_thread(this, "SimpleMessenger " + msgr->name + " dispatch_thread " +
+		    stringify(msgr->get_myinst())),
+    local_delivery_lock("SimpleMessenger::DispatchQueue::local_delivery_lock"),
+  stop_local_delivery(false),
+    local_delivery_thread(this, "SimpleMessenger " + msgr->name +
+			  " local_delivery_thread " +
+			  stringify(msgr->get_myinst())),
+  stop(false)
+{
+}
 
 double DispatchQueue::get_max_age(utime_t now) const {
   Mutex::Locker l(lock);

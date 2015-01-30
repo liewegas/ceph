@@ -410,7 +410,7 @@ void WorkerPool::barrier()
 
 AsyncMessenger::AsyncMessenger(CephContext *cct, entity_name_t name,
                                string mname, uint64_t _nonce)
-  : SimplePolicyMessenger(cct, name,mname, _nonce),
+  : SimplePolicyMessenger(cct, name, mname, _nonce),
     processor(this, cct, _nonce),
     lock("AsyncMessenger::lock"),
     nonce(_nonce), need_addr(true), did_bind(false),

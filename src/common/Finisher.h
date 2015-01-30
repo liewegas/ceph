@@ -42,7 +42,7 @@ class Finisher {
 
   struct FinisherThread : public Thread {
     Finisher *fin;    
-    FinisherThread(Finisher *f) : fin(f) {}
+    FinisherThread(Finisher *f, string name) : Thread(name), fin(f) {}
     void* entry() { return (void*)fin->finisher_thread_entry(); }
   } finisher_thread;
 
@@ -100,16 +100,11 @@ class Finisher {
 
   void wait_for_empty();
 
-  Finisher(CephContext *cct_) :
-    cct(cct_), finisher_lock("Finisher::finisher_lock"),
-    finisher_stop(false), finisher_running(false),
-    logger(0),
-    finisher_thread(this) {}
   Finisher(CephContext *cct_, string name) :
     cct(cct_), finisher_lock("Finisher::finisher_lock"),
     finisher_stop(false), finisher_running(false),
     logger(0),
-    finisher_thread(this) {
+    finisher_thread(this, "Finisher " + name) {
     PerfCountersBuilder b(cct, string("finisher-") + name,
 			  l_finisher_first, l_finisher_last);
     b.add_u64(l_finisher_queue_len, "queue_len");

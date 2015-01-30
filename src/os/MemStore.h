@@ -240,7 +240,7 @@ public:
     : ObjectStore(path),
       coll_lock("MemStore::coll_lock"),
       apply_lock("MemStore::apply_lock"),
-      finisher(cct),
+      finisher(cct, "MemStore::finisher"),
       used_bytes(0),
       sharded(false) {}
   ~MemStore() { }

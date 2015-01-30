@@ -106,7 +106,13 @@ class UsageLogger {
   }
 public:
 
-  UsageLogger(CephContext *_cct, RGWRados *_store) : cct(_cct), store(_store), lock("UsageLogger"), num_entries(0), timer_lock("UsageLogger::timer_lock"), timer(cct, timer_lock) {
+  UsageLogger(CephContext *_cct, RGWRados *_store)
+    : cct(_cct),
+      store(_store),
+      lock("UsageLogger"),
+      num_entries(0),
+      timer_lock("UsageLogger::timer_lock"),
+      timer(cct, timer_lock, "UsageLogger::timer") {
     timer.init();
     Mutex::Locker l(timer_lock);
     set_timer();

@@ -103,8 +103,9 @@ private:
     bool paused;
     list<Op> queue;
   public:
-    Doer(PausyAsyncMap *parent) :
-      parent(parent), lock("Doer lock"), stopping(0), paused(false) {}
+    Doer(PausyAsyncMap *parent)
+      : Thread("Doer"),
+	parent(parent), lock("Doer lock"), stopping(0), paused(false) {}
     virtual void *entry() {
       while (1) {
 	list<Op> ops;

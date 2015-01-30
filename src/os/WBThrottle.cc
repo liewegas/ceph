@@ -7,6 +7,7 @@
 #include "common/perf_counters.h"
 
 WBThrottle::WBThrottle(CephContext *cct) :
+  Thread("WBThrottle"),
   cur_ios(0), cur_size(0),
   cct(cct),
   logger(NULL),

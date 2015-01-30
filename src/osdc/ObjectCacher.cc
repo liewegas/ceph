@@ -509,7 +509,8 @@ ObjectCacher::ObjectCacher(CephContext *cct_, string name, WritebackHandler& wb,
     block_writes_upfront(block_writes_upfront),
     flush_set_callback(flush_callback), flush_set_callback_arg(flush_callback_arg),
     last_read_tid(0),
-    flusher_stop(false), flusher_thread(this), finisher(cct),
+    flusher_stop(false), flusher_thread(this),
+    finisher(cct, "ObjectCacher::finisher"),
     stat_clean(0), stat_zero(0), stat_dirty(0), stat_rx(0), stat_tx(0), stat_missing(0),
     stat_error(0), stat_dirty_waiting(0), reads_outstanding(0)
 {

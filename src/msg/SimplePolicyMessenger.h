@@ -32,7 +32,7 @@ public:
 
   SimplePolicyMessenger(CephContext *cct, entity_name_t name,
 			string mname, uint64_t _nonce)
-    : Messenger(cct, name),
+    : Messenger(cct, name, mname),
       policy_lock("SimplePolicyMessenger::policy_lock")
     {
     }

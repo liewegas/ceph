@@ -336,7 +336,10 @@ private:
     bool stopping;
     Cond cond;
   public:
-    ProgressThread(MDS *mds_) : mds(mds_), stopping(false) {}
+    ProgressThread(MDS *mds_)
+      : Thread("MDS::progress_thread"),
+	mds(mds_),
+	stopping(false) {}
     void * entry(); 
     void shutdown();
     void signal() {cond.Signal();}

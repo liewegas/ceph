@@ -29,6 +29,7 @@ protected:
 
   class Thread_factory : public Thread {
   public:
+    Thread_factory() : Thread("Thread_factory") {}
     virtual void *entry() {
       map<std::string,std::string> parameters;
       parameters["directory"] = ".libs";

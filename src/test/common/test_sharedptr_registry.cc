@@ -48,11 +48,12 @@ public:
     shared_ptr<int> ptr;
     enum in_method_t { LOOKUP, LOOKUP_OR_CREATE } in_method;
 
-    Thread_wait(SharedPtrRegistryTest& _registry, unsigned int _key, int _value, in_method_t _in_method) : 
-      registry(_registry),
-      key(_key),
-      value(_value),
-      in_method(_in_method)
+    Thread_wait(SharedPtrRegistryTest& _registry, unsigned int _key, int _value, in_method_t _in_method)
+      : Thread("Thread_wait"),
+	registry(_registry),
+	key(_key),
+	value(_value),
+	in_method(_in_method)
     {
     }
     

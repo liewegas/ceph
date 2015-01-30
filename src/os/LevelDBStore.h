@@ -64,7 +64,8 @@ class LevelDBStore : public KeyValueDB {
   class CompactThread : public Thread {
     LevelDBStore *db;
   public:
-    CompactThread(LevelDBStore *d) : db(d) {}
+    CompactThread(LevelDBStore *d)
+      : Thread("LevelDBStore::compact_thread"), db(d) {}
     void *entry() {
       db->compact_thread_entry();
       return NULL;

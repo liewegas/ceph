@@ -84,7 +84,7 @@ protected:
   class ReplayThread : public Thread {
     MDLog *log;
   public:
-    ReplayThread(MDLog *l) : log(l) {}
+    ReplayThread(MDLog *l) : Thread("MDLog::replay_thread"), log(l) {}
     void* entry() {
       log->_replay_thread();
       return 0;
@@ -106,7 +106,9 @@ protected:
     MDSInternalContextBase *completion;
   public:
     void set_completion(MDSInternalContextBase *c) {completion = c;}
-    RecoveryThread(MDLog *l) : log(l), completion(NULL) {}
+    RecoveryThread(MDLog *l)
+      : Thread("MDLog::recovery_thread"),
+	log(l), completion(NULL) {}
     void* entry() {
       log->_recovery_thread(completion);
       return 0;
@@ -138,7 +140,7 @@ protected:
   class SubmitThread : public Thread {
     MDLog *log;
   public:
-    SubmitThread(MDLog *l) : log(l) {}
+    SubmitThread(MDLog *l) : Thread("MDLog::submit_thread"), log(l) {}
     void* entry() {
       log->_submit_thread();
       return 0;

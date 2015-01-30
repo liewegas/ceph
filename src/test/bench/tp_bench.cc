@@ -71,7 +71,7 @@ class FinisherWrapper : public Queueable {
   Queueable *next;
 public:
   FinisherWrapper(CephContext *cct, Queueable *next) :
-    f(cct), next(next) {}
+    f(cct, "FinisherWrapper::f"), next(next) {}
   void queue(unsigned *item) {
     f.queue(new CB(next, item));
   }

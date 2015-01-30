@@ -69,7 +69,7 @@ int main(int argc, char **argv) {
   g_ceph_context->_conf->set_val("osd_journal_size", mb);
   g_ceph_context->_conf->apply_changes(NULL);
 
-  finisher = new Finisher(g_ceph_context);
+  finisher = new Finisher(g_ceph_context, "finisher");
   
   if (!args.empty()) {
     size_t copy_len = std::min(sizeof(path)-1, strlen(args[0]));

@@ -1059,8 +1059,9 @@ protected:
   public:
     ObjectContext &obc;
 
-    Thread_read_lock(ObjectContext& _obc) :
-      obc(_obc)
+    Thread_read_lock(ObjectContext& _obc)
+      : Thread("Thread_read_lock"),
+        obc(_obc)
     {
     }
 
@@ -1074,8 +1075,9 @@ protected:
   public:
     ObjectContext &obc;
 
-    Thread_write_lock(ObjectContext& _obc) :
-      obc(_obc)
+    Thread_write_lock(ObjectContext& _obc)
+      : Thread("Thread_write_lock"),
+        obc(_obc)
     {
     }
 

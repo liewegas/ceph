@@ -313,7 +313,7 @@ private:
   // threads
   struct WorkThread : public Thread {
     ThreadPool *pool;
-    WorkThread(ThreadPool *p) : pool(p) {}
+    WorkThread(ThreadPool *p, string name) : Thread(name), pool(p) {}
     void *entry() {
       pool->worker(this);
       return 0;
@@ -322,6 +322,7 @@ private:
   
   set<WorkThread*> _threads;
   list<WorkThread*> _old_threads;  ///< need to be joined
+  int _thread_id;
   int processing;
 
   void start_threads();
@@ -498,8 +499,11 @@ private:
   struct WorkThreadSharded : public Thread {
     ShardedThreadPool *pool;
     uint32_t thread_index;
-    WorkThreadSharded(ShardedThreadPool *p, uint32_t pthread_index): pool(p),
-      thread_index(pthread_index) {}
+    WorkThreadSharded(ShardedThreadPool *p, uint32_t pthread_index,
+		      string name)
+      : Thread(name),
+	pool(p),
+	thread_index(pthread_index) {}
     void *entry() {
       pool->shardedthreadpool_worker(thread_index);
       return 0;

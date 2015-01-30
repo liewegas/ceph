@@ -98,7 +98,8 @@ class DispatchQueue {
   class DispatchThread : public Thread {
     DispatchQueue *dq;
   public:
-    DispatchThread(DispatchQueue *dq) : dq(dq) {}
+    DispatchThread(DispatchQueue *dq, string tname)
+      : Thread(tname), dq(dq) {}
     void *entry() {
       dq->entry();
       return 0;
@@ -112,7 +113,8 @@ class DispatchQueue {
   class LocalDeliveryThread : public Thread {
     DispatchQueue *dq;
   public:
-    LocalDeliveryThread(DispatchQueue *dq) : dq(dq) {}
+    LocalDeliveryThread(DispatchQueue *dq, string name)
+      : Thread(name), dq(dq) {}
     void *entry() {
       dq->run_local_delivery();
       return 0;
@@ -190,18 +192,7 @@ class DispatchQueue {
   void shutdown();
   bool is_started() const {return dispatch_thread.is_started();}
 
-  DispatchQueue(CephContext *cct, SimpleMessenger *msgr)
-    : cct(cct), msgr(msgr),
-      lock("SimpleMessenger::DispatchQueue::lock"),
-      mqueue(cct->_conf->ms_pq_max_tokens_per_priority,
-	     cct->_conf->ms_pq_min_cost),
-      next_pipe_id(1),
-      dispatch_thread(this),
-      local_delivery_lock("SimpleMessenger::DispatchQueue::local_delivery_lock"),
-      stop_local_delivery(false),
-      local_delivery_thread(this),
-      stop(false)
-    {}
+  DispatchQueue(CephContext *cct, SimpleMessenger *msgr, string tname);
 };
 
 #endif

@@ -29,11 +29,12 @@
 #include <sys/types.h>
 
 
-Thread::Thread()
+Thread::Thread(std::string name)
   : thread_id(0),
     pid(0),
     ioprio_class(-1),
-    ioprio_priority(-1)
+    ioprio_priority(-1),
+    name(name)
 {
 }
 
@@ -115,6 +116,11 @@ int Thread::try_create(size_t stacksize)
 
   if (thread_attr)
     free(thread_attr);
+
+  if (name.length() > 0) {
+    int rc = pthread_setname_np(thread_id, name.c_str());
+    assert(rc >= 0);
+  }
   return r;
 }
 
@@ -157,5 +163,13 @@ int Thread::set_ioprio(int cls, int prio)
     return ceph_ioprio_set(IOPRIO_WHO_PROCESS,
 			   pid,
 			   IOPRIO_PRIO_VALUE(cls, prio));
+  return 0;
+}
+
+int Thread::set_name(std::string n)
+{
+  name = n;
+  int rc = pthread_setname_np(thread_id, name.c_str());
+  assert(rc >= 0);
   return 0;
 }

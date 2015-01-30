@@ -102,7 +102,8 @@ static void add_cleanup_file(const char *file)
 
 
 OutputDataSocket::OutputDataSocket(CephContext *cct, uint64_t _backlog)
-  : m_cct(cct),
+  : Thread("OutputDataSocket"),
+    m_cct(cct),
     data_max_backlog(_backlog),
     m_sock_fd(-1),
     m_shutdown_rd_fd(-1),
