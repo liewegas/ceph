@@ -60,7 +60,7 @@ bool librados::RadosClient::ms_get_authorizer(int dest_type,
   /* monitor authorization is being handled on different layer */
   if (dest_type == CEPH_ENTITY_TYPE_MON)
     return true;
-  *authorizer = monclient.auth->build_authorizer(dest_type);
+  *authorizer = monclient->auth->build_authorizer(dest_type);
   return *authorizer != NULL;
 }
 
@@ -68,7 +68,7 @@ librados::RadosClient::RadosClient(CephContext *cct_)
   : Dispatcher(cct_->get()),
     conf(cct_->_conf),
     state(DISCONNECTED),
-    monclient(cct_),
+    monclient(new MonClient(cct_)),
     messenger(NULL),
     instance_id(0),
     objecter(NULL),
@@ -76,7 +76,7 @@ librados::RadosClient::RadosClient(CephContext *cct_)
     timer(cct, lock),
     refcnt(1),
     log_last_version(0), log_cb(NULL), log_cb_arg(NULL),
-    finisher(cct)
+    finisher(new Finisher(cct))
 {
 }
 
@@ -160,7 +160,7 @@ int librados::RadosClient::get_fsid(std::string *s)
     return -EINVAL;
   Mutex::Locker l(lock);
   ostringstream oss;
-  oss << monclient.get_fsid();
+  oss << monclient->get_fsid();
   *s = oss.str();
   return 0;
 }
@@ -175,13 +175,13 @@ int librados::RadosClient::ping_monitor(const string mon_id, string *result)
    */
   if (state != CONNECTED) {
     ldout(cct, 10) << __func__ << " build monmap" << dendl;
-    err = monclient.build_initial_monmap();
+    err = monclient->build_initial_monmap();
   }
   if (err < 0) {
     return err;
   }
 
-  err = monclient.ping_monitor(mon_id, result);
+  err = monclient->ping_monitor(mon_id, result);
   return err;
 }
 
@@ -200,7 +200,7 @@ int librados::RadosClient::connect()
   state = CONNECTING;
 
   // get monmap
-  err = monclient.build_initial_monmap();
+  err = monclient->build_initial_monmap();
   if (err < 0)
     goto out;
 
@@ -221,15 +221,15 @@ int librados::RadosClient::connect()
   ldout(cct, 1) << "starting objecter" << dendl;
 
   err = -ENOMEM;
-  objecter = new Objecter(cct, messenger, &monclient,
-			  &finisher,
+  objecter = new Objecter(cct, messenger, monclient,
+			  finisher,
 			  cct->_conf->rados_mon_op_timeout,
 			  cct->_conf->rados_osd_op_timeout);
   if (!objecter)
     goto out;
   objecter->set_balanced_budget();
 
-  monclient.set_messenger(messenger);
+  monclient->set_messenger(messenger);
 
   objecter->init();
   messenger->add_dispatcher_tail(objecter);
@@ -238,22 +238,22 @@ int librados::RadosClient::connect()
   messenger->start();
 
   ldout(cct, 1) << "setting wanted keys" << dendl;
-  monclient.set_want_keys(CEPH_ENTITY_TYPE_MON | CEPH_ENTITY_TYPE_OSD);
+  monclient->set_want_keys(CEPH_ENTITY_TYPE_MON | CEPH_ENTITY_TYPE_OSD);
   ldout(cct, 1) << "calling monclient init" << dendl;
-  err = monclient.init();
+  err = monclient->init();
   if (err) {
     ldout(cct, 0) << conf->name << " initialization error " << cpp_strerror(-err) << dendl;
     shutdown();
     goto out;
   }
 
-  err = monclient.authenticate(conf->client_mount_timeout);
+  err = monclient->authenticate(conf->client_mount_timeout);
   if (err) {
     ldout(cct, 0) << conf->name << " authentication error " << cpp_strerror(-err) << dendl;
     shutdown();
     goto out;
   }
-  messenger->set_myname(entity_name_t::CLIENT(monclient.get_global_id()));
+  messenger->set_myname(entity_name_t::CLIENT(monclient->get_global_id()));
 
   objecter->set_client_incarnation(0);
   objecter->start();
@@ -261,12 +261,12 @@ int librados::RadosClient::connect()
 
   timer.init();
 
-  monclient.renew_subs();
+  monclient->renew_subs();
 
-  finisher.start();
+  finisher->start();
 
   state = CONNECTED;
-  instance_id = monclient.get_global_id();
+  instance_id = monclient->get_global_id();
 
   lock.Unlock();
 
@@ -287,7 +287,7 @@ void librados::RadosClient::shutdown()
     return;
   }
   if (state == CONNECTED) {
-    finisher.stop();
+    finisher->stop();
   }
   bool need_objecter = false;
   if (objecter && objecter->initialized.read()) {
@@ -302,7 +302,7 @@ void librados::RadosClient::shutdown()
     watch_flush();
     objecter->shutdown();
   }
-  monclient.shutdown();
+  monclient->shutdown();
   if (messenger) {
     messenger->shutdown();
     messenger->wait();
@@ -329,6 +329,8 @@ librados::RadosClient::~RadosClient()
     delete messenger;
   if (objecter)
     delete objecter;
+  delete finisher;
+  delete monclient;
   cct->put();
   cct = NULL;
 }
@@ -665,7 +667,7 @@ int librados::RadosClient::mon_command(const vector<string>& cmd,
   bool done;
   int rval;
   lock.Lock();
-  monclient.start_mon_command(cmd, inbl, outbl, outs,
+  monclient->start_mon_command(cmd, inbl, outbl, outs,
 			       new C_SafeCond(&mylock, &cond, &done, &rval));
   lock.Unlock();
   mylock.Lock();
@@ -684,7 +686,7 @@ int librados::RadosClient::mon_command(int rank, const vector<string>& cmd,
   bool done;
   int rval;
   lock.Lock();
-  monclient.start_mon_command(rank, cmd, inbl, outbl, outs,
+  monclient->start_mon_command(rank, cmd, inbl, outbl, outs,
 			       new C_SafeCond(&mylock, &cond, &done, &rval));
   lock.Unlock();
   mylock.Lock();
@@ -703,7 +705,7 @@ int librados::RadosClient::mon_command(string name, const vector<string>& cmd,
   bool done;
   int rval;
   lock.Lock();
-  monclient.start_mon_command(name, cmd, inbl, outbl, outs,
+  monclient->start_mon_command(name, cmd, inbl, outbl, outs,
 			       new C_SafeCond(&mylock, &cond, &done, &rval));
   lock.Unlock();
   mylock.Lock();
@@ -767,7 +769,7 @@ int librados::RadosClient::monitor_log(const string& level, rados_log_callback_t
   if (cb == NULL) {
     // stop watch
     ldout(cct, 10) << __func__ << " removing cb " << (void*)log_cb << dendl;
-    monclient.sub_unwant(log_watch);
+    monclient->sub_unwant(log_watch);
     log_watch.clear();
     log_cb = NULL;
     log_cb_arg = NULL;
@@ -791,12 +793,12 @@ int librados::RadosClient::monitor_log(const string& level, rados_log_callback_t
   }
 
   if (log_cb)
-    monclient.sub_unwant(log_watch);
+    monclient->sub_unwant(log_watch);
 
   // (re)start watch
   ldout(cct, 10) << __func__ << " add cb " << (void*)cb << " level " << level << dendl;
-  monclient.sub_want(watch_level, 0, 0);
-  monclient.renew_subs();
+  monclient->sub_want(watch_level, 0, 0);
+  monclient->renew_subs();
   log_cb = cb;
   log_cb_arg = arg;
   log_watch = watch_level;
@@ -833,7 +835,7 @@ void librados::RadosClient::handle_log(MLog *m)
 
 	version_t v = log_last_version + 1;
 	ldout(cct, 10) << __func__ << " wanting " << log_watch << " ver " << v << dendl;
-	monclient.sub_want(log_watch, v, 0);
+	monclient->sub_want(log_watch, v, 0);
       */
     }
   }

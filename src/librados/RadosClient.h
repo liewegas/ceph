@@ -45,7 +45,7 @@ private:
     CONNECTED,
   } state;
 
-  MonClient monclient;
+  MonClient *monclient;
   Messenger *messenger;
 
   uint64_t instance_id;
@@ -73,7 +73,7 @@ private:
   int wait_for_osdmap();
 
 public:
-  Finisher finisher;
+  Finisher *finisher;
 
   RadosClient(CephContext *cct_);
   ~RadosClient();

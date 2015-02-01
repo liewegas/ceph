@@ -106,7 +106,7 @@ void librados::IoCtxImpl::complete_aio_write(AioCompletionImpl *c)
     ldout(client->cct, 20) << " waking waiters on seq " << waiters->first << dendl;
     for (std::list<AioCompletionImpl*>::iterator it = waiters->second.begin();
 	 it != waiters->second.end(); ++it) {
-      client->finisher.queue(new C_AioCompleteAndSafe(*it));
+      client->finisher->queue(new C_AioCompleteAndSafe(*it));
       (*it)->put();
     }
     aio_write_waiters.erase(waiters++);
@@ -126,7 +126,7 @@ void librados::IoCtxImpl::flush_aio_writes_async(AioCompletionImpl *c)
   if (aio_write_list.empty()) {
     ldout(client->cct, 20) << "flush_aio_writes_async no writes. (tid "
 			   << seq << ")" << dendl;
-    client->finisher.queue(new C_AioCompleteAndSafe(c));
+    client->finisher->queue(new C_AioCompleteAndSafe(c));
   } else {
     ldout(client->cct, 20) << "flush_aio_writes_async " << aio_write_list.size()
 			   << " writes in flight; waiting on tid " << seq << dendl;
@@ -1301,10 +1301,10 @@ void librados::IoCtxImpl::C_aio_Ack::finish(int r)
   }
 
   if (c->callback_complete) {
-    c->io->client->finisher.queue(new C_AioComplete(c));
+    c->io->client->finisher->queue(new C_AioComplete(c));
   }
   if (c->is_read && c->callback_safe) {
-    c->io->client->finisher.queue(new C_AioSafe(c));
+    c->io->client->finisher->queue(new C_AioSafe(c));
   }
 
   c->put_unlock();
@@ -1331,7 +1331,7 @@ void librados::IoCtxImpl::C_aio_stat_Ack::finish(int r)
   }
 
   if (c->callback_complete) {
-    c->io->client->finisher.queue(new C_AioComplete(c));
+    c->io->client->finisher->queue(new C_AioComplete(c));
   }
 
   c->put_unlock();
@@ -1355,7 +1355,7 @@ void librados::IoCtxImpl::C_aio_Safe::finish(int r)
   c->cond.Signal();
 
   if (c->callback_safe) {
-    c->io->client->finisher.queue(new C_AioSafe(c));
+    c->io->client->finisher->queue(new C_AioSafe(c));
   }
 
   c->io->complete_aio_write(c);
