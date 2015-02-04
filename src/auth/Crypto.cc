@@ -118,18 +118,14 @@ public:
 class CryptoAESKeyHandler : public CryptoKeyHandler {
 public:
   CryptoPP::AES::Encryption *enc_key;
-  CryptoPP::CBC_Mode_ExternalCipher::Encryption *enc_cbc;
   CryptoPP::AES::Decryption *dec_key;
-  CryptoPP::CBC_Mode_ExternalCipher::Decryption *dec_cbc;
 
   CryptoAESKeyHandler()
-    : enc_key(NULL), enc_cbc(NULL),
-      dec_key(NULL), dec_cbc(NULL) {}
+    : enc_key(NULL),
+      dec_key(NULL) {}
   ~CryptoAESKeyHandler() {
     delete enc_key;
-    delete enc_cbc;
     delete dec_key;
-    delete dec_cbc;
   }
 
   int init(const bufferptr& s, ostringstream& err) {
@@ -137,13 +133,8 @@ public:
 
     enc_key = new CryptoPP::AES::Encryption(
       (byte*)secret.c_str(), CryptoPP::AES::DEFAULT_KEYLENGTH);
-    enc_cbc = new CryptoPP::CBC_Mode_ExternalCipher::Encryption(
-      *enc_key, (const byte*)CEPH_AES_IV);
-
     dec_key = new CryptoPP::AES::Decryption(
       (byte*)secret.c_str(), CryptoPP::AES::DEFAULT_KEYLENGTH);
-    dec_cbc = new CryptoPP::CBC_Mode_ExternalCipher::Decryption(
-      *dec_key, (const byte*)CEPH_AES_IV);
 
     return 0;
   }
@@ -152,7 +143,9 @@ public:
 	       bufferlist& out, std::string &error) const {
     string ciphertext;
     CryptoPP::StringSink *sink = new CryptoPP::StringSink(ciphertext);
-    CryptoPP::StreamTransformationFilter stfEncryptor(*enc_cbc, sink);
+    CryptoPP::CBC_Mode_ExternalCipher::Encryption cbc(
+      *enc_key, (const byte*)CEPH_AES_IV);
+    CryptoPP::StreamTransformationFilter stfEncryptor(cbc, sink);
 
     for (std::list<bufferptr>::const_iterator it = in.buffers().begin();
 	 it != in.buffers().end(); ++it) {
@@ -174,7 +167,9 @@ public:
 	       bufferlist& out, std::string &error) const {
     string decryptedtext;
     CryptoPP::StringSink *sink = new CryptoPP::StringSink(decryptedtext);
-    CryptoPP::StreamTransformationFilter stfDecryptor(*dec_cbc, sink);
+    CryptoPP::CBC_Mode_ExternalCipher::Decryption cbc(
+      *dec_key, (const byte*)CEPH_AES_IV );
+    CryptoPP::StreamTransformationFilter stfDecryptor(cbc, sink);
     for (std::list<bufferptr>::const_iterator it = in.buffers().begin();
 	 it != in.buffers().end(); ++it) {
       const unsigned char *in_buf = (const unsigned char *)it->c_str();
