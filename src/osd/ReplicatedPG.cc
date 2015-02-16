@@ -1837,11 +1837,16 @@ bool ReplicatedPG::maybe_handle_cache(OpRequestRef op,
     return true;
   }
 
+  // older versions do not proxy the feature bits.
+  bool can_proxy_read = get_osdmap()->get_up_osd_features() &
+    CEPH_FEATURE_OSD_PROXY_FEATURES;
+
   switch (pool.info.cache_mode) {
   case pg_pool_t::CACHEMODE_WRITEBACK:
     if (agent_state &&
 	agent_state->evict_mode == TierAgentState::EVICT_MODE_FULL) {
-      if (!op->may_write() && !op->may_cache() && !write_ordered) {
+      if (!op->may_write() && !op->may_cache() && !write_ordered &&
+	  can_proxy_read) {
 	dout(20) << __func__ << " cache pool full, proxying read" << dendl;
 	do_proxy_read(op);
 	return true;
@@ -1853,7 +1858,7 @@ bool ReplicatedPG::maybe_handle_cache(OpRequestRef op,
     if (can_skip_promote(op)) {
       return false;
     }
-    if (op->may_write() || write_ordered || !hit_set) {
+    if (op->may_write() || write_ordered || !hit_set || !can_proxy_read) {
       promote_object(obc, missing_oid, oloc, op);
       return true;
     }
@@ -1938,7 +1943,7 @@ bool ReplicatedPG::maybe_handle_cache(OpRequestRef op,
 
   case pg_pool_t::CACHEMODE_READPROXY:
     // Do writeback to the cache tier for writes
-    if (op->may_write() || write_ordered) {
+    if (op->may_write() || write_ordered || !can_proxy_read) {
       if (agent_state &&
 	  agent_state->evict_mode == TierAgentState::EVICT_MODE_FULL) {
 	dout(20) << __func__ << " cache pool full, waiting" << dendl;
