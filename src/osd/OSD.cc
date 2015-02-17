@@ -2365,6 +2365,12 @@ int OSD::shutdown()
       if (p->second->ref.read() != 1) {
         derr << "pgid " << p->first << " has ref count of "
             << p->second->ref.read() << dendl;
+#ifdef PG_DEBUG_REFS
+	derr << "pgid " << p->first << " _live_ids " << p->second->_live_ids
+	     << " _tag_counts " << p->second->_tag_counts
+	     << " _ref_id " << p->second->_ref_id
+	     << dendl;
+#endif
         assert(0);
       }
       p->second->unlock();
