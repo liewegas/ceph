@@ -58,6 +58,8 @@ using namespace std;
 #include "include/unordered_map.h"
 #include "include/unordered_set.h"
 
+#define PG_DEBUG_REFS
+
 
 //#define DEBUG_RECOVERY_OIDS   // track set of recovering oids explicitly, to find counting bugs
 
