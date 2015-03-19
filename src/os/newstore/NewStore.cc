@@ -2012,8 +2012,7 @@ int NewStore::_do_write(TransContextRef txc,
 
   o->exists = true;
 
-  if (o->onode.size == offset ||
-      o->onode.size == 0) {
+  if (o->onode.size <= offset) {
     if (o->onode.data_map.empty()) {
       // create
       fragment_t &f = o->onode.data_map[0];
