@@ -2,17 +2,22 @@
 Release timeline
 ================
 
-There are approximately four stable releases a year. Every other
-release is a LTS (Long Term Support). A LTS release is supported for 18
-months. A stable release that is not LTS is supported until the next
-stable release is published. A development / testing release is not
-supported.
+The development release cycle is two to four weeks long.  Each cycle
+freezes the master development branch and applies `integration and
+upgrade tests <https://github.com/ceph/ceph-qa-suite>`_ for the
+duration of one cycle before it is released and the next release's
+code is frozen for testing.  Once released, there is no effort to
+backport fixes; developer focus in on the next development release
+which is usually only a few weeks away.
 
-* Long Term Support release : 18 months
-* Stable release : until the next stable release is published
-* Development / testing release : not supported
+There are three to four stable releases a year.  Each stable release
+will receive a name (e.g., `Firefly') and bug fix backports at least
+until the next stable release is out.  Some stable releases will
+receive updates for longer periods.  Exactly how long each stable
+release gets bug fixes depends on what downstream distributions and
+community members choose invest time in maintaining.
 
-Supporting a release means:
+For the stable releases:
 
 * `Integration and upgrade tests
   <https://github.com/ceph/ceph-qa-suite>`_ are run on a regular basis
@@ -24,12 +29,12 @@ Supporting a release means:
 * When an issue found in the release is `reported
   <http://tracker.ceph.com/projects/ceph/issues/new>`_ it will be
   handled by Ceph developers.
-* The `stable releases and backport team <http://tracker.ceph.com/projects/ceph-releases>`_
-  publishes ``point releases`` including fixes that have been backported to the release.
+* The `stable releases and backport team
+  <http://tracker.ceph.com/projects/ceph-releases>`_ publishes ``point
+  releases`` including fixes that have been backported to the release.
 
 +----------------+-----------+-----------+-----------+-----------+-----------+
 |                |Development|`Dumpling`_|`Emperor`_ |`Firefly`_ |`Giant`_   |
-|                |Testing    |LTS        |Stable     |LTS        |Stable     |
 +----------------+-----------+-----------+-----------+-----------+-----------+
 | March     2015 |           |           |           |`0.80.9`_  |           |
 +----------------+-----------+-----------+-----------+-----------+-----------+
