@@ -5640,11 +5640,14 @@ bool OSD::dispatch_op_fast(OpRequestRef& op, OSDMapRef& osdmap)
 {
   if (is_stopping()) {
     // we're shutting down, so drop the op
+    dout(10) << __func__ << " stopping" << dendl;
     return true;
   }
 
   epoch_t msg_epoch(op_required_epoch(op));
   if (msg_epoch > osdmap->get_epoch()) {
+    dout(10) << __func__ << " delaying; op map " << msg_epoch
+	     << " is newer" << dendl;
     Session *s = static_cast<Session*>(op->get_req()->
 				       get_connection()->get_priv());
     if (s) {
@@ -8055,6 +8058,7 @@ void OSD::handle_op(OpRequestRef& op, OSDMapRef& osdmap)
 	!m->get_source().is_mds()) {  // FIXME: we'll exclude mds writes for now.
       // Drop the request, since the client will retry when the full
       // flag is unset.
+      dout(10) << __func__ << " dropping request (full)" << dendl;
       return;
     }
 
@@ -8086,6 +8090,7 @@ void OSD::handle_op(OpRequestRef& op, OSDMapRef& osdmap)
   spg_t pgid;
   if (!osdmap->get_primary_shard(_pgid, &pgid)) {
     // missing pool or acting set empty -- drop
+    dout(10) << __func__ << " missing pool or empty acting set" << dendl;
     return;
   }
 
