@@ -54,6 +54,7 @@
 const string PREFIX_SUPER = "S"; // field -> value
 const string PREFIX_COLL = "C"; // collection name -> (nothing)
 const string PREFIX_OBJ = "O";  // object name -> onode
+const string PREFIX_OVERLAY = "V"; // u64 + offset -> value
 const string PREFIX_OMAP = "M"; // u64 + keyname -> value
 const string PREFIX_WAL = "L";  // write ahead log
 
@@ -285,6 +286,15 @@ static int get_key_object(const string& key, ghobject_t *oid)
   if (r < 2)
     return -7;
   return 0;
+}
+
+
+void get_overlay_key(uint64_t nid, uint64_t offset, string *out)
+{
+  char buf[64];
+  snprintf(buf, sizeof(buf), "%016llx %016llx", (unsigned long long)nid,
+	   (unsigned long long)offset);
+  *out = buf;
 }
 
 // '-' < '.' < '~'
@@ -2840,6 +2850,48 @@ int NewStore::_touch(TransContext *txc,
   txc->write_onode(o);
   dout(10) << __func__ << " " << c->cid << " " << oid << " = " << r << dendl;
   return r;
+}
+
+int NewStore::_do_write_overlays(TransContext *txc,
+				 OnodeRef o)
+{
+  interval_set<uint64_t> written;
+  for (vector<pair<uint64_t,uint64_t> >::reverse_iterator p =
+	 o->onode.overlays.rbegin();
+       p != o->onode.overlays.rend();
+       ++p) {
+    dout(10) << __func__ << " overlay " << p->first
+	     << "~" << p->second << dendl;
+    // overwrite to new fid
+    if (o->onode.data_map.empty()) {
+      // create
+      fragment_t &f = o->onode.data_map[0];
+      f.offset = 0;
+      f.length = o->onode.size;
+      fd = _create_fid(txc, &f.fid);
+      if (fd < 0) {
+	r = fd;
+	goto out;
+      }
+      dout(20) << __func__ << " create " << f.fid << dendl;
+    }
+    assert(o->onode.data_map.size() == 1);
+    fragment_t& f = o->onode.data_map.begin()->second;
+    assert(f.offset == 0);
+    assert(f.length == o->onode.size);
+
+    string key;
+    get_overlay_key(o->onode.nide, p->first, &key);
+    bufferlist bl;
+    db->get(PREFIX_OVERLAY, key, bl);
+
+    wal_op_t *op = _get_wal_op(txc);
+    op->op = wal_op_t::OP_WRITE;
+    op->offset = p->first;
+    op->length = p->second;
+    op->fid = f.fid;
+    op->data = bl;
+  }
 }
 
 int NewStore::_do_write(TransContext *txc,

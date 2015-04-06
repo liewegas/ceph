@@ -94,6 +94,7 @@ struct onode_t {
   uint64_t size;                       ///< object size
   map<string, bufferptr> attrs;        ///< attrs
   map<uint64_t, fragment_t> data_map;  ///< data (offset to fragment mapping)
+  vector<pair<uint64_t,uint64_t> > overlays; ///< overlay data (stored in db)
   uint64_t omap_head;                  ///< id for omap root node
 
   uint32_t expected_object_size;

@@ -104,6 +104,7 @@ void onode_t::encode(bufferlist& bl) const
   ::encode(omap_head, bl);
   ::encode(expected_object_size, bl);
   ::encode(expected_write_size, bl);
+  ::encode(overlays, bl);
   ENCODE_FINISH(bl);
 }
 
@@ -117,6 +118,7 @@ void onode_t::decode(bufferlist::iterator& p)
   ::decode(omap_head, p);
   ::decode(expected_object_size, p);
   ::decode(expected_write_size, p);
+  ::decode(overlays, p);
   DECODE_FINISH(p);
 }
 
@@ -138,6 +140,15 @@ void onode_t::dump(Formatter *f) const
     f->open_object_section("fragment");
     f->dump_unsigned("fragment_offset", p->first);
     p->second.dump(f);
+    f->close_section();
+  }
+  f->close_section();
+  f->open_object_section("overlays");
+  for (vector<pair<uint64_t, uint64_t> >::const_iterator p = overlays.begin();
+       p != overlays.end(); ++p) {
+    f->open_object_section("extent");
+    f->dump_unsigned("offset", p->first);
+    f->dump_unsigned("length", p->second);
     f->close_section();
   }
   f->close_section();
