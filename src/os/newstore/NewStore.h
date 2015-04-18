@@ -502,6 +502,7 @@ private:
   AioCompletionThread aio_thread;
   bool aio_stop;
   FS::aio_queue_t aio_queue;
+  Mutex aio_lock;
 
   KVSyncThread kv_sync_thread;
   Mutex kv_lock;

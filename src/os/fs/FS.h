@@ -77,8 +77,8 @@ public:
     Cond cond;
     atomic_t num;
 
-    aio_queue_t() : ctx(0), lock("FS::aio_queue_t::lock") {
-      int r = io_setup(128, &ctx);
+    aio_queue_t(unsigned max_iodepth = 8) : ctx(0), lock("FS::aio_queue_t::lock") {
+      int r = io_setup(max_iodepth, &ctx);
       assert(r == 0);
     }
     ~aio_queue_t() {

@@ -600,6 +600,7 @@ NewStore::NewStore(CephContext *cct, const string& path)
 	     &fsync_tp),
     aio_thread(this),
     aio_stop(false),
+    aio_lock("asdf"),
     kv_sync_thread(this),
     kv_lock("NewStore::kv_lock"),
     kv_stop(false),
@@ -2641,16 +2642,29 @@ int NewStore::queue_transactions(
       txc->state = TransContext::STATE_AIO_QUEUED;
       dout(20) << __func__ << " submitting " << txc->num_aio.read() << " aios"
 	       << dendl;
+      FS::aio_queue_t aio_queue;
       for (list<FS::aio_t>::iterator p = txc->aios.begin();
 	   p != txc->aios.end();
 	   ++p) {
-	dout(20) << __func__ << " submitting aio " << &*p << dendl;
+	FS::aio_t& aio = *p;
+	dout(20) << __func__ << " submitting aio " << &aio << dendl;
+	for (vector<iovec>::iterator q = aio.iov.begin(); q != aio.iov.end(); ++q)
+	  dout(30) << __func__ << "  iov " << (void*)q->iov_base
+		   << " len " << q->iov_len << dendl;
+	dout(30) << " fd " << aio.fd << " offset " << lseek64(aio.fd, 0, SEEK_CUR)
+		 << dendl;
 	int r = aio_queue.submit(*p);
 	if (r) {
 	  derr << " aio submit got " << cpp_strerror(r) << dendl;
 	  assert(r == 0);
 	}
       }
+
+	FS::aio_t *daio;
+	r = aio_queue.get_next_completed(g_conf->newstore_aio_poll_ms, &daio);
+	derr << __func__ << " get_next_completed got " << cpp_strerror(r) << dendl;
+	assert(r == 1);
+
     } else if (!txc->fds.empty()) {
       _txc_queue_fsync(txc);
     } else {
@@ -3267,6 +3281,7 @@ int NewStore::_do_write(TransContext *txc,
     }
 #ifdef HAVE_LIBAIO
     if (g_conf->newstore_aio && (flags & O_DIRECT)) {
+      Mutex::Locker l(aio_lock);
       txc->aios.push_back(FS::aio_t(txc, fd));
       txc->num_aio.inc();
       FS::aio_t& aio = txc->aios.back();
