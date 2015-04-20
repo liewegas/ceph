@@ -74,14 +74,10 @@ public:
   struct aio_queue_t {
     int max_iodepth;
     io_context_t ctx;
-    Mutex lock;
-    Cond cond;
-    atomic_t num;
 
     aio_queue_t(unsigned max_iodepth = 8)
       : max_iodepth(max_iodepth),
-	ctx(0),
-	lock("FS::aio_queue_t::lock") {
+	ctx(0) {
     }
     ~aio_queue_t() {
       assert(ctx == 0);
@@ -111,25 +107,11 @@ public:
 	  }
 	  return r;
 	}
-	int was = num.inc();
-	if (was == 0) {
-	  Mutex::Locker l(lock);
-	  cond.Signal();
-	}
       } while (false);
       return 0;
     }
 
     int get_next_completed(int timeout_ms, aio_t **paio) {
-      if (num.read() == 0) {
-	Mutex::Locker l(lock);
-	utime_t t;
-	t.set_from_double((double)timeout_ms / 1000.0);
-	cond.WaitInterval(NULL, lock, t);
-	if (num.read() == 0) {
-	  return 0;
-	}
-      }
       io_event event[1];
       struct timespec t = {
 	timeout_ms / 1000,
