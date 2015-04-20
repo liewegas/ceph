@@ -384,7 +384,9 @@ public:
   public:
     WALWQ(NewStore *s, time_t ti, time_t sti, ThreadPool *tp)
       : ThreadPool::WorkQueue<TransContext>("NewStore::WALWQ", ti, sti, tp),
-	store(s) {
+	store(s),
+	ops(0),
+	bytes(0) {
     }
     bool _empty() {
       return wal_queue.empty();
@@ -566,11 +568,8 @@ private:
   void _osr_reap_done(OpSequencer *osr);
 
   void _aio_thread();
-  void _aio_stop() {
-    aio_stop = true;
-    aio_thread.join();
-    aio_stop = false;
-  }
+  int _aio_start();
+  void _aio_stop();
 
   void _kv_sync_thread();
   void _kv_stop() {

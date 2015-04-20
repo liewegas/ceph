@@ -600,6 +600,7 @@ NewStore::NewStore(CephContext *cct, const string& path)
 	     &fsync_tp),
     aio_thread(this),
     aio_stop(false),
+    aio_queue(cct->_conf->newstore_aio_max_queue_depth),
     aio_lock("asdf"),
     kv_sync_thread(this),
     kv_lock("NewStore::kv_lock"),
@@ -833,6 +834,29 @@ void NewStore::_close_db()
   db = NULL;
 }
 
+int NewStore::_aio_start()
+{
+  if (g_conf->newstore_aio) {
+    dout(10) << __func__ << dendl;
+    int r = aio_queue.init();
+    if (r < 0)
+      return r;
+    aio_thread.create();
+  }
+  return 0;
+}
+
+void NewStore::_aio_stop()
+{
+  if (g_conf->newstore_aio) {
+    dout(10) << __func__ << dendl;
+    aio_stop = true;
+    aio_thread.join();
+    aio_stop = false;
+    aio_queue.shutdown();
+  }
+}
+
 int NewStore::_open_collections()
 {
   KeyValueDB::Iterator it = db->get_iterator(PREFIX_COLL);
@@ -964,20 +988,24 @@ int NewStore::mount()
   if (r < 0)
     goto out_db;
 
-  r = _replay_wal();
+  r = _aio_start();
   if (r < 0)
     goto out_db;
+
+  r = _replay_wal();
+  if (r < 0)
+    goto out_aio;
 
   finisher.start();
   fsync_tp.start();
   wal_tp.start();
   kv_sync_thread.create();
-  if (g_conf->newstore_aio)
-    aio_thread.create();
 
   mounted = true;
   return 0;
 
+ out_aio:
+  _aio_stop();
  out_db:
   _close_db();
  out_frag:
@@ -999,10 +1027,8 @@ int NewStore::umount()
 
   dout(20) << __func__ << " stopping fsync_wq" << dendl;
   fsync_tp.stop();
-  if (g_conf->newstore_aio) {
-    dout(20) << __func__ << " stopping aio thread" << dendl;
-    _aio_stop();
-  }
+  dout(20) << __func__ << " stopping aio" << dendl;
+  _aio_stop();
   dout(20) << __func__ << " stopping kv thread" << dendl;
   _kv_stop();
   dout(20) << __func__ << " draining wal_wq" << dendl;
@@ -2642,7 +2668,6 @@ int NewStore::queue_transactions(
       txc->state = TransContext::STATE_AIO_QUEUED;
       dout(20) << __func__ << " submitting " << txc->num_aio.read() << " aios"
 	       << dendl;
-      FS::aio_queue_t aio_queue;
       for (list<FS::aio_t>::iterator p = txc->aios.begin();
 	   p != txc->aios.end();
 	   ++p) {
@@ -2659,12 +2684,6 @@ int NewStore::queue_transactions(
 	  assert(r == 0);
 	}
       }
-
-	FS::aio_t *daio;
-	r = aio_queue.get_next_completed(g_conf->newstore_aio_poll_ms, &daio);
-	derr << __func__ << " get_next_completed got " << cpp_strerror(r) << dendl;
-	assert(r == 1);
-
     } else if (!txc->fds.empty()) {
       _txc_queue_fsync(txc);
     } else {

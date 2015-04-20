@@ -72,18 +72,31 @@ public:
   };
 
   struct aio_queue_t {
+    int max_iodepth;
     io_context_t ctx;
     Mutex lock;
     Cond cond;
     atomic_t num;
 
-    aio_queue_t(unsigned max_iodepth = 8) : ctx(0), lock("FS::aio_queue_t::lock") {
-      int r = io_setup(max_iodepth, &ctx);
-      assert(r == 0);
+    aio_queue_t(unsigned max_iodepth = 8)
+      : max_iodepth(max_iodepth),
+	ctx(0),
+	lock("FS::aio_queue_t::lock") {
     }
     ~aio_queue_t() {
-      int r = io_destroy(ctx);
-      assert(r == 0);
+      assert(ctx == 0);
+    }
+
+    int init() {
+      assert(ctx == 0);
+      return io_setup(max_iodepth, &ctx);
+    }
+    void shutdown() {
+      if (ctx) {
+	int r = io_destroy(ctx);
+	assert(r == 0);
+	ctx = 0;
+      }
     }
 
     int submit(aio_t &aio) {
