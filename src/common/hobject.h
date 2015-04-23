@@ -300,7 +300,7 @@ static inline bool operator>=(const hobject_t& l, const hobject_t& r) {
 
 extern int cmp_nibblewise(const hobject_t& l, const hobject_t& r);
 extern int cmp_bitwise(const hobject_t& l, const hobject_t& r);
-extern int cmp(const hobject_t& l, const hobject_t& r, bool sort_bitwise) {
+static inline int cmp(const hobject_t& l, const hobject_t& r, bool sort_bitwise) {
   if (sort_bitwise)
     return cmp_bitwise(l, r);
   else
