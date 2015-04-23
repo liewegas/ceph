@@ -65,12 +65,13 @@ public:
   }
 };
 
-bool sorted(const vector<ghobject_t> &in) {
+bool sorted(const vector<ghobject_t> &in, bool bitwise) {
   ghobject_t start;
   for (vector<ghobject_t>::const_iterator i = in.begin();
        i != in.end();
        ++i) {
-    if (start > *i) return false;
+    if (cmp(start, *i, bitwise) > 0)
+      return false;
     start = *i;
   }
   return true;
@@ -278,7 +279,8 @@ TEST_P(StoreTest, SimpleListTest) {
     vector<ghobject_t> objects;
     ghobject_t next, current;
     while (!next.is_max()) {
-      int r = store->collection_list(cid, current, ghobject_t::get_max(), 50,
+      int r = store->collection_list(cid, current, ghobject_t::get_max(),
+				     true, 50,
 				     &objects, &next);
       ASSERT_EQ(r, 0);
       cout << " got " << objects.size() << " next " << next << std::endl;
@@ -362,7 +364,8 @@ TEST_P(StoreTest, MultipoolListTest) {
     vector<ghobject_t> objects;
     ghobject_t next, current;
     while (!next.is_max()) {
-      int r = store->collection_list(cid, current, ghobject_t::get_max(), 50,
+      int r = store->collection_list(cid, current, ghobject_t::get_max(),
+				     true, 50,
 				     &objects, &next);
       ASSERT_EQ(r, 0);
       cout << " got " << objects.size() << " next " << next << std::endl;
@@ -567,6 +570,8 @@ TEST_P(StoreTest, ManyObjectTest) {
     cid,
     ghobject_t::get_max(),
     ghobject_t::get_max(),
+    true,
+    50,
     60,
     &objects,
     &next
@@ -577,12 +582,26 @@ TEST_P(StoreTest, ManyObjectTest) {
   objects.clear();
   listed.clear();
   while (1) {
-    r = store->collection_list(cid, start,
-			       ghobject_t::get_max(),
+    // bitwise
+    r = store->collection_list(cid, start, ghobject_t::get_max(), true,
+			       50,
 			       60,
+			       0,
 			       &objects,
 			       &next);
-    ASSERT_TRUE(sorted(objects));
+    ASSERT_TRUE(sorted(objects, true));
+    ASSERT_EQ(r, 0);
+    listed.insert(objects.begin(), objects.end());
+    objects.clear();
+
+    // nibblewise
+    r = store->collection_list(cid, start, ghobject_t::get_max(), false,
+			       50,
+			       60,
+			       0,
+			       &objects,
+			       &next);
+    ASSERT_TRUE(sorted(objects, false));
     ASSERT_EQ(r, 0);
     listed.insert(objects.begin(), objects.end());
     if (objects.size() < 50) {
@@ -1063,10 +1082,11 @@ public:
     ghobject_t next, current;
     while (1) {
       cerr << "scanning..." << std::endl;
-      int r = store->collection_list(cid, current, ghobject_t::get_max(), 100,
+      int r = store->collection_list(cid, current, ghobject_t::get_max(),
+				     true, 100,
 				     &objects, &next);
       ASSERT_EQ(r, 0);
-      ASSERT_TRUE(sorted(objects));
+      ASSERT_TRUE(sorted(objects, true));
       objects_set.insert(objects.begin(), objects.end());
       objects.clear();
       if (next.is_max()) break;
@@ -1254,10 +1274,10 @@ TEST_P(StoreTest, HashCollisionTest) {
   listed.clear();
   ghobject_t current, next;
   while (1) {
-    r = store->collection_list(cid, current, ghobject_t::get_max(), 60,
+    r = store->collection_list(cid, current, ghobject_t::get_max(), true, 60,
 			       &objects, &next);
     ASSERT_EQ(r, 0);
-    ASSERT_TRUE(sorted(objects));
+    ASSERT_TRUE(sorted(objects, true));
     for (vector<ghobject_t>::iterator i = objects.begin();
 	 i != objects.end();
 	 ++i) {
@@ -1350,10 +1370,10 @@ TEST_P(StoreTest, ScrubTest) {
   listed.clear();
   ghobject_t current, next;
   while (1) {
-    r = store->collection_list(cid, current, ghobject_t::get_max(), 60,
+    r = store->collection_list(cid, current, ghobject_t::get_max(), true, 60,
 			       &objects, &next);
     ASSERT_EQ(r, 0);
-    ASSERT_TRUE(sorted(objects));
+    ASSERT_TRUE(sorted(objects, false));
     for (vector<ghobject_t>::iterator i = objects.begin();
          i != objects.end(); ++i) {
       if (listed.count(*i))
