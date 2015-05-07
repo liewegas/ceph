@@ -21,13 +21,20 @@ config=$1 ; shift
 
 # Shared variables by many actions
 dir_mon="/var/lib/ceph/mon/"
-dir_osd="/var/lib/ceph/osd/"
 if test -d ${dir_mon} ; then
 lmon=`ls ${dir_mon} | grep ${cluster}`
 fi
+
+dir_osd="/var/lib/ceph/osd/"
 if test -d ${dir_osd} ; then
 losd=`ls ${dir_osd} | grep ${cluster}`
 fi
+
+dir_radosgw="/var/lib/ceph/radosgw/"
+if test -d ${dir_radosgw} ; then
+lradosgw=`ls ${dir_radosgw} | grep ${cluster}`
+fi
+
 prefix="${cluster}-"
 
 if test -n "$config" ; then
@@ -50,6 +57,13 @@ else
                 ((++n))
             done
         fi
+	if test -n ${lradosgw} ; then
+            for s in ${lradosgw#=${prefix}} ; do
+                systemctl "${action}" ceph-rgw@${s#$prefix}.service
+                rc_check
+                ((++n))
+            done
+	fi
         if test $n -gt 0 ; then
 			rc_status
 		else
