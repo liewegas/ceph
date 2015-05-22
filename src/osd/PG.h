@@ -2009,6 +2009,11 @@ public:
   uint64_t get_min_peer_features() const { return peer_features; }
   void apply_peer_features(uint64_t f) { peer_features &= f; }
 
+  /// true if we will sort hobjects bitwise for this pg interval
+  bool get_sort_bitwise() const {
+    return get_min_peer_features() & CEPH_FEATURE_OSD_BITWISE_HOBJ_SORT;
+  }
+
   void init_primary_up_acting(
     const vector<int> &newup,
     const vector<int> &newacting,
