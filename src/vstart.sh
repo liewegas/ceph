@@ -391,6 +391,7 @@ fi
         keyring = $keyring_fn
         log file = $CEPH_OUT_DIR/\$name.\$pid.log
         admin socket = $CEPH_OUT_DIR/\$name.\$pid.asok
+        rgw dns name = localhost
 
 [mds]
 $DAEMONOPTS
