@@ -232,6 +232,8 @@ if [ "$debug" -eq 0 ]; then
         debug ms = 1'
     CMDSDEBUG='
         debug ms = 1'
+    GLOBALDEBUG='
+        debug rgw = 1'
 else
     echo "** going verbose **"
     CMONDEBUG='
@@ -256,6 +258,8 @@ else
         mds debug scatterstat = true
         mds verify scatter = true
         mds log max segments = 2'
+    GLOBALDEBUG='
+        debug rgw = 20'
 fi
 
 if [ -n "$MON_ADDR" ]; then
@@ -363,6 +367,7 @@ if [ "$start_mon" -eq 1 ]; then
         rgw frontends = fastcgi, civetweb port=$CEPH_RGW_PORT
         filestore fd cache size = 32
         run dir = $CEPH_OUT_DIR
+$GLOBALDEBUG
 EOF
 if [ "$cephx" -eq 1 ] ; then
 cat <<EOF >> $conf_fn
