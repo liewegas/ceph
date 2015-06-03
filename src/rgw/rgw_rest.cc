@@ -1309,7 +1309,14 @@ int RGWREST::preprocess(struct req_state *s, RGWClientIO *cio)
   if (info.host) {
     string h(s->info.host);
 
-    ldout(s->cct, 10) << "host=" << s->info.host << dendl;
+    // strip off trailing port
+    size_t colon_offset = h.find_last_of(':');
+    if (colon_offset != string::npos) {
+      ldout(s->cct, 10) << "removing trailing :port from " << h << dendl;
+      h.resize(colon_offset);
+    }
+
+    ldout(s->cct, 10) << "host=" << h << dendl;
     string domain;
     string subdomain;
     bool in_hosted_domain = rgw_find_host_in_domains(h, &domain, &subdomain);
