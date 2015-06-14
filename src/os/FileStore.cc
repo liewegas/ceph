@@ -2235,25 +2235,16 @@ void FileStore::_close_replay_guard(int fd, const SequencerPosition& spos)
 
 int FileStore::_check_replay_guard(coll_t cid, ghobject_t oid, const SequencerPosition& spos)
 {
-  if (!replaying)
+  if (!replaying || backend->can_checkpoint())
     return 1;
+
+  int r = _check_global_replay_guard(cid, spos);
+  if (r < 0)
+    return r;
 
   FDRef fd;
-  int r = lfn_open(cid, oid, false, &fd);
-  if (r < 0 && cid.is_temp()) {
-    dout(10) << "_check_replay_guard " << cid << " " << oid << " dne and temp, conditional replay" << dendl;
-    return 0;  // conditional
-  }
-
-  if (backend->can_checkpoint())
-    return 1;
-
-  int rc = _check_global_replay_guard(cid, spos);
-  if (rc < 0)
-    return rc;
-
+  r = lfn_open(cid, oid, false, &fd);
   if (r < 0) {
-    assert(!cid.is_temp());
     dout(10) << "_check_replay_guard " << cid << " " << oid << " dne" << dendl;
     return 1;  // if file does not exist, there is no guard, and we can replay.
   }
@@ -2352,8 +2343,7 @@ unsigned FileStore::_do_transaction(
         ghobject_t oid = i.get_oid(op->oid);
 	_kludge_temp_object_collection(cid, oid);
         tracepoint(objectstore, touch_enter, osr_name);
-	// allow creation in temp (conditional replay)
-        if (_check_replay_guard(cid, oid, spos) >= 0)
+        if (_check_replay_guard(cid, oid, spos) > 0)
           r = _touch(cid, oid);
         tracepoint(objectstore, touch_exit, r);
       }
@@ -5141,12 +5131,6 @@ int FileStore::_collection_move_rename(coll_t oldcid, const ghobject_t& oldoid,
      */
     if (!collection_exists(c))
       goto out_rm_src;
-
-    // the source needs to exist, too
-    if (!exists(oldcid, oldoid)) {
-      dout(20) << __func__ << " source dne during replay, no-op" << dendl;
-      goto out;
-    }
   }
 
   dstcmp = _check_replay_guard(c, o, spos);
@@ -5218,7 +5202,6 @@ int FileStore::_collection_move_rename(coll_t oldcid, const ghobject_t& oldoid,
     r = lfn_unlink(oldcid, oldoid, spos, true);
   }
 
- out:
   dout(10) << __func__ << " " << c << "/" << o << " from " << oldcid << "/" << oldoid
 	   << " = " << r << dendl;
   return r;
