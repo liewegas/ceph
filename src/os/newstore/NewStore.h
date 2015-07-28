@@ -470,7 +470,10 @@ public:
   NewStore(CephContext *cct, const string& path);
   ~NewStore();
 
-  bool need_journal() { return true; };
+  bool needs_journal() { return false; };
+  bool wants_journal() { return false; };
+  bool allows_journal() { return false; };
+
   int peek_journal_fsid(uuid_d *fsid);
 
   bool test_mount_in_use();
