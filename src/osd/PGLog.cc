@@ -825,7 +825,7 @@ void PGLog::_write_log(
   }
 
   for (list<pg_log_entry_t>::iterator p = log.log.begin();
-       p != log.log.end() && p->version < dirty_to;
+       p != log.log.end() && p->version <= dirty_to;
        ++p) {
     bufferlist bl(sizeof(*p) * 2);
     p->encode_with_checksum(bl);
