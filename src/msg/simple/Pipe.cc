@@ -1081,7 +1081,7 @@ int Pipe::connect()
 
     pipe_lock.Lock();
     if (state != STATE_CONNECTING) {
-      ldout(msgr->cct,0) << "connect got RESETSESSION but no longer connecting" << dendl;
+      ldout(msgr->cct,0) << "connect no longer connecting (" << state << ")" << dendl;
       goto stop_locked;
     }
 
