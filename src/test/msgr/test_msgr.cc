@@ -739,8 +739,10 @@ class SyntheticDispatcher : public Dispatcher {
     Mutex::Locker l(lock);
     list<uint64_t> c = conn_sent[con];
     for (list<uint64_t>::iterator it = c.begin();
-         it != c.end(); ++it)
+         it != c.end(); ++it) {
       sent.erase(*it);
+      cout << __func__ << " i=" << *it << std::endl;
+    }
     conn_sent.erase(con);
     got_remote_reset = true;
   }
@@ -759,10 +761,10 @@ class SyntheticDispatcher : public Dispatcher {
     ::decode(i, blp);
     ::decode(reply, blp);
     if (reply) {
-      //cerr << __func__ << " reply=" << reply << " i=" << i << std::endl;
+      cout << __func__ << " reply=" << reply << " i=" << i << std::endl;
       reply_message(m, i);
     } else if (sent.count(i)) {
-      //cerr << __func__ << " reply=" << reply << " i=" << i << std::endl;
+      cout << __func__ << " reply=" << reply << " i=" << i << std::endl;
       ASSERT_EQ(conn_sent[m->get_connection()].front(), i);
       ASSERT_TRUE(m->get_data().contents_equal(sent[i]));
       conn_sent[m->get_connection()].pop_front();
@@ -806,7 +808,7 @@ class SyntheticDispatcher : public Dispatcher {
         sent[i] = m->get_data();
         conn_sent[con].push_back(i);
       }
-      //cerr << __func__ << " conn=" << con.get() << " send m=" << m << " i=" << i << std::endl;
+      cout << __func__ << " conn=" << con.get() << " send m=" << m << " i=" << i << std::endl;
     }
     ASSERT_EQ(con->send_message(m), 0);
   }
@@ -820,8 +822,10 @@ class SyntheticDispatcher : public Dispatcher {
     Mutex::Locker l(lock);
 
     for (list<uint64_t>::iterator it = conn_sent[con].begin();
-         it != conn_sent[con].end(); ++it)
+         it != conn_sent[con].end(); ++it) {
       sent.erase(*it);
+      cout << __func__ << " i=" << *it << std::endl;
+    }
     conn_sent.erase(con);
   }
 };
