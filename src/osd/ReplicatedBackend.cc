@@ -625,8 +625,10 @@ void ReplicatedBackend::op_applied(
   FUNCTRACE();
   OID_EVENT_TRACE_WITH_MSG((op && op->op) ? op->op->get_req() : NULL, "OP_APPLIED_BEGIN", true);
   dout(10) << __func__ << ": " << op->tid << dendl;
-  if (op->op)
+  if (op->op) {
     op->op->mark_event("op_applied");
+    op->op->pg_trace.event("op applied");
+  }
 
   op->waiting_for_applied.erase(get_parent()->whoami_shard());
   parent->op_applied(op->v);
@@ -647,8 +649,10 @@ void ReplicatedBackend::op_commit(
   FUNCTRACE();
   OID_EVENT_TRACE_WITH_MSG((op && op->op) ? op->op->get_req() : NULL, "OP_COMMIT_BEGIN", true);
   dout(10) << __func__ << ": " << op->tid << dendl;
-  if (op->op)
+  if (op->op) {
     op->op->mark_event("op_commit");
+    op->op->pg_trace.event("op commit");
+  }
 
   op->waiting_for_commit.erase(get_parent()->whoami_shard());
 
@@ -702,6 +706,7 @@ void ReplicatedBackend::sub_op_modify_reply(OpRequestRef op)
         ostringstream ss;
         ss << "sub_op_commit_rec from " << from;
 	ip_op.op->mark_event_string(ss.str());
+	ip_op.op->pg_trace.event("sub_op_commit_rec");
       }
     } else {
       assert(ip_op.waiting_for_applied.count(from));
@@ -709,6 +714,7 @@ void ReplicatedBackend::sub_op_modify_reply(OpRequestRef op)
         ostringstream ss;
         ss << "sub_op_applied_rec from " << from;
 	ip_op.op->mark_event_string(ss.str());
+	ip_op.op->pg_trace.event("sub_op_applied_rec");
       }
     }
     ip_op.waiting_for_applied.erase(from);
@@ -1043,6 +1049,8 @@ void ReplicatedBackend::issue_op(
   InProgressOp *op,
   ObjectStore::Transaction &op_t)
 {
+  if (op->op)
+    op->op->pg_trace.event("issue replication ops");
 
   if (parent->get_actingbackfill_shards().size() > 1) {
     ostringstream ss;
@@ -1075,7 +1083,8 @@ void ReplicatedBackend::issue_op(
       op_t,
       peer,
       pinfo);
-
+    if (op->op)
+      wr->trace.init("replicated op", nullptr, &op->op->pg_trace);
     get_parent()->send_message_osd_cluster(
       peer.osd, wr, get_osdmap()->get_epoch());
   }
@@ -1175,9 +1184,10 @@ void ReplicatedBackend::sub_op_modify_applied(RepModifyRef rm)
   rm->op->mark_event("sub_op_applied");
   rm->applied = true;
 
-  dout(10) << "sub_op_modify_applied on " << rm << " op "
-	   << *rm->op->get_req() << dendl;
+  rm->op->pg_trace.event("sup_op_applied");
+
   Message *m = rm->op->get_req();
+  dout(10) << "sub_op_modify_applied on " << rm << " op " << *m << dendl;
 
   Message *ack = NULL;
   eversion_t version;
@@ -1204,6 +1214,7 @@ void ReplicatedBackend::sub_op_modify_applied(RepModifyRef rm)
   // send ack to acker only if we haven't sent a commit already
   if (ack) {
     ack->set_priority(CEPH_MSG_PRIO_HIGH); // this better match commit priority!
+    ack->trace = rm->op->pg_trace;
     get_parent()->send_message_osd_cluster(
       rm->ackerosd, ack, get_osdmap()->get_epoch());
   }
@@ -1214,17 +1225,18 @@ void ReplicatedBackend::sub_op_modify_applied(RepModifyRef rm)
 void ReplicatedBackend::sub_op_modify_commit(RepModifyRef rm)
 {
   rm->op->mark_commit_sent();
+  rm->op->pg_trace.event("sup_op_commit");
   rm->committed = true;
 
   // send commit.
-  dout(10) << "sub_op_modify_commit on op " << *rm->op->get_req()
+  Message *m = rm->op->get_req();
+  dout(10) << "sub_op_modify_commit on op " << *m
 	   << ", sending commit to osd." << rm->ackerosd
 	   << dendl;
 
   assert(get_osdmap()->is_up(rm->ackerosd));
   get_parent()->update_last_complete_ondisk(rm->last_complete);
 
-  Message *m = rm->op->get_req();
   Message *commit = NULL;
   if (m->get_type() == MSG_OSD_SUBOP) {
     // doesn't have CLIENT SUBOP feature ,use Subop
@@ -1247,6 +1259,7 @@ void ReplicatedBackend::sub_op_modify_commit(RepModifyRef rm)
   }
 
   commit->set_priority(CEPH_MSG_PRIO_HIGH); // this better match ack priority!
+  commit->trace = rm->op->pg_trace;
   get_parent()->send_message_osd_cluster(
     rm->ackerosd, commit, get_osdmap()->get_epoch());
 
