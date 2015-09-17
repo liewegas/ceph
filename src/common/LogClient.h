@@ -137,7 +137,7 @@ public:
   }
   bool must_log_to_monitors() { return log_to_monitors; }
 
-  typedef shared_ptr<LogChannel> Ref;
+  typedef ceph::shared_ptr<LogChannel> Ref;
 
   /**
    * update config values from parsed k/v map for each config option

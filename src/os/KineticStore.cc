@@ -25,7 +25,7 @@ int KineticStore::init()
   return 0;
 }
 
-int KineticStore::_test_init(CephContext *c)
+int KineticStore::_test_init(CephContext *cct)
 {
   kinetic::KineticConnectionFactory conn_factory =
     kinetic::NewKineticConnectionFactory();
@@ -36,7 +36,8 @@ int KineticStore::_test_init(CephContext *c)
   options.user_id = cct->_conf->kinetic_user_id;
   options.hmac_key = cct->_conf->kinetic_hmac_key;
   options.use_ssl = cct->_conf->kinetic_use_ssl;
-
+  
+  std::unique_ptr<kinetic::ThreadsafeBlockingKineticConnection> kinetic_conn;
   kinetic::Status status = conn_factory.NewThreadsafeBlockingConnection(options, kinetic_conn, 10);
   kinetic_conn.reset();
   if (!status.ok())
@@ -106,17 +107,16 @@ int KineticStore::submit_transaction(KeyValueDB::Transaction t)
     kinetic::KineticStatus status(kinetic::StatusCode::OK, "");
     if (it->type == KINETIC_OP_WRITE) {
       string data(it->data.c_str(), it->data.length());
-      kinetic::KineticRecord record(data, "", "",
-				    com::seagate::kinetic::client::proto::Message_Algorithm_SHA1);
+      kinetic::KineticRecord record(data, "");
       dout(30) << "kinetic before put of " << it->key << " (" << data.length() << " bytes)" << dendl;
-      status = kinetic_conn->Put(it->key, "", kinetic::WriteMode::IGNORE_VERSION,
-				 record);
+      status = kinetic_conn->BatchPutKey(_t->batch_id, it->key, "", kinetic::WriteMode::IGNORE_VERSION,
+			    make_shared<const kinetic::KineticRecord>(record));
       dout(30) << "kinetic after put of " << it->key << dendl;
     } else {
       assert(it->type == KINETIC_OP_DELETE);
       dout(30) << "kinetic before delete" << dendl;
-      status = kinetic_conn->Delete(it->key, "",
-				    kinetic::WriteMode::IGNORE_VERSION);
+      status = kinetic_conn->BatchDeleteKey(_t->batch_id, it->key, "",
+			       kinetic::WriteMode::IGNORE_VERSION);
       dout(30) << "kinetic after delete" << dendl;
     }
     if (!status.ok()) {
@@ -125,7 +125,14 @@ int KineticStore::submit_transaction(KeyValueDB::Transaction t)
       return -1;
     }
   }
-
+  kinetic::KineticStatus status = kinetic_conn->BatchCommit(_t->batch_id);
+  if(!status.ok())
+    {
+      derr << "kinetic error committing transaction: "
+	   << status.message() << dendl;
+      return -1;
+    }
+  _t->batch_id = 0;
   logger->inc(l_kinetic_txns);
   return 0;
 }
@@ -133,6 +140,20 @@ int KineticStore::submit_transaction(KeyValueDB::Transaction t)
 int KineticStore::submit_transaction_sync(KeyValueDB::Transaction t)
 {
   return submit_transaction(t);
+}
+
+KineticStore::KineticTransactionImpl::KineticTransactionImpl(KineticStore *_db)
+{
+  db = _db;
+  batch_id = 0;
+  db->kinetic_conn->BatchStart(&batch_id);
+}
+
+KineticStore::KineticTransactionImpl::~KineticTransactionImpl()
+{
+  if(batch_id) {
+    db->kinetic_conn->BatchAbort(batch_id);
+  }
 }
 
 void KineticStore::KineticTransactionImpl::set(
@@ -216,110 +237,117 @@ int KineticStore::split_key(string in_prefix, string *prefix, string *key)
   return 0;
 }
 
-KineticStore::KineticWholeSpaceIteratorImpl::KineticWholeSpaceIteratorImpl(kinetic::BlockingKineticConnection *conn) : kinetic_conn(conn),
-   kinetic_status(kinetic::StatusCode::OK, "")
-{
-  dout(30) << "kinetic iterator constructor()" << dendl;
-  const static string last_key = "\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF";
-  kinetic::KeyRangeIterator it =
-    kinetic_conn->IterateKeyRange("", true, last_key, true, 1024);
-  while (it != kinetic::KeyRangeEnd()) {
-    try {
-      keys.insert(*it);
-      dout(30) << "kinetic iterator added " << *it << dendl;
-    } catch (std::runtime_error &e) {
-      kinetic_status = kinetic::KineticStatus(kinetic::StatusCode::CLIENT_INTERNAL_ERROR, e.what());
-      return;
-    }
-    ++it;
-  }
-  keys_iter = keys.begin();
-}
-
 int KineticStore::KineticWholeSpaceIteratorImpl::seek_to_first(const string &prefix)
 {
   dout(30) << "kinetic iterator seek_to_first(prefix): " << prefix << dendl;
-  keys_iter = keys.lower_bound(prefix);
+  kinetic_status = kinetic_conn->GetNext(prefix, next_key, record);
+  if(kinetic_status.ok()) {
+    current_key = *next_key;
+  }
+  else {
+    current_key = end_key;
+  }    
   return 0;
 }
 
 int KineticStore::KineticWholeSpaceIteratorImpl::seek_to_last()
 {
   dout(30) << "kinetic iterator seek_to_last()" << dendl;
-  keys_iter = keys.end();
-  if (keys.begin() != keys_iter)
-    --keys_iter;
+  current_key = end_key;
+  kinetic_status = kinetic_conn->GetPrevious(current_key, next_key, record);
+  if(kinetic_status.ok()) {
+    current_key = *next_key;
+  }
   return 0;
 }
 
 int KineticStore::KineticWholeSpaceIteratorImpl::seek_to_last(const string &prefix)
 {
   dout(30) << "kinetic iterator seek_to_last(prefix): " << prefix << dendl;
-  keys_iter = keys.upper_bound(prefix + "\2");
-  if (keys.begin() == keys_iter) {
-    keys_iter = keys.end();
-  } else {
-    --keys_iter;
+  kinetic_status = kinetic_conn->GetPrevious(prefix + "\2", next_key, record);
+  if(!kinetic_status.ok()) {
+    current_key = end_key;
+  }
+  else {
+    current_key = *next_key;
   }
   return 0;
 }
 
 int KineticStore::KineticWholeSpaceIteratorImpl::upper_bound(const string &prefix, const string &after) {
   dout(30) << "kinetic iterator upper_bound()" << dendl;
-  string bound = combine_strings(prefix, after);
-  keys_iter = keys.upper_bound(bound);
+  current_key = combine_strings(prefix, after);
+  kinetic_status = kinetic_conn->GetNext(current_key, next_key, record);
+  if(kinetic_status.ok()) {
+    current_key = *next_key;
+  }
+  else {
+    current_key = end_key;
+  }
   return 0;
 }
 
 int KineticStore::KineticWholeSpaceIteratorImpl::lower_bound(const string &prefix, const string &to) {
   dout(30) << "kinetic iterator lower_bound()" << dendl;
-  string bound = combine_strings(prefix, to);
-  keys_iter = keys.lower_bound(bound);
+  current_key = combine_strings(prefix, to);
+  kinetic_status = kinetic_conn->Get(current_key, record);
+  if(kinetic_status.ok()) {
+    return 0;
+  }
+  kinetic_status = kinetic_conn->GetNext(current_key, next_key, record);
+  if(kinetic_status.ok()) {
+    current_key = *next_key;
+    return 0;
+  }
+  else {
+    current_key = end_key;
+  }
   return 0;
 }
 
 bool KineticStore::KineticWholeSpaceIteratorImpl::valid() {
   dout(30) << "kinetic iterator valid()" << dendl;
-  return keys_iter != keys.end();
+  return current_key != end_key;
 }
 
 int KineticStore::KineticWholeSpaceIteratorImpl::next() {
   dout(30) << "kinetic iterator next()" << dendl;
-  if (keys_iter != keys.end()) {
-      ++keys_iter;
-      return 0;
+  kinetic_status = kinetic_conn->GetNext(current_key, next_key, record);
+  if(kinetic_status.ok()) {
+    current_key = *next_key;
+    return 0;
   }
+  current_key = end_key;
   return -1;
 }
 
 int KineticStore::KineticWholeSpaceIteratorImpl::prev() {
   dout(30) << "kinetic iterator prev()" << dendl;
-  if (keys_iter != keys.begin()) {
-      --keys_iter;
-      return 0;
+  kinetic_status = kinetic_conn->GetPrevious(current_key, next_key, record);
+  if(kinetic_status.ok()) {
+    current_key = *next_key;
+    return 0;
   }
-  keys_iter = keys.end();
+  current_key = end_key;
   return -1;
 }
 
 string KineticStore::KineticWholeSpaceIteratorImpl::key() {
   dout(30) << "kinetic iterator key()" << dendl;
   string out_key;
-  split_key(*keys_iter, NULL, &out_key);
+  split_key(current_key, NULL, &out_key);
   return out_key;
 }
 
 pair<string,string> KineticStore::KineticWholeSpaceIteratorImpl::raw_key() {
   dout(30) << "kinetic iterator raw_key()" << dendl;
   string prefix, key;
-  split_key(*keys_iter, &prefix, &key);
+  split_key(current_key, &prefix, &key);
   return make_pair(prefix, key);
 }
 
 bufferlist KineticStore::KineticWholeSpaceIteratorImpl::value() {
   dout(30) << "kinetic iterator value()" << dendl;
-  unique_ptr<kinetic::KineticRecord> record;
-  kinetic_status = kinetic_conn->Get(*keys_iter, record);
   return to_bufferlist(*record.get());
 }
 

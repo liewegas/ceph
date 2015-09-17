@@ -40,7 +40,7 @@ class KineticStore : public KeyValueDB {
   int user_id;
   string hmac_key;
   bool use_ssl;
-  std::unique_ptr<kinetic::BlockingKineticConnection> kinetic_conn;
+  std::unique_ptr<kinetic::ThreadsafeBlockingKineticConnection> kinetic_conn;
 
   int do_open(ostream &out, bool create_if_missing);
 
@@ -80,8 +80,11 @@ public:
   public:
     vector<KineticOp> ops;
     KineticStore *db;
+    int batch_id;
 
-    KineticTransactionImpl(KineticStore *db) : db(db) {}
+    KineticTransactionImpl(KineticStore *_db);
+    ~KineticTransactionImpl();
+    
     void set(
       const string &prefix,
       const string &k,
@@ -109,16 +112,18 @@ public:
 
   class KineticWholeSpaceIteratorImpl :
     public KeyValueDB::WholeSpaceIteratorImpl {
-    std::set<std::string> keys;
-    std::set<std::string>::iterator keys_iter;
-    kinetic::BlockingKineticConnection *kinetic_conn;
+    string current_key;
+    unique_ptr<string> next_key;
+    kinetic::ThreadsafeBlockingKineticConnection *kinetic_conn;
     kinetic::KineticStatus kinetic_status;
+    unique_ptr<kinetic::KineticRecord> record;
+    string end_key = "\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF";
   public:
-    KineticWholeSpaceIteratorImpl(kinetic::BlockingKineticConnection *conn);
+    KineticWholeSpaceIteratorImpl(kinetic::ThreadsafeBlockingKineticConnection *conn) : kinetic_conn(conn), kinetic_status(kinetic::StatusCode::OK, "") { }
     virtual ~KineticWholeSpaceIteratorImpl() { }
 
     int seek_to_first() {
-      return seek_to_first("");
+      return seek_to_first("_");
     }
     int seek_to_first(const string &prefix);
     int seek_to_last();

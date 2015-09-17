@@ -98,7 +98,7 @@ endif
 if WITH_KINETIC
 libos_la_SOURCES += os/KineticStore.cc
 libos_la_CXXFLAGS += -std=gnu++11
-libos_la_LIBADD += -lkinetic_client -lprotobuf -lglog -lgflags libcrypto.a
+libos_la_LIBADD += -lkinetic_client -lprotobuf -lglog -lgflags -lssl -lcrypto
 noinst_HEADERS += os/KineticStore.h
 endif
 

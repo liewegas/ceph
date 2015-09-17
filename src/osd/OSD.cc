@@ -1909,7 +1909,10 @@ int OSD::init()
   monc->set_want_keys(CEPH_ENTITY_TYPE_MON | CEPH_ENTITY_TYPE_OSD);
   r = monc->init();
   if (r < 0)
+  {
+    derr << "OSD:init: monc init failed" << dendl;
     goto out;
+  }
 
   // tell monc about log_client so it will know about mon session resets
   monc->set_log_client(&log_client);
@@ -1935,21 +1938,24 @@ int OSD::init()
 
   osd_lock.Unlock();
 
-  r = monc->authenticate();
-  if (r < 0) {
-    osd_lock.Lock(); // locker is going to unlock this on function exit
-    if (is_stopping())
-      r =  0;
-    goto monout;
-  }
+  //r = monc->authenticate();
+  //if (r < 0) {
+  //  osd_lock.Lock(); // locker is going to unlock this on function exit
+  //  if (is_stopping())
+  //    r =  0;
+  //  goto monout;
+  //}
 
-  while (monc->wait_auth_rotating(30.0) < 0) {
-    derr << "unable to obtain rotating service keys; retrying" << dendl;
-  }
+  //while (monc->wait_auth_rotating(30.0) < 0) {
+  //  derr << "unable to obtain rotating service keys; retrying" << dendl;
+  //}
 
   osd_lock.Lock();
   if (is_stopping())
-    return 0;
+  {
+    derr << "STATE_STOPPING set " << dendl;
+    //return 0;
+  }
 
   check_config();
 
