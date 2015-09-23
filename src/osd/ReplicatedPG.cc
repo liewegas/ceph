@@ -1496,6 +1496,22 @@ void ReplicatedPG::do_op(OpRequestRef& op)
     return;
   }
 
+  // discard due to cluster full transition?  (we discard any op that
+  // originates before the cluster or pool is marked full; the client
+  // will resend after the full flag is removed or if they expect the
+  // op to succeed despite being full).
+  // FIXME: we exclude mds writes for now.
+  if (!m->get_source().is_mds() &&
+      info.history.last_epoch_marked_full > m->get_map_epoch()) {
+    dout(10) << __func__ << " discarding op sent before full " << m << " "
+	     << *m << dendl;
+    return;
+  }
+  if (osd->check_failsafe_full()) {
+    osd->reply_op_error(op, -ENOSPC);
+    return;
+  }
+
   // order this op as a write?
   bool write_ordered =
     op->may_write() ||
@@ -2681,13 +2697,6 @@ void ReplicatedPG::execute_ctx(OpContext *ctx)
   if (result == -EAGAIN) {
     // clean up after the ctx
     close_op_ctx(ctx, result);
-    return;
-  }
-
-  // check for full
-  if (ctx->delta_stats.num_bytes > 0 &&
-      pool.info.has_flag(pg_pool_t::FLAG_FULL)) {
-    reply_ctx(ctx, -ENOSPC);
     return;
   }
 
@@ -6115,6 +6124,17 @@ int ReplicatedPG::prepare_transaction(OpContext *ctx)
   if (ctx->op_t->empty() && !ctx->modify) {
     unstable_stats.add(ctx->delta_stats);
     return result;
+  }
+
+  // check for full
+  if (!ctx->reqid.name.is_mds()) {   // FIXME: ignore mds for now
+    if (ctx->delta_stats.num_bytes > 0 ||
+	ctx->delta_stats.num_objects > 0) {  // FIXME: keys?
+      if (pool.info.has_flag(pg_pool_t::FLAG_FULL) ||
+	  get_osdmap()->test_flag(CEPH_OSDMAP_FULL)) {
+	return -ENOSPC;
+      }
+    }
   }
 
   // clone, if necessary
