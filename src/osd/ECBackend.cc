@@ -901,7 +901,6 @@ void ECBackend::handle_sub_read(
       i != op.to_read.end();
       ++i) {
     bufferhash h(-1);
-    uint64_t total_read = 0;
     list<boost::tuple<uint64_t, uint64_t, uint32_t> >::iterator j;
     for (j = i->second.begin(); j != i->second.end(); ++j) {
       bufferlist bl;
@@ -918,7 +917,6 @@ void ECBackend::handle_sub_read(
 	break;
       } else {
         dout(20) << __func__ << " read request=" << j->get<1>() << " r=" << r << " len=" << bl.length() << dendl;
-	total_read += r;
         h << bl;
 	reply->buffers_read[i->first].push_back(
 	  make_pair(
@@ -926,14 +924,11 @@ void ECBackend::handle_sub_read(
 	    bl)
 	  );
       }
-    }
-    // If all reads happened then lets check digest
-    if (j == i->second.end()) {
       dout(20) << __func__ << ": Checking hash of " << i->first << dendl;
       ECUtil::HashInfoRef hinfo = get_hash_info(i->first);
       // This shows that we still need deep scrub because large enough files
       // are read in sections, so the digest check here won't be done here.
-      if (!hinfo || (total_read == hinfo->get_total_chunk_size() &&
+      if (!hinfo || ((uint64_t)r == hinfo->get_total_chunk_size() &&
 	  h.digest() != hinfo->get_chunk_hash(shard))) {
         if (!hinfo) {
 	  get_parent()->clog_error() << __func__ << ": No hinfo for " << i->first << "\n";

@@ -8334,6 +8334,15 @@ ObjectContextRef ReplicatedPG::get_object_context(const hobject_t& soid,
     if (pool.info.require_rollback()) {
       if (attrs) {
 	obc->attr_cache = *attrs;
+	for (map<string, bufferlist>::iterator i = obc->attr_cache.begin();
+	     i != obc->attr_cache.end();
+	     ) {
+	  if (ECUtil::is_hinfo_key_string(i->first)) {
+	    dout(10) << __func__ << ": Remove " << ECUtil::get_hinfo_key() << " from " << soid << dendl;
+	    obc->attr_cache.erase(i++);
+	  } else
+	    ++i;
+	}
       } else {
 	int r = pgbackend->objects_get_attrs(
 	  soid,
