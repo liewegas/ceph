@@ -1019,7 +1019,8 @@ void GenericObjectMap::set_parent_header(Header header, KeyValueDB::Transaction 
 void GenericObjectMap::clear_header(Header header, KeyValueDB::Transaction t)
 {
   dout(20) << __func__ << " clearing seq " << header->seq << dendl;
-  t->rmkeys_by_prefix(user_prefix(header, string()));
+  t->rmkeys_by_prefix(user_prefix(header, string("_STRIP_")));
+  t->rmkeys_by_prefix(user_prefix(header, string("__OBJATTR__")));
   t->rmkeys_by_prefix(complete_prefix(header));
   set<string> keys;
   keys.insert(PARENT_KEY);
