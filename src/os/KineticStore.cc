@@ -20,6 +20,7 @@ using std::string;
    This bug will be fixed by function to check if connection is available.
  */
 #define MAX_CONNECTIONS 96
+#define MAX_BATCHOPS 1100
 
 #define dout_subsys ceph_subsys_keyvaluestore
 
@@ -119,39 +120,55 @@ int KineticStore::submit_transaction(KeyValueDB::Transaction t)
     static_cast<KineticTransactionImpl *>(t.get());
 
   dout(20) << "kinetic submit_transaction" << dendl;
+  int num_of_commit = _t->ops.size() / MAX_BATCHOPS + 1;
+  vector<KineticOp>::iterator it = _t->ops.begin();
 
-  for (vector<KineticOp>::iterator it = _t->ops.begin();
-       it != _t->ops.end(); ++it) {
-    kinetic::KineticStatus status(kinetic::StatusCode::OK, "");
-    if (it->type == KINETIC_OP_WRITE) {
-      string data(it->data.c_str(), it->data.length());
-      kinetic::KineticRecord record(data, "");
-      dout(30) << "kinetic before put of " << it->key << " (" << data.length() << " bytes)" << dendl;
-      status = _t->kinetic_conn->BatchPutKey(_t->batch_id, it->key, "", kinetic::WriteMode::IGNORE_VERSION,
-			    make_shared<const kinetic::KineticRecord>(record));
-      dout(30) << "kinetic after put of " << it->key << dendl;
-    } else {
-      assert(it->type == KINETIC_OP_DELETE);
-      dout(30) << "kinetic before delete" << dendl;
-      status = _t->kinetic_conn->BatchDeleteKey(_t->batch_id, it->key, "",
-			       kinetic::WriteMode::IGNORE_VERSION);
-      dout(30) << "kinetic after delete" << dendl;
-    }
-    if (!status.ok()) {
-      derr << "kinetic error submitting transaction: "
-	   << status.message() << dendl;
+  for (int i = 0; it != _t->ops.end() && i < num_of_commit; ++i) {
+    kinetic::KineticStatus startstatus(kinetic::StatusCode::OK, "");
+    startstatus = _t->kinetic_conn->BatchStart(&(_t->batch_id));
+    if (!startstatus.ok()) {
+      derr << "kinetic error batch start: "
+	   << startstatus.message() << dendl;
+      derr << "error number of commit: " << i << dendl;
+      derr << "error batch id: " << _t->batch_id << dendl;
       return -1;
     }
+    for (int j = 0; it != _t->ops.end() && j < MAX_BATCHOPS; ++it, ++j) {
+      kinetic::KineticStatus status(kinetic::StatusCode::OK, "");
+      if (it->type == KINETIC_OP_WRITE) {
+	string data(it->data.c_str(), it->data.length());
+	kinetic::KineticRecord record(data, "");
+	dout(30) << "kinetic before put of " << it->key << " (" << data.length() << " bytes)" << dendl;
+	status = _t->kinetic_conn->BatchPutKey(_t->batch_id, it->key, "", kinetic::WriteMode::IGNORE_VERSION,
+					       make_shared<const kinetic::KineticRecord>(record));
+	dout(30) << "kinetic after put of " << it->key << dendl;
+      } else {
+	assert(it->type == KINETIC_OP_DELETE);
+	dout(30) << "kinetic before delete" << dendl;
+	status = _t->kinetic_conn->BatchDeleteKey(_t->batch_id, it->key, "",
+						  kinetic::WriteMode::IGNORE_VERSION);
+	dout(30) << "kinetic after delete" << dendl;
+      }
+      if (!status.ok()) {
+	derr << "kinetic error submitting transaction: "
+	     << status.message() << dendl;
+	derr << "error number of commit: " << i << dendl;
+	derr << "error number of batch: " << j << dendl;
+	return -1;
+      }
+    }
+    kinetic::KineticStatus status = _t->kinetic_conn->BatchCommit(_t->batch_id);
+    if(!status.ok())
+      {
+	derr << "kinetic error committing transaction: "
+	     << status.message() << dendl;
+	derr << "kinetic error batch id: " << _t->batch_id << dendl;
+	derr << "kinetic error batch operations in queue: " << _t->ops.size() << dendl;
+	return -1;
+      }
+    _t->batch_id = 0;
+    logger->inc(l_kinetic_txns);
   }
-  kinetic::KineticStatus status = _t->kinetic_conn->BatchCommit(_t->batch_id);
-  if(!status.ok())
-    {
-      derr << "kinetic error committing transaction: "
-	   << status.message() << dendl;
-      return -1;
-    }
-  _t->batch_id = 0;
-  logger->inc(l_kinetic_txns);
   return 0;
 }
 
@@ -169,7 +186,6 @@ KineticStore::KineticTransactionImpl::KineticTransactionImpl(KineticStore *_db)
     kinetic_conn = std::move(connection_pool.front());
     connection_pool.pop_front();
   }
-  kinetic_conn->BatchStart(&batch_id);
 }
 
 KineticStore::KineticTransactionImpl::~KineticTransactionImpl()
