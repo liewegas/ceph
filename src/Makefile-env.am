@@ -169,9 +169,9 @@ LIBCRUSH = libcrush.la
 LIBCOMPRESSOR = libcompressor.la -lsnappy
 LIBJSON_SPIRIT = libjson_spirit.la
 LIBLOG = liblog.la
-LIBOS = libos.la
-LIBOS_TYPES = libos_types.la
-LIBOSD = libosd.la
+LIBOS = libos.a
+LIBOS_TYPES = libos_types.a
+LIBOSD = libosd.a
 LIBOSD_TYPES = libosd_types.la
 LIBOSDC = libosdc.la
 LIBMON = libmon.la
@@ -224,8 +224,9 @@ if ENABLE_COVERAGE
 EXTRALIBS += -lgcov
 endif # ENABLE_COVERAGE
 
-# Libosd always needs osdc and os
-LIBOSD += $(LIBOSDC) $(LIBOS)
+
+# Libosd always needs osdc
+LIBOSD += $(LIBOSDC)
 
 # These have references to syms like ceph_using_tcmalloc(), glue libperfglue to them
 LIBMON += $(LIBPERFGLUE)

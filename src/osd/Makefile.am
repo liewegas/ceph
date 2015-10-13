@@ -1,14 +1,14 @@
-libosd_types_la_SOURCES = \
+libosd_types_a_SOURCES = \
 	osd/PGLog.cc \
 	osd/osd_types.cc \
 	osd/ECUtil.cc
-libosd_types_la_CXXFLAGS = ${AM_CXXFLAGS}
-noinst_LTLIBRARIES += libosd_types.la
+libosd_types_a_CXXFLAGS = ${AM_CXXFLAGS}
+noinst_LIBRARIES += libosd_types.a
 
 if ENABLE_SERVER
 if WITH_OSD
 
-libosd_la_SOURCES = \
+libosd_a_SOURCES = \
 	osd/PG.cc \
 	osd/ReplicatedPG.cc \
 	osd/ReplicatedBackend.cc \
@@ -26,15 +26,15 @@ libosd_la_SOURCES = \
 	osd/SnapMapper.cc \
 	objclass/class_api.cc
 
-libosd_la_CXXFLAGS = ${AM_CXXFLAGS}
+libosd_a_CXXFLAGS = ${AM_CXXFLAGS}
 if WITH_KINETIC
-libosd_la_CXXFLAGS += -std=gnu++11
+libosd_a_CXXFLAGS += -std=gnu++11
 endif
-libosd_la_LIBADD = $(LIBOSDC) $(LIBOS) $(LIBOSD_TYPES) $(LIBOS_TYPES)
+libosd_a_LIBADD = $(LIBOSDC) $(LIBOS) $(LIBOSD_TYPES) $(LIBOS_TYPES)
 if WITH_LTTNG
-libosd_la_LIBADD += $(LIBOSD_TP)
+libosd_a_LIBADD += $(LIBOSD_TP)
 endif
-noinst_LTLIBRARIES += libosd.la
+noinst_LIBRARIES += libosd.a
 
 noinst_HEADERS += \
 	osd/ClassHandler.h \

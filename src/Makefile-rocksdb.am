@@ -1,6 +1,8 @@
 if WITH_SLIBROCKSDB
 rocksdb/librocksdb.so:
 	cd rocksdb && make librocksdb.so
+rocksdb/librocksdb.a:
+	cd rocksdb && make librocksdb.a
 
   EXTRA_DIST += \
 	rocksdb/.gitignore \
