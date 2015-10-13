@@ -1,6 +1,7 @@
 if WITH_SLIBROCKSDB
-  SUBDIRS += rocksdb
-else
+rocksdb/librocksdb.so:
+	cd rocksdb && make librocksdb.so
+
   EXTRA_DIST += \
 	rocksdb/.gitignore \
         rocksdb/CONTRIBUTING.md \

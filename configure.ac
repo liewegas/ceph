@@ -789,8 +789,8 @@ AC_ARG_WITH([librocksdb-static],
             [with_librocksdb_static=no])
 AS_IF([test "x$with_librocksdb_static" = "xcheck" -a "x$HAVE_CXX11" = "x1" ],
             [with_librocksdb_static="yes"])
-AS_IF([test "x$with_librocksdb_static" = "xyes"],
-            [AC_CONFIG_SUBDIRS([src/rocksdb])])
+#AS_IF([test "x$with_librocksdb_static" = "xyes"],
+#            [AC_CONFIG_SUBDIRS([src/rocksdb])])
 AS_IF([test "x$with_librocksdb_static" = "xyes"],
             [AC_DEFINE([HAVE_LIBROCKSDB], [1], [Defined if you have librocksdb enabled])])
 AM_CONDITIONAL(WITH_SLIBROCKSDB, [ test "x$with_librocksdb_static" = "xyes" ])

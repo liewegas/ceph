@@ -46,5 +46,5 @@ autoconf
 autoheader
 automake -a --add-missing -Wall
 ( cd src/gmock && autoreconf -fvi; )
-( cd src/rocksdb && autoreconf -fvi; )
+#( cd src/rocksdb && autoreconf -fvi; )
 exit
