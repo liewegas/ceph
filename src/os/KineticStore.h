@@ -19,6 +19,10 @@
 #include "common/Formatter.h"
 
 #include "common/ceph_context.h"
+#include <vector>
+#include <mutex>
+#include <deque>
+#include <mutex>
 
 class PerfCounters;
 
@@ -41,6 +45,11 @@ class KineticStore : public KeyValueDB {
   string hmac_key;
   bool use_ssl;
   std::unique_ptr<kinetic::ThreadsafeBlockingKineticConnection> kinetic_conn;
+  static std::deque<std::unique_ptr<kinetic::ThreadsafeBlockingKineticConnection>> connection_pool;
+  static std::vector<int> conn_is_not_used;
+  int keyvaluestore_op_threads;
+  int osd_op_threads;
+  static std::mutex conn_lock;
 
   int do_open(ostream &out, bool create_if_missing);
 
@@ -81,6 +90,7 @@ public:
     vector<KineticOp> ops;
     KineticStore *db;
     int batch_id;
+    unique_ptr<kinetic::ThreadsafeBlockingKineticConnection> kinetic_conn;
 
     KineticTransactionImpl(KineticStore *_db);
     ~KineticTransactionImpl();
@@ -114,13 +124,14 @@ public:
     public KeyValueDB::WholeSpaceIteratorImpl {
     string current_key;
     unique_ptr<string> next_key;
-    kinetic::ThreadsafeBlockingKineticConnection *kinetic_conn;
+    unique_ptr<kinetic::ThreadsafeBlockingKineticConnection> kinetic_conn;
     kinetic::KineticStatus kinetic_status;
     unique_ptr<kinetic::KineticRecord> record;
     string end_key = "\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF";
+    int conn_id;
   public:
-    KineticWholeSpaceIteratorImpl(kinetic::ThreadsafeBlockingKineticConnection *conn) : kinetic_conn(conn), kinetic_status(kinetic::StatusCode::OK, "") { }
-    virtual ~KineticWholeSpaceIteratorImpl() { }
+    KineticWholeSpaceIteratorImpl();
+    virtual ~KineticWholeSpaceIteratorImpl();
 
     int seek_to_first() {
       return seek_to_first("_");
@@ -148,13 +159,13 @@ public:
     return 0;
   }
 
-
 protected:
+  
   WholeSpaceIterator _get_iterator() {
     return ceph::shared_ptr<KeyValueDB::WholeSpaceIteratorImpl>(
-								new KineticWholeSpaceIteratorImpl(kinetic_conn.get()));
+								new KineticWholeSpaceIteratorImpl());
   }
-
+  
   // TODO: remove snapshots from interface
   WholeSpaceIterator _get_snapshot_iterator() {
     return _get_iterator();
@@ -163,3 +174,4 @@ protected:
 };
 
 #endif
+
