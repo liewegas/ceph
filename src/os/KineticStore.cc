@@ -13,6 +13,8 @@ using std::string;
 #include "common/perf_counters.h"
 #include <deque>
 #include <mutex>
+#include <sys/types.h>
+#include <sys/statfs.h>
 
 /* FIX ME
    There is no mechanism to wait until connection is available when all the connection is used.
@@ -111,6 +113,38 @@ void KineticStore::close()
   kinetic_conn.reset();
   if (logger)
     cct->get_perfcounters_collection()->remove(logger);
+}
+
+int KineticStore::get_statfs(struct statfs *buf)
+{
+  unique_ptr<kinetic::ThreadsafeBlockingKineticConnection> getlog_conn;
+  vector<com::seagate::kinetic::client::proto::Command_GetLog_Type> log_type{com::seagate::kinetic::client::proto::Command_GetLog_Type_CAPACITIES};
+  {
+    std::lock_guard<std::mutex> guard(conn_lock);
+    getlog_conn = std::move(connection_pool.front());
+    connection_pool.pop_front();
+  }
+  unique_ptr<kinetic::DriveLog> drive_log;
+  uint64_t blk_size = cct->_conf->keyvaluestore_default_strip_size;
+  kinetic::KineticStatus status = getlog_conn->GetLog(log_type, drive_log);
+  if (!status.ok()) {
+    derr << "kinetic GetLog error: " << status.message() << dendl;
+    {
+      std::lock_guard<std::mutex> guard(conn_lock);
+      connection_pool.push_back(std::move(getlog_conn));
+    }
+    return -1;
+  }
+  buf->f_type = (__SWORD_TYPE)0xdeadbeef;
+  buf->f_bsize = (__SWORD_TYPE)blk_size;
+  buf->f_blocks = drive_log->capacity.nominal_capacity_in_bytes / blk_size;
+  buf->f_bfree = (uint64_t)((float)drive_log->capacity.nominal_capacity_in_bytes * (1.0 - drive_log->capacity.portion_full)) / blk_size;
+  buf->f_bavail = (uint64_t)((float)drive_log->capacity.nominal_capacity_in_bytes * (1.0 - drive_log->capacity.portion_full)) / blk_size;
+  {
+    std::lock_guard<std::mutex> guard(conn_lock);
+    connection_pool.push_back(std::move(getlog_conn));
+  }
+  return 0;
 }
 
 int KineticStore::submit_transaction(KeyValueDB::Transaction t)

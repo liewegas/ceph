@@ -23,6 +23,7 @@
 #include <mutex>
 #include <deque>
 #include <mutex>
+#include <sys/statvfs.h>
 
 class PerfCounters;
 
@@ -157,6 +158,7 @@ public:
     // not used by the osd
     return 0;
   }
+  int get_statfs(struct statfs *buf);
 
 protected:
   
