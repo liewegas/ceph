@@ -47,8 +47,7 @@ class KineticStore : public KeyValueDB {
   std::unique_ptr<kinetic::ThreadsafeBlockingKineticConnection> kinetic_conn;
   static std::deque<std::unique_ptr<kinetic::ThreadsafeBlockingKineticConnection>> connection_pool;
   static std::vector<int> conn_is_not_used;
-  int keyvaluestore_op_threads;
-  int osd_op_threads;
+  int kinetic_timeout_seconds;
   static std::mutex conn_lock;
 
   int do_open(ostream &out, bool create_if_missing);
