@@ -753,7 +753,6 @@ rm -rf $RPM_BUILD_ROOT
 %dir %{_docdir}/ceph
 %{_docdir}/ceph/sample.ceph.conf
 %{_docdir}/ceph/sample.fetch_config
-%{_bindir}/cephfs
 %{_bindir}/ceph-clsinfo
 %{_bindir}/ceph-rest-api
 %{python_sitelib}/ceph_rest_api.py*
@@ -842,7 +841,6 @@ rm -rf $RPM_BUILD_ROOT
 %{_mandir}/man8/crushtool.8*
 %{_mandir}/man8/osdmaptool.8*
 %{_mandir}/man8/monmaptool.8*
-%{_mandir}/man8/cephfs.8*
 %{_mandir}/man8/mount.ceph.8*
 %{_mandir}/man8/ceph-debugpack.8*
 %{_mandir}/man8/ceph-clsinfo.8*
