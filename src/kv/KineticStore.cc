@@ -170,7 +170,8 @@ int KineticStore::submit_transaction(KeyValueDB::Transaction t)
       kinetic::KineticStatus status(kinetic::StatusCode::OK, "");
       if (it->type == KINETIC_OP_WRITE) {
 	string data(it->data.c_str(), it->data.length());
-	kinetic::KineticRecord record(data, "");
+	kinetic::KineticRecord record(data, "", "",
+				      com::seagate::kinetic::client::proto::Command::INVALID_ALGORITHM);
 	dout(30) << "kinetic before put of " << it->key << " (" << data.length() << " bytes)" << dendl;
 	status = _t->kinetic_conn->BatchPutKey(_t->batch_id, it->key, "", kinetic::WriteMode::IGNORE_VERSION,
 					       make_shared<const kinetic::KineticRecord>(record));
