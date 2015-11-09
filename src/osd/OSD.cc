@@ -1938,23 +1938,23 @@ int OSD::init()
 
   osd_lock.Unlock();
 
-  //r = monc->authenticate();
-  //if (r < 0) {
-  //  osd_lock.Lock(); // locker is going to unlock this on function exit
-  //  if (is_stopping())
-  //    r =  0;
-  //  goto monout;
-  //}
-
-  //while (monc->wait_auth_rotating(30.0) < 0) {
-  //  derr << "unable to obtain rotating service keys; retrying" << dendl;
-  //}
+  r = monc->authenticate();
+  if (r < 0) {
+    osd_lock.Lock(); // locker is going to unlock this on function exit
+    if (is_stopping())
+      r =  0;
+    goto monout;
+  }
+  
+  while (monc->wait_auth_rotating(30.0) < 0) {
+    derr << "unable to obtain rotating service keys; retrying" << dendl;
+  }
 
   osd_lock.Lock();
   if (is_stopping())
   {
     derr << "STATE_STOPPING set " << dendl;
-    //return 0;
+    return 0;
   }
 
   check_config();
