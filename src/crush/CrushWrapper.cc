@@ -1554,7 +1554,9 @@ void CrushWrapper::dump_tunables(Formatter *f) const
   f->dump_int("allowed_bucket_algs", get_allowed_bucket_algs());
 
   // be helpful about it
-  if (has_hammer_tunables())
+  if (has_jewel_tunables())
+    f->dump_string("profile", "jewel");
+  else if (has_hammer_tunables())
     f->dump_string("profile", "hammer");
   else if (has_firefly_tunables())
     f->dump_string("profile", "firefly");
@@ -1569,11 +1571,11 @@ void CrushWrapper::dump_tunables(Formatter *f) const
 
   f->dump_int("require_feature_tunables", (int)has_nondefault_tunables());
   f->dump_int("require_feature_tunables2", (int)has_nondefault_tunables2());
-  f->dump_int("require_feature_tunables3", (int)has_nondefault_tunables3());
-  f->dump_int("require_feature_tunables4", (int)has_nondefault_tunables4());
   f->dump_int("has_v2_rules", (int)has_v2_rules());
+  f->dump_int("require_feature_tunables3", (int)has_nondefault_tunables3());
   f->dump_int("has_v3_rules", (int)has_v3_rules());
   f->dump_int("has_v4_buckets", (int)has_v4_buckets());
+  f->dump_int("require_feature_tunables5", (int)has_nondefault_tunables5());
   f->dump_int("has_v5_rules", (int)has_v5_rules());
 }
 
