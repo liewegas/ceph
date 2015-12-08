@@ -36,8 +36,7 @@ int KineticStore::init()
   user_id = cct->_conf->kinetic_user_id;
   hmac_key = cct->_conf->kinetic_hmac_key;
   use_ssl = cct->_conf->kinetic_use_ssl;
-  keyvaluestore_op_threads = cct->_conf->keyvaluestore_op_threads;
-  osd_op_threads = cct->_conf->osd_op_threads;
+  kinetic_timeout_seconds = cct->_conf->keyvaluestore_op_thread_timeout;
   return 0;
 }
 
@@ -73,7 +72,7 @@ int KineticStore::do_open(ostream &out, bool create_if_missing)
   options.hmac_key = hmac_key;
   options.use_ssl = use_ssl;
   for(int i = 0; i < MAX_CONNECTIONS; i++) {
-    kinetic::Status status = conn_factory.NewThreadsafeBlockingConnection(options, kinetic_conn, 10);
+    kinetic::Status status = conn_factory.NewThreadsafeBlockingConnection(options, kinetic_conn, kinetic_timeout_seconds);
     if (!status.ok()) {
       derr << "Unable to connect to kinetic store " << host << ":" << port
 	   << " : " << status.ToString() << dendl;
