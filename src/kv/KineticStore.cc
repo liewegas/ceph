@@ -22,15 +22,13 @@ using std::string;
    When connection is fully used and new request comes, request try to use NULL connection and SIGSEV will happen.
    This bug will be fixed by function to check if connection is available.
  */
-#define MAX_CONNECTIONS 96
-#define MAX_BATCHOPS 1100
 
 #define dout_subsys ceph_subsys_kinetic
 
 std::deque<std::unique_ptr<kinetic::ThreadsafeBlockingKineticConnection>> KineticStore::connection_pool;
 std::mutex KineticStore::conn_lock;
 
-int KineticStore::init()
+int KineticStore::init(string option_str)
 {
   // init defaults.  caller can override these if they want
   // prior to calling open.
@@ -39,7 +37,6 @@ int KineticStore::init()
   user_id = cct->_conf->kinetic_user_id;
   hmac_key = cct->_conf->kinetic_hmac_key;
   use_ssl = cct->_conf->kinetic_use_ssl;
-  kinetic_timeout_seconds = cct->_conf->keyvaluestore_op_thread_timeout;
   return 0;
 }
 
@@ -56,7 +53,9 @@ int KineticStore::_test_init(CephContext *cct)
   options.use_ssl = cct->_conf->kinetic_use_ssl;
 
   std::unique_ptr<kinetic::ThreadsafeBlockingKineticConnection> kinetic_conn;
-  kinetic::Status status = conn_factory.NewThreadsafeBlockingConnection(options, kinetic_conn, 10);
+  kinetic::Status status = conn_factory.NewThreadsafeBlockingConnection(
+    options, kinetic_conn,
+    g_conf->kinetic_num_connections);
   kinetic_conn.reset();
   if (!status.ok())
     derr << __func__ << "Unable to connect to kinetic store " << options.host
@@ -74,8 +73,10 @@ int KineticStore::do_open(ostream &out, bool create_if_missing)
   options.user_id = user_id;
   options.hmac_key = hmac_key;
   options.use_ssl = use_ssl;
-  for(int i = 0; i < MAX_CONNECTIONS; i++) {
-    kinetic::Status status = conn_factory.NewThreadsafeBlockingConnection(options, kinetic_conn, kinetic_timeout_seconds);
+  for(int i = 0; i < g_conf->kinetic_num_connections; i++) {
+    kinetic::Status status = conn_factory.NewThreadsafeBlockingConnection(
+      options, kinetic_conn,
+      g_conf->kinetic_timeout_seconds);
     if (!status.ok()) {
       derr << "Unable to connect to kinetic store " << host << ":" << port
 	   << " : " << status.ToString() << dendl;
@@ -154,7 +155,7 @@ int KineticStore::submit_transaction(KeyValueDB::Transaction t)
     static_cast<KineticTransactionImpl *>(t.get());
 
   dout(20) << "kinetic submit_transaction" << dendl;
-  int num_of_commit = _t->ops.size() / MAX_BATCHOPS + 1;
+  int num_of_commit = _t->ops.size() / g_conf->kinetic_max_batch_ops + 1;
   vector<KineticOp>::iterator it = _t->ops.begin();
 
   for (int i = 0; it != _t->ops.end() && i < num_of_commit; ++i) {
@@ -167,7 +168,9 @@ int KineticStore::submit_transaction(KeyValueDB::Transaction t)
       derr << "error batch id: " << _t->batch_id << dendl;
       return -1;
     }
-    for (int j = 0; it != _t->ops.end() && j < MAX_BATCHOPS; ++it, ++j) {
+    for (int j = 0;
+	 it != _t->ops.end() && j < g_conf->kinetic_max_batch_ops;
+	 ++it, ++j) {
       kinetic::KineticStatus status(kinetic::StatusCode::OK, "");
       if (it->type == KINETIC_OP_WRITE) {
 	string data(it->data.c_str(), it->data.length());
@@ -347,7 +350,7 @@ bufferlist KineticStore::to_bufferlist(const kinetic::KineticRecord &record)
 int KineticStore::split_key(string &in, string *prefix, string *key)
 {
   size_t prefix_len = 0;
-  char* in_data = in.c_str();
+  const char* in_data = in.c_str();
   
   // Find separator inside Slice
   char* separator = (char*) memchr((void*)in_data, 1, in.size());
@@ -489,7 +492,7 @@ pair<string,string> KineticStore::KineticWholeSpaceIteratorImpl::raw_key() {
 
 bool KineticStore::KineticWholeSpaceIteratorImpl::raw_key_is_prefixed(const string &prefix) {
   // Look for "prefix\1" right in *keys_iter without making a copy
-  string key = *keys_iter;
+  const string& key = current_key;
   if ((key.size() > prefix.length()) && (key[prefix.length()] == '\1')) {
     return memcmp(key.c_str(), prefix.c_str(), prefix.length()) == 0;
   } else {

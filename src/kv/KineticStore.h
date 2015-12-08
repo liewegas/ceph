@@ -48,7 +48,6 @@ class KineticStore : public KeyValueDB {
   std::unique_ptr<kinetic::ThreadsafeBlockingKineticConnection> kinetic_conn;
   static std::deque<std::unique_ptr<kinetic::ThreadsafeBlockingKineticConnection>> connection_pool;
   static std::vector<int> conn_is_not_used;
-  int kinetic_timeout_seconds;
   static std::mutex conn_lock;
 
   int do_open(ostream &out, bool create_if_missing);
@@ -58,7 +57,7 @@ public:
   ~KineticStore();
 
   static int _test_init(CephContext *c);
-  int init();
+  int init(string option_str);
 
   /// Opens underlying db
   int open(ostream &out) {

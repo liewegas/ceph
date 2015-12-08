@@ -770,11 +770,14 @@ OPTION(leveldb_paranoid, OPT_BOOL, false) // leveldb paranoid flag
 OPTION(leveldb_log, OPT_STR, "/dev/null")  // enable leveldb log file
 OPTION(leveldb_compact_on_mount, OPT_BOOL, false)
 
-OPTION(kinetic_host, OPT_STR, "") // hostname or ip address of a kinetic drive to use
+OPTION(kinetic_host, OPT_STR, "::") // hostname or ip address of a kinetic drive to use
 OPTION(kinetic_port, OPT_INT, 8123) // port number of the kinetic drive
 OPTION(kinetic_user_id, OPT_INT, 1) // kinetic user to authenticate as
 OPTION(kinetic_hmac_key, OPT_STR, "asdfasdf") // kinetic key to authenticate with
 OPTION(kinetic_use_ssl, OPT_BOOL, false) // whether to secure kinetic traffic with TLS
+OPTION(kinetic_num_connections, OPT_INT, 2)
+OPTION(kinetic_timeout_seconds, OPT_INT, 10)
+OPTION(kinetic_max_batch_ops, OPT_INT, 1100)
 
 
 OPTION(rocksdb_separate_wal_dir, OPT_BOOL, false) // use $path.wal for wal

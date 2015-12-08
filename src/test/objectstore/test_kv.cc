@@ -150,7 +150,7 @@ TEST_P(KVTest, BenchCommit) {
 INSTANTIATE_TEST_CASE_P(
   KeyValueDB,
   KVTest,
-  ::testing::Values("leveldb", "rocksdb"));
+  ::testing::Values("leveldb", "rocksdb", "kinetic"));
 
 #else
 
@@ -173,7 +173,7 @@ int main(int argc, char **argv) {
   common_init_finish(g_ceph_context);
   g_ceph_context->_conf->set_val(
     "enable_experimental_unrecoverable_data_corrupting_features",
-    "rocksdb");
+    "*");
   g_ceph_context->_conf->apply_changes(NULL);
 
   ::testing::InitGoogleTest(&argc, argv);

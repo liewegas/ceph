@@ -31,9 +31,13 @@ noinst_HEADERS += kv/RocksDBStore.h
 endif
 
 if WITH_KINETIC
+kv/kinetic-cpp-client/build/libkinetic_client.a kv/kinetic-cpp-client/build/vendor/include:
+	cd kv/kinetic-cpp-client/build && make
 libkv_a_SOURCES += kv/KineticStore.cc
-libkv_a_CXXFLAGS += -std=gnu++11
-libkv_a_LIBADD += -lkinetic_client -lprotobuf -lglog -lgflags -lssl -lcrypto
+libkv_a_CXXFLAGS += \
+	-Ikv/kinetic-cpp-client/include \
+	-Ikv/kinetic-cpp-client/src/main/generated \
+	-Ikv/kinetic-cpp-client/build/vendor/include
 noinst_HEADERS += kv/KineticStore.h
 endif
 

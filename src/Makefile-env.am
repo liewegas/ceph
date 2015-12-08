@@ -274,6 +274,14 @@ LIBKV += -llz4
 endif
 endif # WITH_SLIBROCKSDB
 LIBKV += -lz -lleveldb -lsnappy
+
+if WITH_KINETIC
+LIBKV += \
+	kv/kinetic-cpp-client/build/libkinetic_client.a \
+	kv/kinetic-cpp-client/build/vendor/lib/libprotobuf.a
+
+LIBKV += -lssl -lprotobuf -lgflags -lglog -lcrypto
+
 LIBOS += $(LIBOS_TYPES) $(LIBKV)
 
 LIBMON += $(LIBMON_TYPES)
