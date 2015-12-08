@@ -2,6 +2,7 @@
 // vim: ts=8 sw=2 smarttab
 #include "KineticStore.h"
 #include "common/ceph_crypto.h"
+#include <kinetic/kinetic.h>
 
 #include <set>
 #include <map>
@@ -10,8 +11,20 @@
 #include <errno.h>
 using std::string;
 #include "common/perf_counters.h"
+#include <deque>
+#include <mutex>
+
+/* FIX ME
+   There is no mechanism to wait until connection is available when all the connection is used.
+   When connection is fully used and new request comes, request try to use NULL connection and SIGSEV will happen.
+   This bug will be fixed by function to check if connection is available.
+ */
+#define MAX_CONNECTIONS 96
 
 #define dout_subsys ceph_subsys_keyvaluestore
+
+std::deque<std::unique_ptr<kinetic::ThreadsafeBlockingKineticConnection>> KineticStore::connection_pool;
+std::mutex KineticStore::conn_lock;
 
 int KineticStore::init()
 {
@@ -22,6 +35,8 @@ int KineticStore::init()
   user_id = cct->_conf->kinetic_user_id;
   hmac_key = cct->_conf->kinetic_hmac_key;
   use_ssl = cct->_conf->kinetic_use_ssl;
+  keyvaluestore_op_threads = cct->_conf->keyvaluestore_op_threads;
+  osd_op_threads = cct->_conf->osd_op_threads;
   return 0;
 }
 
@@ -56,11 +71,14 @@ int KineticStore::do_open(ostream &out, bool create_if_missing)
   options.user_id = user_id;
   options.hmac_key = hmac_key;
   options.use_ssl = use_ssl;
-  kinetic::Status status = conn_factory.NewThreadsafeBlockingConnection(options, kinetic_conn, 10);
-  if (!status.ok()) {
-    derr << "Unable to connect to kinetic store " << host << ":" << port
-	 << " : " << status.ToString() << dendl;
-    return -EINVAL;
+  for(int i = 0; i < MAX_CONNECTIONS; i++) {
+    kinetic::Status status = conn_factory.NewThreadsafeBlockingConnection(options, kinetic_conn, 10);
+    if (!status.ok()) {
+      derr << "Unable to connect to kinetic store " << host << ":" << port
+	   << " : " << status.ToString() << dendl;
+      return -EINVAL;
+    }
+    connection_pool.push_back(std::move(kinetic_conn));
   }
 
   PerfCountersBuilder plb(g_ceph_context, "kinetic", l_kinetic_first, l_kinetic_last);
@@ -109,13 +127,13 @@ int KineticStore::submit_transaction(KeyValueDB::Transaction t)
       string data(it->data.c_str(), it->data.length());
       kinetic::KineticRecord record(data, "");
       dout(30) << "kinetic before put of " << it->key << " (" << data.length() << " bytes)" << dendl;
-      status = kinetic_conn->BatchPutKey(_t->batch_id, it->key, "", kinetic::WriteMode::IGNORE_VERSION,
+      status = _t->kinetic_conn->BatchPutKey(_t->batch_id, it->key, "", kinetic::WriteMode::IGNORE_VERSION,
 			    make_shared<const kinetic::KineticRecord>(record));
       dout(30) << "kinetic after put of " << it->key << dendl;
     } else {
       assert(it->type == KINETIC_OP_DELETE);
       dout(30) << "kinetic before delete" << dendl;
-      status = kinetic_conn->BatchDeleteKey(_t->batch_id, it->key, "",
+      status = _t->kinetic_conn->BatchDeleteKey(_t->batch_id, it->key, "",
 			       kinetic::WriteMode::IGNORE_VERSION);
       dout(30) << "kinetic after delete" << dendl;
     }
@@ -125,7 +143,7 @@ int KineticStore::submit_transaction(KeyValueDB::Transaction t)
       return -1;
     }
   }
-  kinetic::KineticStatus status = kinetic_conn->BatchCommit(_t->batch_id);
+  kinetic::KineticStatus status = _t->kinetic_conn->BatchCommit(_t->batch_id);
   if(!status.ok())
     {
       derr << "kinetic error committing transaction: "
@@ -146,14 +164,21 @@ KineticStore::KineticTransactionImpl::KineticTransactionImpl(KineticStore *_db)
 {
   db = _db;
   batch_id = 0;
-  db->kinetic_conn->BatchStart(&batch_id);
+  {
+    std::lock_guard<std::mutex> guard(conn_lock);
+    kinetic_conn = std::move(connection_pool.front());
+    connection_pool.pop_front();
+  }
+  kinetic_conn->BatchStart(&batch_id);
 }
 
 KineticStore::KineticTransactionImpl::~KineticTransactionImpl()
 {
   if(batch_id) {
-    db->kinetic_conn->BatchAbort(batch_id);
+    kinetic_conn->BatchAbort(batch_id);
   }
+  std::lock_guard<std::mutex> guard(conn_lock);
+  connection_pool.push_back(std::move(kinetic_conn));
 }
 
 void KineticStore::KineticTransactionImpl::set(
@@ -192,6 +217,12 @@ int KineticStore::get(
     const std::set<string> &keys,
     std::map<string, bufferlist> *out)
 {
+  unique_ptr<kinetic::ThreadsafeBlockingKineticConnection> get_conn;
+  {
+    std::lock_guard<std::mutex> guard(conn_lock);
+    get_conn = std::move(connection_pool.front());
+    connection_pool.pop_front();
+  }
   dout(30) << "kinetic get prefix: " << prefix << " keys: " << keys << dendl;
   for (std::set<string>::const_iterator i = keys.begin();
        i != keys.end();
@@ -199,13 +230,17 @@ int KineticStore::get(
     unique_ptr<kinetic::KineticRecord> record;
     string key = combine_strings(prefix, *i);
     dout(30) << "before get key " << key << dendl;
-    kinetic::KineticStatus status = kinetic_conn->Get(key, record);
+    kinetic::KineticStatus status = get_conn->Get(key, record);
     if (!status.ok())
       break;
     dout(30) << "kinetic get got key: " << key << dendl;
     out->insert(make_pair(key, to_bufferlist(*record.get())));
   }
   logger->inc(l_kinetic_gets);
+  {
+    std::lock_guard<std::mutex> guard(conn_lock);
+    connection_pool.push_back(std::move(get_conn));
+  }
   return 0;
 }
 
@@ -243,6 +278,19 @@ int KineticStore::split_key(string &in, string *prefix, string *key)
   if (key)
     *key = string(separator+1, in.size()-prefix_len-1);
   return 0;
+}
+
+KineticStore::KineticWholeSpaceIteratorImpl::KineticWholeSpaceIteratorImpl() : kinetic_status(kinetic::StatusCode::OK, "")
+{
+  std::lock_guard<std::mutex> guard(conn_lock);
+  kinetic_conn = std::move(connection_pool.front());
+  connection_pool.pop_front();
+}
+
+KineticStore::KineticWholeSpaceIteratorImpl::~KineticWholeSpaceIteratorImpl()
+{
+  std::lock_guard<std::mutex> guard(conn_lock);
+  connection_pool.push_back(std::move(kinetic_conn));
 }
 
 int KineticStore::KineticWholeSpaceIteratorImpl::seek_to_first(const string &prefix)
