@@ -119,6 +119,10 @@ public:
     const std::set<string> &key,
     std::map<string, bufferlist> *out
     );
+  int get(const std::string &prefix, ///< [in] prefix
+	  const std::string &key,    ///< [in] key
+	  bufferlist *value); ///< [out] value
+
 
   class KineticWholeSpaceIteratorImpl :
     public KeyValueDB::WholeSpaceIteratorImpl {

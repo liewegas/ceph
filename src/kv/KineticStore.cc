@@ -294,6 +294,40 @@ int KineticStore::get(
   return 0;
 }
 
+int KineticStore::get(
+    const string &prefix,
+    const string &key,
+    bufferlist *out)
+{
+  int r = 0;
+  unique_ptr<kinetic::ThreadsafeBlockingKineticConnection> get_conn;
+  {
+    std::lock_guard<std::mutex> guard(conn_lock);
+    get_conn = std::move(connection_pool.front());
+    connection_pool.pop_front();
+  }
+  dout(30) << "kinetic get prefix: " << prefix << " key: " << key << dendl;
+  unique_ptr<kinetic::KineticRecord> record;
+  string full_key = combine_strings(prefix, key);
+  dout(30) << "before get key " << full_key << dendl;
+  kinetic::KineticStatus status = get_conn->Get(full_key, record);
+  if (!status.ok()) {
+#warning fix get() return code
+    r = -ENOENT;   // FIXME: error code?
+    goto out;
+  }
+  dout(30) << "kinetic get got key: " << full_key << dendl;
+  *out = to_bufferlist(*record.get());
+  r = 0;
+ out:
+  logger->inc(l_kinetic_gets);
+  {
+    std::lock_guard<std::mutex> guard(conn_lock);
+    connection_pool.push_back(std::move(get_conn));
+  }
+  return r;
+}
+
 string KineticStore::combine_strings(const string &prefix, const string &value)
 {
   string out = prefix;
