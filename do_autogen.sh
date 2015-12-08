@@ -36,7 +36,7 @@ verbose=0
 profile=0
 rocksdb=1
 CONFIGURE_FLAGS="--disable-static --with-lttng"
-while getopts  "C:cd:e:hjJLO:pPRTv" flag
+while getopts  "C:cd:e:hjJkLO:pPRTv" flag
 do
     case $flag in
     C) CONFIGURE_FLAGS="$CONFIGURE_FLAGS $OPTARG";;
@@ -46,6 +46,7 @@ do
     h) usage ; exit 0;;
     j) CONFIGURE_FLAGS="$CONFIGURE_FLAGS --enable-cephfs-java";;
     J) CONFIGURE_FLAGS="$CONFIGURE_FLAGS --with-jemalloc";;
+    k) CONFIGURE_FLAGS="$CONFIGURE_FLAGS --with-kinetic";;
     L) CONFIGURE_FLAGS="$CONFIGURE_FLAGS --without-lttng";;
     O) CFLAGS="${CFLAGS} -O$OPTARG";;
     p) with_profiler="--with-profiler" ;;
