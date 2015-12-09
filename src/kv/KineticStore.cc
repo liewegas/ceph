@@ -15,6 +15,7 @@ using std::string;
 #include <mutex>
 #include <sys/types.h>
 #include <sys/statfs.h>
+#include "common/debug.h"
 
 /* FIX ME
    There is no mechanism to wait until connection is available when all the connection is used.
@@ -24,7 +25,7 @@ using std::string;
 #define MAX_CONNECTIONS 96
 #define MAX_BATCHOPS 1100
 
-#define dout_subsys ceph_subsys_keyvaluestore
+#define dout_subsys ceph_subsys_kinetic
 
 std::deque<std::unique_ptr<kinetic::ThreadsafeBlockingKineticConnection>> KineticStore::connection_pool;
 std::mutex KineticStore::conn_lock;
