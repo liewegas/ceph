@@ -33,7 +33,7 @@ endif
 if WITH_KINETIC
 libkv_a_SOURCES += kv/KineticStore.cc
 libkv_a_CXXFLAGS += -std=gnu++11
-libkv_a_LIBADD += -lkinetic_client -lprotobuf -lglog -lgflags libcrypto.a
+libkv_a_LIBADD += -lkinetic_client -lprotobuf -lglog -lgflags -lssl -lcrypto
 noinst_HEADERS += kv/KineticStore.h
 endif
 
