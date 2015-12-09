@@ -26,9 +26,6 @@ using std::string;
 #undef dout_prefix
 #define dout_prefix *_dout << "kinetic "
 
-std::deque<std::unique_ptr<kinetic::ThreadsafeBlockingKineticConnection>> KineticStore::connection_pool;
-std::mutex KineticStore::conn_lock;
-
 int KineticStore::init(string option_str)
 {
   // init defaults.  caller can override these if they want
@@ -118,15 +115,30 @@ void KineticStore::close()
     cct->get_perfcounters_collection()->remove(logger);
 }
 
+unique_ptr<kinetic::ThreadsafeBlockingKineticConnection> KineticStore::get_con()
+{
+  unique_ptr<kinetic::ThreadsafeBlockingKineticConnection> c;
+  std::unique_lock<std::mutex> lk(conn_lock);
+  while (connection_pool.empty())
+    conn_cond.wait(lk);
+  c = std::move(connection_pool.front());
+  assert(c);
+  connection_pool.pop_front();
+  return c;
+}
+
+void KineticStore::put_con(
+  unique_ptr<kinetic::ThreadsafeBlockingKineticConnection> c)
+{
+  std::lock_guard<std::mutex> guard(conn_lock);
+  connection_pool.push_back(std::move(c));
+  conn_cond.notify_one();
+}
+
 int KineticStore::get_statfs(struct statfs *buf)
 {
-  unique_ptr<kinetic::ThreadsafeBlockingKineticConnection> getlog_conn;
+  unique_ptr<kinetic::ThreadsafeBlockingKineticConnection> getlog_conn = get_con();
   vector<com::seagate::kinetic::client::proto::Command_GetLog_Type> log_type{com::seagate::kinetic::client::proto::Command_GetLog_Type_CAPACITIES};
-  {
-    std::lock_guard<std::mutex> guard(conn_lock);
-    getlog_conn = std::move(connection_pool.front());
-    connection_pool.pop_front();
-  }
   unique_ptr<kinetic::DriveLog> drive_log;
   uint64_t blk_size = cct->_conf->keyvaluestore_default_strip_size;
   kinetic::KineticStatus status = getlog_conn->GetLog(log_type, drive_log);
@@ -146,10 +158,7 @@ int KineticStore::get_statfs(struct statfs *buf)
   dout(10) << __func__ << " bsize " << blk_size << " blocks " << buf->f_blocks
 	   << " bytes " << drive_log->capacity.nominal_capacity_in_bytes
 	   << dendl;
-  {
-    std::lock_guard<std::mutex> guard(conn_lock);
-    connection_pool.push_back(std::move(getlog_conn));
-  }
+  put_con(std::move(getlog_conn));
   return 0;
 }
 
@@ -273,20 +282,15 @@ KineticStore::KineticTransactionImpl::KineticTransactionImpl(KineticStore *_db)
 {
   db = _db;
   batch_id = 0;
-  {
-    std::lock_guard<std::mutex> guard(conn_lock);
-    kinetic_conn = std::move(connection_pool.front());
-    connection_pool.pop_front();
-  }
+  kinetic_conn = db->get_con();
 }
 
 KineticStore::KineticTransactionImpl::~KineticTransactionImpl()
 {
-  if(batch_id) {
+  if (batch_id) {
     kinetic_conn->BatchAbort(batch_id);
   }
-  std::lock_guard<std::mutex> guard(conn_lock);
-  connection_pool.push_back(std::move(kinetic_conn));
+  db->put_con(std::move(kinetic_conn));
 }
 
 void KineticStore::KineticTransactionImpl::set(
@@ -325,14 +329,7 @@ int KineticStore::get(
     const std::set<string> &keys,
     std::map<string, bufferlist> *out)
 {
-  unique_ptr<kinetic::ThreadsafeBlockingKineticConnection> get_conn;
-  {
-    std::lock_guard<std::mutex> lk(conn_lock);
-    while (connection_pool.empty())
-      conn_cond.wait(lk);
-    get_conn = std::move(connection_pool.front());
-    connection_pool.pop_front();
-  }
+  unique_ptr<kinetic::ThreadsafeBlockingKineticConnection> get_conn = get_con();
   dout(30) << __func__ << " prefix " << prefix << " keys " << keys << dendl;
   for (std::set<string>::const_iterator i = keys.begin();
        i != keys.end();
@@ -347,11 +344,7 @@ int KineticStore::get(
     out->insert(make_pair(*i, to_bufferlist(*record.get())));
   }
   logger->inc(l_kinetic_gets);
-  {
-    std::lock_guard<std::mutex> guard(conn_lock);
-    connection_pool.push_back(std::move(get_conn));
-    conn_cond.notify_one();
-  }
+  put_con(std::move(get_conn));
   return 0;
 }
 
@@ -361,14 +354,7 @@ int KineticStore::get(
     bufferlist *out)
 {
   int r = 0;
-  unique_ptr<kinetic::ThreadsafeBlockingKineticConnection> get_conn;
-  {
-    std::unique_lock<std::mutex> lk(conn_lock);
-    while (connection_pool.empty())
-      conn_cond.wait(lk);
-    get_conn = std::move(connection_pool.front());
-    connection_pool.pop_front();
-  }
+  unique_ptr<kinetic::ThreadsafeBlockingKineticConnection> get_conn = get_con();
   dout(30) << __func__ << " prefix " << prefix << " key " << key << dendl;
   unique_ptr<kinetic::KineticRecord> record;
   string full_key = combine_strings(prefix, key);
@@ -385,11 +371,7 @@ int KineticStore::get(
   r = 0;
  out:
   logger->inc(l_kinetic_gets);
-  {
-    std::lock_guard<std::mutex> guard(conn_lock);
-    connection_pool.push_back(std::move(get_conn));
-    conn_cond.notify_one();
-  }
+  put_con(std::move(get_conn));
   return r;
 }
 
@@ -429,27 +411,29 @@ int KineticStore::split_key(string &in, string *prefix, string *key)
   return 0;
 }
 
-KineticStore::KineticWholeSpaceIteratorImpl::KineticWholeSpaceIteratorImpl() : kinetic_status(kinetic::StatusCode::OK, "")
+KineticStore::KineticWholeSpaceIteratorImpl::KineticWholeSpaceIteratorImpl(
+  KineticStore *_db)
+  : kinetic_status(kinetic::StatusCode::OK, "")
 {
-  std::lock_guard<std::mutex> guard(conn_lock);
-  kinetic_conn = std::move(connection_pool.front());
-  connection_pool.pop_front();
+  db = _db;
+  kinetic_conn = db->get_con();
 }
 
 KineticStore::KineticWholeSpaceIteratorImpl::~KineticWholeSpaceIteratorImpl()
 {
-  std::lock_guard<std::mutex> guard(conn_lock);
-  connection_pool.push_back(std::move(kinetic_conn));
+  db->put_con(std::move(kinetic_conn));
 }
 
 int KineticStore::KineticWholeSpaceIteratorImpl::seek_to_first(const string &prefix)
 {
-  dout(30) << __func__ << " prefix " << prefix << dendl;
+  dout(30) << __func__ << " prefix '" << prefix << "'" << dendl;
   kinetic_status = kinetic_conn->GetNext(prefix, next_key, record);
-  if(kinetic_status.ok()) {
+  if (kinetic_status.ok()) {
     current_key = *next_key;
+    dout(30) << __func__ << " seeked ok, current_key now " << current_key << dendl;
   }
   else {
+    dout(30) << __func__ << " seeked not ok" << dendl;
     current_key = end_key;
   }
   return 0;
