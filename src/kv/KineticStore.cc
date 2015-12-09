@@ -284,7 +284,7 @@ int KineticStore::get(
     if (!status.ok())
       break;
     dout(30) << "kinetic get got key: " << key << dendl;
-    out->insert(make_pair(key, to_bufferlist(*record.get())));
+    out->insert(make_pair(*i, to_bufferlist(*record.get())));
   }
   logger->inc(l_kinetic_gets);
   {
