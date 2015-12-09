@@ -24,6 +24,8 @@ using std::string;
  */
 
 #define dout_subsys ceph_subsys_kinetic
+#undef dout_prefix
+#define dout_prefix *_dout << "kinetic "
 
 std::deque<std::unique_ptr<kinetic::ThreadsafeBlockingKineticConnection>> KineticStore::connection_pool;
 std::mutex KineticStore::conn_lock;
@@ -142,6 +144,9 @@ int KineticStore::get_statfs(struct statfs *buf)
   buf->f_blocks = drive_log->capacity.nominal_capacity_in_bytes / blk_size;
   buf->f_bfree = (uint64_t)((float)drive_log->capacity.nominal_capacity_in_bytes * (1.0 - drive_log->capacity.portion_full)) / blk_size;
   buf->f_bavail = (uint64_t)((float)drive_log->capacity.nominal_capacity_in_bytes * (1.0 - drive_log->capacity.portion_full)) / blk_size;
+  dout(10) << __func__ << " bsize " << blk_size << " blocks " << buf->f_blocks
+	   << " bytes " << drive_log->capacity.nominal_capacity_in_bytes
+	   << dendl;
   {
     std::lock_guard<std::mutex> guard(conn_lock);
     connection_pool.push_back(std::move(getlog_conn));
@@ -154,7 +159,7 @@ int KineticStore::submit_transaction(KeyValueDB::Transaction t)
   KineticTransactionImpl * _t =
     static_cast<KineticTransactionImpl *>(t.get());
 
-  dout(20) << "kinetic submit_transaction" << dendl;
+  dout(20) << __func__ << dendl;
   int num_of_commit = _t->ops.size() / g_conf->kinetic_max_batch_ops + 1;
   vector<KineticOp>::iterator it = _t->ops.begin();
 
@@ -241,7 +246,7 @@ void KineticStore::KineticTransactionImpl::set(
   const bufferlist &to_set_bl)
 {
   string key = combine_strings(prefix, k);
-  dout(30) << "kinetic set key " << key << dendl;
+  dout(30) << __func__ << " key " << key << dendl;
   ops.push_back(KineticOp(KINETIC_OP_WRITE, key, to_set_bl));
 }
 
@@ -249,20 +254,20 @@ void KineticStore::KineticTransactionImpl::rmkey(const string &prefix,
 					         const string &k)
 {
   string key = combine_strings(prefix, k);
-  dout(30) << "kinetic rm key " << key << dendl;
+  dout(30) << __func__ << " key " << key << dendl;
   ops.push_back(KineticOp(KINETIC_OP_DELETE, key));
 }
 
 void KineticStore::KineticTransactionImpl::rmkeys_by_prefix(const string &prefix)
 {
-  dout(20) << "kinetic rmkeys_by_prefix " << prefix << dendl;
+  dout(20) << __func__ << " prefix " << prefix << dendl;
   KeyValueDB::Iterator it = db->get_iterator(prefix);
   for (it->seek_to_first();
        it->valid();
        it->next()) {
     string key = combine_strings(prefix, it->key());
     ops.push_back(KineticOp(KINETIC_OP_DELETE, key));
-    dout(30) << "kinetic rm key by prefix: " << key << dendl;
+    dout(30) << __func__ << "  key " << key << dendl;
   }
 }
 
@@ -277,17 +282,17 @@ int KineticStore::get(
     get_conn = std::move(connection_pool.front());
     connection_pool.pop_front();
   }
-  dout(30) << "kinetic get prefix: " << prefix << " keys: " << keys << dendl;
+  dout(30) << __func__ << " prefix " << prefix << " keys " << keys << dendl;
   for (std::set<string>::const_iterator i = keys.begin();
        i != keys.end();
        ++i) {
     unique_ptr<kinetic::KineticRecord> record;
     string key = combine_strings(prefix, *i);
-    dout(30) << "before get key " << key << dendl;
+    dout(30) << __func__ << "  before get key " << key << dendl;
     kinetic::KineticStatus status = get_conn->Get(key, record);
     if (!status.ok())
       break;
-    dout(30) << "kinetic get got key: " << key << dendl;
+    dout(30) << __func__ << "  get got key: " << key << dendl;
     out->insert(make_pair(*i, to_bufferlist(*record.get())));
   }
   logger->inc(l_kinetic_gets);
@@ -310,17 +315,18 @@ int KineticStore::get(
     get_conn = std::move(connection_pool.front());
     connection_pool.pop_front();
   }
-  dout(30) << "kinetic get prefix: " << prefix << " key: " << key << dendl;
+  dout(30) << __func__ << " prefix " << prefix << " key " << key << dendl;
   unique_ptr<kinetic::KineticRecord> record;
   string full_key = combine_strings(prefix, key);
-  dout(30) << "before get key " << full_key << dendl;
+  dout(30) << __func__ << "  before get key " << full_key << dendl;
   kinetic::KineticStatus status = get_conn->Get(full_key, record);
   if (!status.ok()) {
 #warning fix get() return code
     r = -ENOENT;   // FIXME: error code?
     goto out;
   }
-  dout(30) << "kinetic get got key: " << full_key << dendl;
+  dout(30) << __func__ << "  got key: " << full_key
+	   << " = '" << *record->value() << "'" << dendl;
   *out = to_bufferlist(*record.get());
   r = 0;
  out:
@@ -383,7 +389,7 @@ KineticStore::KineticWholeSpaceIteratorImpl::~KineticWholeSpaceIteratorImpl()
 
 int KineticStore::KineticWholeSpaceIteratorImpl::seek_to_first(const string &prefix)
 {
-  dout(30) << "kinetic iterator seek_to_first(prefix): " << prefix << dendl;
+  dout(30) << __func__ << " prefix " << prefix << dendl;
   kinetic_status = kinetic_conn->GetNext(prefix, next_key, record);
   if(kinetic_status.ok()) {
     current_key = *next_key;
@@ -396,7 +402,7 @@ int KineticStore::KineticWholeSpaceIteratorImpl::seek_to_first(const string &pre
 
 int KineticStore::KineticWholeSpaceIteratorImpl::seek_to_last()
 {
-  dout(30) << "kinetic iterator seek_to_last()" << dendl;
+  dout(30) << __func__ << dendl;
   current_key = end_key;
   kinetic_status = kinetic_conn->GetPrevious(current_key, next_key, record);
   if(kinetic_status.ok()) {
@@ -407,7 +413,7 @@ int KineticStore::KineticWholeSpaceIteratorImpl::seek_to_last()
 
 int KineticStore::KineticWholeSpaceIteratorImpl::seek_to_last(const string &prefix)
 {
-  dout(30) << "kinetic iterator seek_to_last(prefix): " << prefix << dendl;
+  dout(30) << __func__ << " prefix " << prefix << dendl;
   kinetic_status = kinetic_conn->GetPrevious(prefix + "\2", next_key, record);
   if(!kinetic_status.ok()) {
     current_key = end_key;
@@ -419,7 +425,7 @@ int KineticStore::KineticWholeSpaceIteratorImpl::seek_to_last(const string &pref
 }
 
 int KineticStore::KineticWholeSpaceIteratorImpl::upper_bound(const string &prefix, const string &after) {
-  dout(30) << "kinetic iterator upper_bound()" << dendl;
+  dout(30) << __func__ << dendl;
   current_key = combine_strings(prefix, after);
   kinetic_status = kinetic_conn->GetNext(current_key, next_key, record);
   if(kinetic_status.ok()) {
@@ -432,7 +438,7 @@ int KineticStore::KineticWholeSpaceIteratorImpl::upper_bound(const string &prefi
 }
 
 int KineticStore::KineticWholeSpaceIteratorImpl::lower_bound(const string &prefix, const string &to) {
-  dout(30) << "kinetic iterator lower_bound()" << dendl;
+  dout(30) << __func__ << dendl;
   current_key = combine_strings(prefix, to);
   kinetic_status = kinetic_conn->Get(current_key, record);
   if(kinetic_status.ok()) {
@@ -450,12 +456,13 @@ int KineticStore::KineticWholeSpaceIteratorImpl::lower_bound(const string &prefi
 }
 
 bool KineticStore::KineticWholeSpaceIteratorImpl::valid() {
-  dout(30) << "kinetic iterator valid()" << dendl;
-  return current_key != end_key;
+  bool valid = current_key != end_key;
+  dout(30) << __func__ << " = " << valid << dendl;
+  return valid;
 }
 
 int KineticStore::KineticWholeSpaceIteratorImpl::next() {
-  dout(30) << "kinetic iterator next()" << dendl;
+  dout(30) << __func__ << dendl;
   kinetic_status = kinetic_conn->GetNext(current_key, next_key, record);
   if(kinetic_status.ok()) {
     current_key = *next_key;
@@ -466,7 +473,7 @@ int KineticStore::KineticWholeSpaceIteratorImpl::next() {
 }
 
 int KineticStore::KineticWholeSpaceIteratorImpl::prev() {
-  dout(30) << "kinetic iterator prev()" << dendl;
+  dout(30) << __func__ << dendl;
   kinetic_status = kinetic_conn->GetPrevious(current_key, next_key, record);
   if(kinetic_status.ok()) {
     current_key = *next_key;
@@ -477,14 +484,14 @@ int KineticStore::KineticWholeSpaceIteratorImpl::prev() {
 }
 
 string KineticStore::KineticWholeSpaceIteratorImpl::key() {
-  dout(30) << "kinetic iterator key()" << dendl;
+  dout(30) << __func__ << dendl;
   string out_key;
   split_key(current_key, NULL, &out_key);
   return out_key;
 }
 
 pair<string,string> KineticStore::KineticWholeSpaceIteratorImpl::raw_key() {
-  dout(30) << "kinetic iterator raw_key()" << dendl;
+  dout(30) << __func__ << dendl;
   string prefix, key;
   split_key(current_key, &prefix, &key);
   return make_pair(prefix, key);
@@ -502,11 +509,12 @@ bool KineticStore::KineticWholeSpaceIteratorImpl::raw_key_is_prefixed(const stri
 
 
 bufferlist KineticStore::KineticWholeSpaceIteratorImpl::value() {
-  dout(30) << "kinetic iterator value()" << dendl;
+  dout(30) << __func__ << dendl;
   return to_bufferlist(*record.get());
 }
 
 int KineticStore::KineticWholeSpaceIteratorImpl::status() {
-  dout(30) << "kinetic iterator status()" << dendl;
+  dout(30) << __func__ << dendl;
   return kinetic_status.ok() ? 0 : -1;
 }
+
