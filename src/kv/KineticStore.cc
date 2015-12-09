@@ -3,7 +3,6 @@
 #include "KineticStore.h"
 #include "common/ceph_crypto.h"
 #include <kinetic/kinetic.h>
-
 #include <set>
 #include <map>
 #include <string>
@@ -160,24 +159,79 @@ int KineticStore::submit_transaction(KeyValueDB::Transaction t)
     static_cast<KineticTransactionImpl *>(t.get());
 
   dout(20) << __func__ << dendl;
-  int num_of_commit = _t->ops.size() / g_conf->kinetic_max_batch_ops + 1;
-  vector<KineticOp>::iterator it = _t->ops.begin();
 
-  for (int i = 0; it != _t->ops.end() && i < num_of_commit; ++i) {
-    kinetic::KineticStatus startstatus(kinetic::StatusCode::OK, "");
-    startstatus = _t->kinetic_conn->BatchStart(&(_t->batch_id));
-    if (!startstatus.ok()) {
-      derr << "kinetic error batch start: "
-	   << startstatus.message() << dendl;
-      derr << "error number of commit: " << i << dendl;
-      derr << "error batch id: " << _t->batch_id << dendl;
-      assert(0 == "kinetic batch start error");
-      return -1;
+  vector<KineticOp>::iterator it = _t->ops.begin();
+  if (g_conf->kinetic_max_batch_ops > 1) {
+    // batch!
+    int num_of_commit = _t->ops.size() / g_conf->kinetic_max_batch_ops + 1;
+    for (int i = 0; it != _t->ops.end() && i < num_of_commit; ++i) {
+      utime_t batch_start = ceph_clock_now(NULL);
+      kinetic::KineticStatus startstatus(kinetic::StatusCode::OK, "");
+      startstatus = _t->kinetic_conn->BatchStart(&(_t->batch_id));
+      if (!startstatus.ok()) {
+	derr << "kinetic error batch start: "
+	     << startstatus.message() << dendl;
+	derr << "error number of commit: " << i << dendl;
+	derr << "error batch id: " << _t->batch_id << dendl;
+	assert(0 == "kinetic batch start error");
+	return -1;
+      }
+      for (int j = 0;
+	   it != _t->ops.end() && j < g_conf->kinetic_max_batch_ops;
+	   ++it, ++j) {
+	kinetic::KineticStatus status(kinetic::StatusCode::OK, "");
+	if (it->type == KINETIC_OP_WRITE) {
+	  string data(it->data.c_str(), it->data.length());
+	  kinetic::KineticRecord record(
+	    data, "", "",
+	    com::seagate::kinetic::client::proto::Command::INVALID_ALGORITHM);
+	  dout(30) << __func__ << " put " << it->key
+		   << " (" << data.length() << " bytes)" << dendl;
+	  status = _t->kinetic_conn->BatchPutKey(
+	    _t->batch_id, it->key, "", kinetic::WriteMode::IGNORE_VERSION,
+	    make_shared<const kinetic::KineticRecord>(record));
+	} else {
+	  assert(it->type == KINETIC_OP_DELETE);
+	  dout(30) << __func__ << " delete " << it->key << dendl;
+	  status = _t->kinetic_conn->BatchDeleteKey(
+	    _t->batch_id, it->key, "",
+	    kinetic::WriteMode::IGNORE_VERSION);
+	}
+	if (!status.ok()) {
+	  derr << "kinetic error submitting transaction: "
+	       << status.message() << dendl;
+	  derr << "error number of commit: " << i << dendl;
+	  derr << "error number of batch: " << j << dendl;
+	  assert(0 == "kinetic submit error");
+	  return -1;
+	}
+      }
+      utime_t commit_start = ceph_clock_now(NULL);
+      kinetic::KineticStatus status = _t->kinetic_conn->BatchCommit(_t->batch_id);
+      utime_t end = ceph_clock_now(NULL);
+      dout(10) << __func__ << " batch commit took " << (end - commit_start)
+	       << " out of " << (end - batch_start)
+	       << dendl;
+      if (!status.ok()) {
+	derr << "kinetic error committing transaction: "
+	     << status.message() << dendl;
+	derr << "kinetic error batch id: " << _t->batch_id << dendl;
+	derr << "kinetic error batch operations in queue: " << _t->ops.size()
+	     << dendl;
+	assert(0 == "kinetic batch commit error");
+	return -1;
+      }
+      _t->batch_id = 0;
     }
-    for (int j = 0;
-	 it != _t->ops.end() && j < g_conf->kinetic_max_batch_ops;
-	 ++it, ++j) {
+  } else {
+    // no batch, no transactions.  TOTALLY UNSAFE.
+    for ( ; it != _t->ops.end(); ++it) {
       kinetic::KineticStatus status(kinetic::StatusCode::OK, "");
+      kinetic::PersistMode mode;
+      if (it + 1 == _t->ops.end())
+	mode = kinetic::PersistMode::FLUSH;
+      else
+	mode = kinetic::PersistMode::WRITE_BACK;
       if (it->type == KINETIC_OP_WRITE) {
 	string data(it->data.c_str(), it->data.length());
 	kinetic::KineticRecord record(
@@ -185,36 +239,26 @@ int KineticStore::submit_transaction(KeyValueDB::Transaction t)
 	  com::seagate::kinetic::client::proto::Command::INVALID_ALGORITHM);
 	dout(30) << __func__ << " put " << it->key
 		 << " (" << data.length() << " bytes)" << dendl;
-	status = _t->kinetic_conn->BatchPutKey(
-	  _t->batch_id, it->key, "", kinetic::WriteMode::IGNORE_VERSION,
-	  make_shared<const kinetic::KineticRecord>(record));
+	status = _t->kinetic_conn->Put(
+	  it->key, string(),
+	  kinetic::WriteMode::IGNORE_VERSION,
+	  record,
+	  mode);
       } else {
 	assert(it->type == KINETIC_OP_DELETE);
 	dout(30) << __func__ << " delete " << it->key << dendl;
-	status = _t->kinetic_conn->BatchDeleteKey(
-	  _t->batch_id, it->key, "",
-	  kinetic::WriteMode::IGNORE_VERSION);
+	status = _t->kinetic_conn->Delete(
+	  it->key, "",
+	  kinetic::WriteMode::IGNORE_VERSION,
+	  mode);
       }
       if (!status.ok()) {
 	derr << "kinetic error submitting transaction: "
 	     << status.message() << dendl;
-	derr << "error number of commit: " << i << dendl;
-	derr << "error number of batch: " << j << dendl;
 	assert(0 == "kinetic submit error");
 	return -1;
       }
     }
-    kinetic::KineticStatus status = _t->kinetic_conn->BatchCommit(_t->batch_id);
-    if (!status.ok()) {
-      derr << "kinetic error committing transaction: "
-	   << status.message() << dendl;
-      derr << "kinetic error batch id: " << _t->batch_id << dendl;
-      derr << "kinetic error batch operations in queue: " << _t->ops.size()
-	   << dendl;
-      assert(0 == "kinetic batch commit error");
-      return -1;
-    }
-    _t->batch_id = 0;
     logger->inc(l_kinetic_txns);
   }
   return 0;

@@ -777,7 +777,7 @@ OPTION(kinetic_hmac_key, OPT_STR, "asdfasdf") // kinetic key to authenticate wit
 OPTION(kinetic_use_ssl, OPT_BOOL, false) // whether to secure kinetic traffic with TLS
 OPTION(kinetic_num_connections, OPT_INT, 2)
 OPTION(kinetic_timeout_seconds, OPT_INT, 10)
-OPTION(kinetic_max_batch_ops, OPT_INT, 1100)
+OPTION(kinetic_max_batch_ops, OPT_INT, 512)
 
 
 OPTION(rocksdb_separate_wal_dir, OPT_BOOL, false) // use $path.wal for wal
