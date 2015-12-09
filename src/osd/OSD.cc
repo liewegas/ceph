@@ -669,9 +669,10 @@ void OSDService::update_osd_stat(vector<int>& hb_peers)
   struct statfs stbuf;
   osd->store->statfs(&stbuf);
 
-  uint64_t bytes = stbuf.f_blocks * stbuf.f_bsize;
-  uint64_t used = (stbuf.f_blocks - stbuf.f_bfree) * stbuf.f_bsize;
-  uint64_t avail = stbuf.f_bavail * stbuf.f_bsize;
+  uint64_t bytes = (uint64_t)stbuf.f_blocks * (uint64_t)stbuf.f_bsize;
+  uint64_t used = (uint64_t)(stbuf.f_blocks - stbuf.f_bfree) *
+    (uint64_t)stbuf.f_bsize;
+  uint64_t avail = (uint64_t)stbuf.f_bavail * (uint64_t)stbuf.f_bsize;
 
   osd_stat.kb = bytes >> 10;
   osd_stat.kb_used = used >> 10;
