@@ -13,6 +13,7 @@
 #include <map>
 #include <set>
 #include <string>
+#include <sys/statfs.h>
 
 #include <boost/scoped_ptr.hpp>
 
@@ -39,6 +40,18 @@ class StoreTool
     KeyValueDB *db_ptr = KeyValueDB::create(g_ceph_context, type, path);
     assert(!db_ptr->open(std::cerr));
     db.reset(db_ptr);
+  }
+
+  int df() {
+    struct statfs st;
+    int r = db->get_statfs(&st);
+    if (r < 0)
+      return r;
+    cout << "  bsize " << st.f_bsize << std::endl;
+    cout << " blocks " << st.f_blocks << std::endl;
+    cout << "  bfree " << st.f_bfree << std::endl;
+    cout << " bavail " << st.f_bavail << std::endl;
+    return 0;
   }
 
   uint32_t traverse(const string &prefix,
@@ -81,6 +94,37 @@ class StoreTool
 
   void list(const string &prefix, const bool do_crc) {
     traverse(prefix, do_crc, &std::cout);
+  }
+
+  void clear(const string &prefix) {
+    KeyValueDB::WholeSpaceIterator iter = db->get_iterator();
+
+    if (prefix.empty())
+      iter->seek_to_first();
+    else
+      iter->seek_to_first(prefix);
+
+    KeyValueDB::Transaction tx = db->get_transaction();
+    int size = 0;
+    while (iter->valid()) {
+      pair<string,string> rk = iter->raw_key();
+      if (!prefix.empty() && (rk.first != prefix))
+        break;
+
+      cout << rk.first << ":" << rk.second << std::endl;
+      tx->rmkey(rk.first, rk.second);
+      if (++size > 100) {
+	int ret = db->submit_transaction_sync(tx);
+	assert(ret == 0);
+	size = 0;
+	tx = db->get_transaction();
+      }
+      iter->next();
+    }
+    if (size) {
+      int ret = db->submit_transaction_sync(tx);
+      assert(ret == 0);
+    }
   }
 
   bool exists(const string &prefix) {
@@ -221,6 +265,8 @@ void usage(const char *pname)
     << "  set <prefix> <key> [ver <N>|in <file>]\n"
     << "  store-copy <path> [num-keys-per-tx]\n"
     << "  store-crc <path>\n"
+    << "  clear [prefix]\n"
+    << "  df\n"
     << std::endl;
 }
 
@@ -255,7 +301,13 @@ int main(int argc, const char *argv[])
     bool do_crc = (cmd == "list-crc");
 
     st.list(prefix, do_crc);
-
+  } else if (cmd == "clear") {
+    string prefix;
+    if (argc > 4)
+      prefix = argv[4];
+    st.clear(prefix);
+  } else if (cmd == "df") {
+    st.df();
   } else if (cmd == "exists") {
     string key;
     if (argc < 5) {
