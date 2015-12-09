@@ -21,6 +21,7 @@
 #include "common/ceph_context.h"
 #include <vector>
 #include <mutex>
+#include <condition_variable>
 #include <deque>
 #include <mutex>
 #include <sys/statvfs.h>
@@ -49,6 +50,7 @@ class KineticStore : public KeyValueDB {
   static std::deque<std::unique_ptr<kinetic::ThreadsafeBlockingKineticConnection>> connection_pool;
   static std::vector<int> conn_is_not_used;
   static std::mutex conn_lock;
+  std::condition_variable conn_cond;
 
   int do_open(ostream &out, bool create_if_missing);
 

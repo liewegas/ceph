@@ -278,7 +278,9 @@ int KineticStore::get(
 {
   unique_ptr<kinetic::ThreadsafeBlockingKineticConnection> get_conn;
   {
-    std::lock_guard<std::mutex> guard(conn_lock);
+    std::lock_guard<std::mutex> lk(conn_lock);
+    while (connection_pool.empty())
+      conn_cond.wait(lk);
     get_conn = std::move(connection_pool.front());
     connection_pool.pop_front();
   }
@@ -299,6 +301,7 @@ int KineticStore::get(
   {
     std::lock_guard<std::mutex> guard(conn_lock);
     connection_pool.push_back(std::move(get_conn));
+    conn_cond.notify_one();
   }
   return 0;
 }
@@ -311,7 +314,9 @@ int KineticStore::get(
   int r = 0;
   unique_ptr<kinetic::ThreadsafeBlockingKineticConnection> get_conn;
   {
-    std::lock_guard<std::mutex> guard(conn_lock);
+    std::unique_lock<std::mutex> lk(conn_lock);
+    while (connection_pool.empty())
+      conn_cond.wait(lk);
     get_conn = std::move(connection_pool.front());
     connection_pool.pop_front();
   }
@@ -334,6 +339,7 @@ int KineticStore::get(
   {
     std::lock_guard<std::mutex> guard(conn_lock);
     connection_pool.push_back(std::move(get_conn));
+    conn_cond.notify_one();
   }
   return r;
 }
