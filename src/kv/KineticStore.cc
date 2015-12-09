@@ -171,6 +171,7 @@ int KineticStore::submit_transaction(KeyValueDB::Transaction t)
 	   << startstatus.message() << dendl;
       derr << "error number of commit: " << i << dendl;
       derr << "error batch id: " << _t->batch_id << dendl;
+      assert(0 == "kinetic batch start error");
       return -1;
     }
     for (int j = 0;
@@ -179,36 +180,40 @@ int KineticStore::submit_transaction(KeyValueDB::Transaction t)
       kinetic::KineticStatus status(kinetic::StatusCode::OK, "");
       if (it->type == KINETIC_OP_WRITE) {
 	string data(it->data.c_str(), it->data.length());
-	kinetic::KineticRecord record(data, "", "",
-				      com::seagate::kinetic::client::proto::Command::INVALID_ALGORITHM);
-	dout(30) << "kinetic before put of " << it->key << " (" << data.length() << " bytes)" << dendl;
-	status = _t->kinetic_conn->BatchPutKey(_t->batch_id, it->key, "", kinetic::WriteMode::IGNORE_VERSION,
-					       make_shared<const kinetic::KineticRecord>(record));
-	dout(30) << "kinetic after put of " << it->key << dendl;
+	kinetic::KineticRecord record(
+	  data, "", "",
+	  com::seagate::kinetic::client::proto::Command::INVALID_ALGORITHM);
+	dout(30) << __func__ << " put " << it->key
+		 << " (" << data.length() << " bytes)" << dendl;
+	status = _t->kinetic_conn->BatchPutKey(
+	  _t->batch_id, it->key, "", kinetic::WriteMode::IGNORE_VERSION,
+	  make_shared<const kinetic::KineticRecord>(record));
       } else {
 	assert(it->type == KINETIC_OP_DELETE);
-	dout(30) << "kinetic before delete" << dendl;
-	status = _t->kinetic_conn->BatchDeleteKey(_t->batch_id, it->key, "",
-						  kinetic::WriteMode::IGNORE_VERSION);
-	dout(30) << "kinetic after delete" << dendl;
+	dout(30) << __func__ << " delete " << it->key << dendl;
+	status = _t->kinetic_conn->BatchDeleteKey(
+	  _t->batch_id, it->key, "",
+	  kinetic::WriteMode::IGNORE_VERSION);
       }
       if (!status.ok()) {
 	derr << "kinetic error submitting transaction: "
 	     << status.message() << dendl;
 	derr << "error number of commit: " << i << dendl;
 	derr << "error number of batch: " << j << dendl;
+	assert(0 == "kinetic submit error");
 	return -1;
       }
     }
     kinetic::KineticStatus status = _t->kinetic_conn->BatchCommit(_t->batch_id);
-    if(!status.ok())
-      {
-	derr << "kinetic error committing transaction: "
-	     << status.message() << dendl;
-	derr << "kinetic error batch id: " << _t->batch_id << dendl;
-	derr << "kinetic error batch operations in queue: " << _t->ops.size() << dendl;
-	return -1;
-      }
+    if (!status.ok()) {
+      derr << "kinetic error committing transaction: "
+	   << status.message() << dendl;
+      derr << "kinetic error batch id: " << _t->batch_id << dendl;
+      derr << "kinetic error batch operations in queue: " << _t->ops.size()
+	   << dendl;
+      assert(0 == "kinetic batch commit error");
+      return -1;
+    }
     _t->batch_id = 0;
     logger->inc(l_kinetic_txns);
   }
