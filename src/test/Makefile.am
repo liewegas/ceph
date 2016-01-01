@@ -91,12 +91,7 @@ check_SCRIPTS += \
 	test/libradosstriper/rados-striper.sh \
 	test/test_objectstore_memstore.sh
 
-check_SCRIPTS += test/ceph-disk.sh
-
 EXTRA_DIST += \
-	$(srcdir)/test/python/ceph-disk/setup.py \
-	$(srcdir)/test/python/ceph-disk/tox.ini \
-	$(srcdir)/test/python/ceph-disk/tests/test_ceph_disk.py \
 	$(srcdir)/test/python/brag-client/setup.py \
 	$(srcdir)/test/python/brag-client/tox.ini \
 	$(srcdir)/test/python/brag-client/tests/test_ceph_brag.py \
