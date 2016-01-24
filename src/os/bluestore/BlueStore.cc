@@ -1629,8 +1629,8 @@ int BlueStore::mkfs()
       goto out_close_fsid;
     }
     fsid = old_fsid;
-    dout(1) << __func__ << " already created, fsid is " << fsid << dendl;
-    goto out_close_fsid;
+    //    dout(1) << __func__ << " already created, fsid is " << fsid << dendl;
+    //    goto out_close_fsid;
   }
 
   r = _setup_block_symlink_or_file("block", g_conf->bluestore_block_path,
