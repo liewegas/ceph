@@ -1631,6 +1631,7 @@ class Prepare(object):
             PrepareData.parser(),
         ]
         parents.extend(PrepareDefault.parent_parsers())
+        parents.extend(PrepareBluestore.parent_parsers())
         parser = subparsers.add_parser(
             'prepare',
             parents=parents,
@@ -1648,7 +1649,10 @@ class Prepare(object):
 
     @staticmethod
     def factory(args):
-        return PrepareDefault(args)
+        if args.bluestore:
+            return PrepareBluestore(args)
+        else:
+            return PrepareDefault(args)
 
     @staticmethod
     def main(args):
@@ -1671,6 +1675,31 @@ class PrepareDefault(Prepare):
         self.data.prepare(self.journal)
 
 
+class PrepareBluestore(Prepare):
+
+    def __init__(self, args):
+        self.data = PrepareBluestoreData(args)
+        self.block = PrepareBluestoreBlock(args)
+
+    @staticmethod
+    def parser():
+        parser = argparse.ArgumentParser(add_help=False)
+        parser.add_argument(
+            '--bluestore',
+            action='store_true', default=None,
+            help='bluestore objectstore',
+        )
+        return parser
+
+    @staticmethod
+    def parent_parsers():
+        return [
+            PrepareBluestore.parser(),
+            PrepareBluestoreBlock.parser(),
+        ]
+
+    def prepare_locked(self):
+        self.data.prepare(self.block)
 
 
 class PrepareSpace(object):
@@ -1960,6 +1989,28 @@ class PrepareJournal(PrepareSpace):
         return PrepareSpace.parser('journal')
 
 
+class PrepareBluestoreBlock(PrepareSpace):
+
+    def __init__(self, args):
+        self.name = 'block'
+        super(PrepareBluestoreBlock, self).__init__(args)
+
+    def get_space_size(self):
+        return get_conf_with_default(
+            cluster=self.args.cluster,
+            variable='bluestore_block_size',
+        )
+
+    def desired_partition_number(self):
+        if self.args.block == self.args.data:
+            num = 3
+        else:
+            num = 0
+        return num
+
+    @staticmethod
+    def parser():
+        return PrepareSpace.parser('block')
 
 
 class CryptHelpers(object):
@@ -2266,6 +2317,10 @@ class PrepareData(object):
                                 '--action=add',
                                 '--sysname-match',
                                 os.path.basename(partition.rawdev)])
+
+
+class PrepareBluestoreData(PrepareData):
+    pass
 
 
 def mkfs(
