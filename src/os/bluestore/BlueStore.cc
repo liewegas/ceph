@@ -1600,6 +1600,19 @@ int BlueStore::mkfs()
   int r;
   uuid_d old_fsid;
 
+  {
+    string type;
+    r = read_meta("type", &type);
+    if (r == 0) {
+      if (type != "bluestore") {
+	dout(1) << __func__ << " already created, but type is " << type << dendl;
+	return -EIO;
+      }
+      dout(1) << __func__ << " already created" << dendl;
+      return 0;
+    }
+  }
+
   r = _open_path();
   if (r < 0)
     return r;
@@ -1629,8 +1642,6 @@ int BlueStore::mkfs()
       goto out_close_fsid;
     }
     fsid = old_fsid;
-    //    dout(1) << __func__ << " already created, fsid is " << fsid << dendl;
-    //    goto out_close_fsid;
   }
 
   r = _setup_block_symlink_or_file("block", g_conf->bluestore_block_path,
@@ -1707,16 +1718,18 @@ int BlueStore::mkfs()
   r = write_meta("bluefs", stringify((int)g_conf->bluestore_bluefs));
   if (r < 0)
     goto out_close_alloc;
+
+  r = _write_fsid();
+  if (r < 0) {
+    derr << __func__ << " error writing fsid: " << cpp_strerror(r) << dendl;
+    goto out_close_alloc;
+  }
+
+  // indicate success by writing the 'type' file
   r = write_meta("type", "bluestore");
   if (r < 0)
     goto out_close_alloc;
-
-  // indicate mkfs completion/success by writing the fsid file
-  r = _write_fsid();
-  if (r == 0)
-    dout(10) << __func__ << " success" << dendl;
-  else
-    derr << __func__ << " error writing fsid: " << cpp_strerror(r) << dendl;
+  dout(10) << __func__ << " success" << dendl;
 
  out_close_alloc:
   _close_alloc();
