@@ -947,7 +947,12 @@ static opt_mapping_t opt_mapping = boost::assign::map_list_of
            ("recovery_priority", pool_opts_t::opt_desc_t(
              pool_opts_t::RECOVERY_PRIORITY, pool_opts_t::INT))
            ("recovery_op_priority", pool_opts_t::opt_desc_t(
-             pool_opts_t::RECOVERY_OP_PRIORITY, pool_opts_t::INT));
+             pool_opts_t::RECOVERY_OP_PRIORITY, pool_opts_t::INT))
+           ("cache_promote_max_bytes_sec", pool_opts_t::opt_desc_t(
+             pool_opts_t::CACHE_PROMOTE_MAX_BYTES_SEC, pool_opts_t::INT))
+           ("cache_promote_max_objects_sec", pool_opts_t::opt_desc_t(
+             pool_opts_t::CACHE_PROMOTE_MAX_OBJECTS_SEC, pool_opts_t::INT))
+	   ;
 
 bool pool_opts_t::is_opt_name(const std::string& name) {
     return opt_mapping.find(name) != opt_mapping.end();
