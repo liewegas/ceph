@@ -5352,6 +5352,8 @@ int BlueStore::_do_write(
       continue;
     }
 
+    crc_map.write(offset, length, bl, NULL);
+
     assert(bp != o->onode.block_map.end());
     assert(offset >= bp->first);
     assert(offset + length <= bp->first + bp->second.length);

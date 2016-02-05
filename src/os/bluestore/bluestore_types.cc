@@ -409,6 +409,7 @@ void bluestore_onode_t::encode(bufferlist& bl) const
   ::encode(omap_head, bl);
   ::encode(expected_object_size, bl);
   ::encode(expected_write_size, bl);
+  ::encode(crc_map, bl);
   ENCODE_FINISH(bl);
 }
 
@@ -425,6 +426,7 @@ void bluestore_onode_t::decode(bufferlist::iterator& p)
   ::decode(omap_head, p);
   ::decode(expected_object_size, p);
   ::decode(expected_write_size, p);
+  ::decode(crc_map, p);
   DECODE_FINISH(p);
 }
 
@@ -472,6 +474,7 @@ void bluestore_onode_t::dump(Formatter *f) const
   f->dump_unsigned("omap_head", omap_head);
   f->dump_unsigned("expected_object_size", expected_object_size);
   f->dump_unsigned("expected_write_size", expected_write_size);
+  f->dump_object("crc_map", crc_map);
 }
 
 void bluestore_onode_t::generate_test_instances(list<bluestore_onode_t*>& o)

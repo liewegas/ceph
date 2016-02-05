@@ -193,6 +193,8 @@ struct bluestore_onode_t {
   uint32_t expected_object_size;
   uint32_t expected_write_size;
 
+  SloppyCRCMap crc_map;
+
   bluestore_onode_t()
     : nid(0),
       size(0),
