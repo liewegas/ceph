@@ -41,6 +41,9 @@ public:
     }
   }
 
+  /// invalidate range of crcs
+  void invalidate(uint64_t offset, uint64_t len);
+
   /// update based on a write
   void write(uint64_t offset, uint64_t len, const bufferlist& bl,
 	     std::ostream *out = NULL);
@@ -51,8 +54,9 @@ public:
   /// update based on a zero/punch_hole
   void zero(uint64_t offset, uint64_t len);
 
-  /// update based on a zero/punch_hole
-  void clone_range(uint64_t offset, uint64_t len, uint64_t srcoff, const SloppyCRCMap& src,
+  /// clone some crcs to target map
+  void clone_range(uint64_t offset, uint64_t len, uint64_t srcoff,
+		   const SloppyCRCMap& src,
 		   std::ostream *out = NULL);
 
   /**
@@ -64,7 +68,8 @@ public:
    * @param err option ostream to describe errors in detail
    * @returns error count, 0 for success
    */
-  int read(uint64_t offset, uint64_t len, const bufferlist& bl, std::ostream *err);
+  int read(uint64_t offset, uint64_t len, const bufferlist& bl,
+	   std::ostream *err);
 
   void encode(bufferlist& bl) const;
   void decode(bufferlist::iterator& bl);

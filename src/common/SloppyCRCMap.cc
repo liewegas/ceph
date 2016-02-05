@@ -4,6 +4,26 @@
 #include "common/SloppyCRCMap.h"
 #include "common/Formatter.h"
 
+void SloppyCRCMap::invalidate(uint64_t offset, uint64_t len)
+{
+  int64_t left = len;
+  uint64_t pos = offset;
+  unsigned o = offset % block_size;
+  if (o) {
+    crc_map.erase(offset - o);
+    pos += (block_size - o);
+    left -= (block_size - o);
+  }
+  while (left >= block_size) {
+    crc_map.erase(pos);
+    pos += block_size;
+    left -= block_size;
+  }
+  if (left > 0) {
+    crc_map.erase(pos);
+  }
+}
+
 void SloppyCRCMap::write(uint64_t offset, uint64_t len, const bufferlist& bl,
 			 std::ostream *out)
 {
