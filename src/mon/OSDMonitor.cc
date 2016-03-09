@@ -1096,7 +1096,8 @@ void OSDMonitor::maybe_prime_pg_temp()
 void OSDMonitor::prime_pg_temp(OSDMap& next,
 			       ceph::unordered_map<pg_t, pg_stat_t>::iterator pp)
 {
-  // do not prime creating pgs
+  // do not prime creating pgs -- OSD::handle_pg_create assumes that
+  // up != acting implies the PG was successfully created.
   if (pp->second.state & PG_STATE_CREATING)
     return;
   // do not touch a mapping if a change is pending
