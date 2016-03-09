@@ -7338,6 +7338,13 @@ void OSD::handle_pg_create(OpRequestRef op)
       dout(10) << "mkpg " << pgid << "  already exists, skipping" << dendl;
       continue;
     }
+    if (store->collection_exists(coll_t(pgid))) {
+      dout(10) << "mkpg " << pgid << "  collection exists, skipping" << dendl;
+      // if the collection exists, the pg exists somewhere.  it probably
+      // is in the process of being deleted locally because another OSD has
+      // it now.
+      continue;
+    }
 
     pg_history_t history;
     history.epoch_created = created;
