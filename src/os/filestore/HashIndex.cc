@@ -16,6 +16,7 @@
 #include "include/buffer.h"
 #include "osd/osd_types.h"
 #include <errno.h>
+#include "common/errno.h"
 
 #include "HashIndex.h"
 
@@ -835,8 +836,10 @@ int HashIndex::get_path_contents_by_hash_bitwise(
   map<string, ghobject_t> rev_objects;
   int r;
   r = list_objects(path, 0, 0, &rev_objects);
-  if (r < 0)
+  if (r < 0) {
+    derr << __func__ << " list_objects failed with " << cpp_strerror(r) << dendl;
     return r;
+  }
   // bitwise sort
   for (map<string, ghobject_t>::iterator i = rev_objects.begin();
        i != rev_objects.end();
@@ -849,8 +852,10 @@ int HashIndex::get_path_contents_by_hash_bitwise(
   }
   vector<string> subdirs;
   r = list_subdirs(path, &subdirs);
-  if (r < 0)
+  if (r < 0) {
+    derr << __func__ << " list_subdirs failed with " << cpp_strerror(r) << dendl;
     return r;
+  }
 
   // sort subdirs bitwise (by reversing hex digit nibbles)
   std::sort(subdirs.begin(), subdirs.end(), cmp_hexdigit_bitwise);
@@ -893,8 +898,10 @@ int HashIndex::get_path_contents_by_hash_nibblewise(
   map<string, ghobject_t> rev_objects;
   int r;
   r = list_objects(path, 0, 0, &rev_objects);
-  if (r < 0)
+  if (r < 0) {
+    derr << __func__ << " list_objects failed with " << cpp_strerror(r) << dendl;
     return r;
+  }
 
   for (map<string, ghobject_t>::iterator i = rev_objects.begin();
        i != rev_objects.end();
@@ -908,8 +915,10 @@ int HashIndex::get_path_contents_by_hash_nibblewise(
 
   vector<string> subdirs;
   r = list_subdirs(path, &subdirs);
-  if (r < 0)
+  if (r < 0) {
+    derr << __func__ << " list_subdirs failed with " << cpp_strerror(r) << dendl;
     return r;
+  }
 
   // sort nibblewise (string sort of (reversed) hex digits)
   std::sort(subdirs.begin(), subdirs.end());
@@ -968,8 +977,11 @@ int HashIndex::list_by_hash_bitwise(
 					    next,
 					    &hash_prefixes,
 					    &objects);
-  if (r < 0)
+  if (r < 0) {
+    derr << __func__ << " get_path_contents_by_hash_bitwise failed with "
+	 << cpp_strerror(r) << dendl;
     return r;
+  }
   for (set<string, CmpHexdigitStringBitwise>::iterator i = hash_prefixes.begin();
        i != hash_prefixes.end();
        ++i) {
@@ -1034,8 +1046,11 @@ int HashIndex::list_by_hash_nibblewise(
 					       next,
 					       &hash_prefixes,
 					       &objects);
-  if (r < 0)
+  if (r < 0) {
+    derr << __func__ << " get_path_contents_by_hash_nibblewise failed iwth "
+	 << cpp_strerror(r) << dendl;
     return r;
+  }
   for (set<string>::iterator i = hash_prefixes.begin();
        i != hash_prefixes.end();
        ++i) {

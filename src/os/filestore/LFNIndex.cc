@@ -31,6 +31,7 @@
 #include "common/ceph_crypto.h"
 #include "include/compat.h"
 #include "chain_xattr.h"
+#include "common/errno.h"
 
 #include "LFNIndex.h"
 using ceph::crypto::SHA1;
@@ -397,7 +398,9 @@ int LFNIndex::list_objects(const vector<string> &to_list, int max_objs,
   char buf[offsetof(struct dirent, d_name) + PATH_MAX + 1];
   int r;
   if (!dir) {
-    return -errno;
+    r = -errno;
+    derr << __func__ << " opendir failed with " << cpp_strerror(r) << dendl;
+    return r;
   }
 
   if (handle && *handle) {
@@ -423,6 +426,8 @@ int LFNIndex::list_objects(const vector<string> &to_list, int max_objs,
       r = lfn_translate(to_list, short_name, &obj);
       if (r < 0) {
 	r = -errno;
+	derr << __func__ << " lfn_translate failed on '" << short_name
+	     << "' with " << cpp_strerror(r) << dendl;
 	goto cleanup;
       } else if (r > 0) {
 	string long_name = lfn_generate_object_name(obj);
@@ -955,8 +960,11 @@ int LFNIndex::lfn_translate(const vector<string> &path,
 
   // Get lfn_attr
   r = chain_getxattr(full_path.c_str(), get_lfn_attr().c_str(), attr, sizeof(attr) - 1);
-  if (r < 0)
+  if (r < 0) {
+    derr << __func__ << " chain_getxattr " << full_path << " attr "
+	 << get_lfn_attr() << " failed with " << cpp_strerror(r) << dendl;
     return -errno;
+  }
   if (r < (int)sizeof(attr))
     attr[r] = '\0';
 
