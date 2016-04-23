@@ -223,14 +223,14 @@ void LevelDBStore::LevelDBTransactionImpl::set(
   }
 }
 
-void LevelDBStore::LevelDBTransactionImpl::rmkey(const string &prefix,
-					         const string &k)
+void LevelDBStore::LevelDBTransactionImpl::rm(const string &prefix,
+					      const string &k)
 {
   string key = combine_strings(prefix, k);
   bat.Delete(leveldb::Slice(key));
 }
 
-void LevelDBStore::LevelDBTransactionImpl::rmkeys_by_prefix(const string &prefix)
+void LevelDBStore::LevelDBTransactionImpl::rm_by_prefix(const string &prefix)
 {
   KeyValueDB::Iterator it = db->get_iterator(prefix);
   for (it->seek_to_first();

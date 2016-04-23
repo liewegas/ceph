@@ -203,7 +203,7 @@ public:
     KeyValueDB::Transaction t = store->get_transaction();
     while (it->valid()) {
       pair<string,string> k = it->raw_key();
-      t->rmkey(k.first, k.second);
+      t->rm(k.first, k.second);
       it->next();
     }
     store->submit_transaction_sync(t);
@@ -306,7 +306,7 @@ public:
     // remove prefix2 ; check if prefix1 remains, and then prefix3
     KeyValueDB::Transaction tx = store->get_transaction();
     // remove the prefix in the middle of the key space
-    tx->rmkeys_by_prefix(prefix2);
+    tx->rm_by_prefix(prefix2);
     store->submit_transaction_sync(tx);
 
     deque<string> key_deque;
@@ -338,7 +338,7 @@ public:
     // remove prefix1 ; check if prefix2 and then prefix3 remain
     tx = store->get_transaction();
     // remove the prefix at the beginning of the key space
-    tx->rmkeys_by_prefix(prefix1);
+    tx->rm_by_prefix(prefix1);
     store->submit_transaction_sync(tx);
 
     iter = store->get_iterator();
@@ -370,7 +370,7 @@ public:
     // remove prefix3 ; check if prefix1 and then prefix2 remain
     tx = store->get_transaction();
     // remove the prefix at the end of the key space
-    tx->rmkeys_by_prefix(prefix3);
+    tx->rm_by_prefix(prefix3);
     store->submit_transaction_sync(tx);
 
     iter = store->get_iterator();
@@ -409,10 +409,10 @@ public:
     ASSERT_TRUE(iter->valid());
 
     KeyValueDB::Transaction t = store->get_transaction();
-    t->rmkey(prefix1, "11");
-    t->rmkey(prefix1, "12");
-    t->rmkey(prefix2, "23");
-    t->rmkey(prefix3, "33");
+    t->rm(prefix1, "11");
+    t->rm(prefix1, "12");
+    t->rm(prefix2, "23");
+    t->rm(prefix3, "33");
     store->submit_transaction_sync(t);
 
     deque<string> key_deque;

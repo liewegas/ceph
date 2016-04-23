@@ -2857,7 +2857,7 @@ void KStore::_do_remove_stripe(TransContext *txc, OnodeRef o, uint64_t offset)
   o->pending_stripes.erase(offset);
   string key;
   get_data_key(o->onode.nid, offset, &key);
-  txc->t->rmkey(PREFIX_DATA, key);
+  txc->t->rm(PREFIX_DATA, key);
 }
 
 int KStore::_do_write(TransContext *txc,
@@ -3112,7 +3112,7 @@ int KStore::_do_remove(TransContext *txc,
   o->onode = kstore_onode_t();
   txc->onodes.erase(o);
   get_object_key(o->oid, &key);
-  txc->t->rmkey(PREFIX_OBJ, key);
+  txc->t->rm(PREFIX_OBJ, key);
   return 0;
 }
 
@@ -3207,7 +3207,7 @@ void KStore::_do_omap_clear(TransContext *txc, uint64_t id)
       dout(30) << __func__ << "  stop at " << tail << dendl;
       break;
     }
-    txc->t->rmkey(PREFIX_OMAP, it->key());
+    txc->t->rm(PREFIX_OMAP, it->key());
     dout(30) << __func__ << "  rm " << pretty_binary_string(it->key()) << dendl;
     it->next();
   }
@@ -3297,7 +3297,7 @@ int KStore::_omap_rmkeys(TransContext *txc,
     get_omap_key(o->onode.omap_head, key, &final_key);
     dout(30) << __func__ << "  rm " << pretty_binary_string(final_key)
 	     << " <- " << key << dendl;
-    txc->t->rmkey(PREFIX_OMAP, final_key);
+    txc->t->rm(PREFIX_OMAP, final_key);
   }
   r = 0;
 
@@ -3329,7 +3329,7 @@ int KStore::_omap_rmkey_range(TransContext *txc,
 	       << dendl;
       break;
     }
-    txc->t->rmkey(PREFIX_OMAP, it->key());
+    txc->t->rm(PREFIX_OMAP, it->key());
     dout(30) << __func__ << "  rm " << pretty_binary_string(it->key()) << dendl;
     it->next();
   }
@@ -3490,7 +3490,7 @@ int KStore::_rename(TransContext *txc,
       goto out;
   }
 
-  txc->t->rmkey(PREFIX_OBJ, oldo->key);
+  txc->t->rm(PREFIX_OBJ, oldo->key);
   txc->write_onode(oldo);
   c->onode_map.rename(old_oid, new_oid);  // this adjusts oldo->{oid,key}
   r = 0;
@@ -3555,7 +3555,7 @@ int KStore::_remove_collection(TransContext *txc, coll_t cid,
     txc->removed_collections.push_back(*c);
     c->reset();
   }
-  txc->t->rmkey(PREFIX_COLL, stringify(cid));
+  txc->t->rm(PREFIX_COLL, stringify(cid));
   r = 0;
 
  out:

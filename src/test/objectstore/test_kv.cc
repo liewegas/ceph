@@ -95,8 +95,8 @@ TEST_P(KVTest, PutReopen) {
   }
   {
     KeyValueDB::Transaction t = db->get_transaction();
-    t->rmkey("prefix", "key");
-    t->rmkey("prefix", "key3");
+    t->rm("prefix", "key");
+    t->rm("prefix", "key3");
     db->submit_transaction_sync(t);
   }
   fini();

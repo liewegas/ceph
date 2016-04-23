@@ -265,7 +265,7 @@ void _clean_forward(const pair<coll_t, string> &obj,
   for (; i->valid(); i->next()) {
     to_remove.insert(i->key());
   }
-  t->rmkeys(obj_to_prefix(obj), to_remove);
+  t->rm(obj_to_prefix(obj), to_remove);
   db->submit_transaction(t);
 }
 
@@ -396,7 +396,7 @@ void clear_obsolete(const pair<coll_t, string> &obj,
   for (; iter->valid() && iter->key() < seq_to_key(status.trim_to());
        iter->next())
     to_remove.insert(iter->key());
-  t->rmkeys(obj_to_prefix(obj), to_remove);
+  t->rm(obj_to_prefix(obj), to_remove);
 }
 
 void FileStoreTracker::committed(const pair<coll_t, string> &obj,

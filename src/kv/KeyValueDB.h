@@ -58,7 +58,7 @@ public:
 
 
     /// Removes Keys (via encoded bufferlist)
-    void rmkeys(
+    void rm(
       const std::string &prefix,   ///< [in] Prefix to search for
       bufferlist &keys_bl ///< [in] Keys to remove
     ) {
@@ -68,22 +68,22 @@ public:
       while (num--) {
 	string key;
 	::decode(key, p);
-	rmkey(prefix, key);
+	rm(prefix, key);
       }
     }
 
     /// Removes Keys
-    void rmkeys(
+    void rm(
       const std::string &prefix,   ///< [in] Prefix to search for
       const std::set<std::string> &keys ///< [in] Keys to remove
     ) {
       std::set<std::string>::const_iterator it;
       for (it = keys.begin(); it != keys.end(); ++it)
-	rmkey(prefix, *it);
+	rm(prefix, *it);
     }
 
     /// Remove Key
-    virtual void rmkey(
+    virtual void rm(
       const std::string &prefix,   ///< [in] Prefix to search for
       const std::string &k	      ///< [in] Key to remove
       ) = 0;
@@ -98,11 +98,11 @@ public:
       const std::string &prefix,   ///< [in] Prefix to search for
       const std::string &k	   ///< [in] Key to remove
       ) {
-      return rmkey(prefix, k);
+      return rm(prefix, k);
     }
 
     /// Removes keys beginning with prefix
-    virtual void rmkeys_by_prefix(
+    virtual void rm_by_prefix(
       const std::string &prefix ///< [in] Prefix by which to remove keys
       ) = 0;
 

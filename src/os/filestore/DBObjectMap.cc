@@ -601,7 +601,7 @@ int DBObjectMap::merge_new_complete(Header header,
     bl.append(bufferptr(new_end.c_str(), new_end.size() + 1));
     to_add.insert(make_pair(new_begin, bl));
   }
-  t->rmkeys(complete_prefix(header), to_remove);
+  t->rm(complete_prefix(header), to_remove);
   t->set(complete_prefix(header), to_add);
   return 0;
 }
@@ -645,7 +645,7 @@ int DBObjectMap::rm_keys(const ghobject_t &oid,
   KeyValueDB::Transaction t = db->get_transaction();
   if (check_spos(oid, header, spos))
     return 0;
-  t->rmkeys(user_prefix(header), to_clear);
+  t->rm(user_prefix(header), to_clear);
   if (!header->parent) {
     return db->submit_transaction(t);
   }
@@ -704,7 +704,7 @@ int DBObjectMap::rm_keys(const ghobject_t &oid,
     _clear(parent, t);
     header->parent = 0;
     set_map_header(hl, oid, *header, t);
-    t->rmkeys_by_prefix(complete_prefix(header));
+    t->rm_by_prefix(complete_prefix(header));
   }
   return db->submit_transaction(t);
 }
@@ -876,7 +876,7 @@ int DBObjectMap::remove_xattrs(const ghobject_t &oid,
     return -ENOENT;
   if (check_spos(oid, header, spos))
     return 0;
-  t->rmkeys(xattr_prefix(header), to_remove);
+  t->rm(xattr_prefix(header), to_remove);
   return db->submit_transaction(t);
 }
 
@@ -932,7 +932,7 @@ int DBObjectMap::clone(const ghobject_t &oid,
     to_set.insert(make_pair(xattr_iter->key(), xattr_iter->value()));
   t->set(xattr_prefix(source), to_set);
   t->set(xattr_prefix(destination), to_set);
-  t->rmkeys_by_prefix(xattr_prefix(parent));
+  t->rm_by_prefix(xattr_prefix(parent));
   return db->submit_transaction(t);
 }
 
@@ -975,7 +975,7 @@ int DBObjectMap::upgrade_to_v2()
 
     if (!remove.empty()) {
       dout(20) << __func__ << " updating " << remove.size() << " keys" << dendl;
-      t->rmkeys(HOBJECT_TO_SEQ, remove);
+      t->rm(HOBJECT_TO_SEQ, remove);
       t->set(HOBJECT_TO_SEQ, add);
       int r = db->submit_transaction(t);
       if (r < 0)
@@ -1176,13 +1176,11 @@ DBObjectMap::Header DBObjectMap::lookup_create_map_header(
 void DBObjectMap::clear_header(Header header, KeyValueDB::Transaction t)
 {
   dout(20) << "clear_header: clearing seq " << header->seq << dendl;
-  t->rmkeys_by_prefix(user_prefix(header));
-  t->rmkeys_by_prefix(sys_prefix(header));
-  t->rmkeys_by_prefix(complete_prefix(header));
-  t->rmkeys_by_prefix(xattr_prefix(header));
-  set<string> keys;
-  keys.insert(header_key(header->seq));
-  t->rmkeys(USER_PREFIX, keys);
+  t->rm_by_prefix(user_prefix(header));
+  t->rm_by_prefix(sys_prefix(header));
+  t->rm_by_prefix(complete_prefix(header));
+  t->rm_by_prefix(xattr_prefix(header));
+  t->rm(USER_PREFIX, header_key(header->seq));
 }
 
 void DBObjectMap::set_header(Header header, KeyValueDB::Transaction t)
@@ -1202,9 +1200,7 @@ void DBObjectMap::remove_map_header(
   assert(l.get_locked() == oid);
   dout(20) << "remove_map_header: removing " << header->seq
 	   << " oid " << oid << dendl;
-  set<string> to_remove;
-  to_remove.insert(map_header_key(oid));
-  t->rmkeys(HOBJECT_TO_SEQ, to_remove);
+  t->rm(HOBJECT_TO_SEQ, map_header_key(oid));
   {
     Mutex::Locker l(cache_lock);
     caches.clear(oid);

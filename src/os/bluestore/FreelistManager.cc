@@ -52,7 +52,7 @@ int FreelistManager::init(KeyValueDB *db, string p)
       kv_free.erase(last_offset);
       string key;
       _key_encode_u64(last_offset, &key);
-      txn->rmkey(prefix, key);
+      txn->rm(prefix, key);
       offset -= last_length;
       length += last_length;
       bufferlist value;
@@ -140,7 +140,7 @@ int FreelistManager::allocate(
   if (p->first == offset) {
     string key;
     _key_encode_u64(offset, &key);
-    txn->rmkey(prefix, key);
+    txn->rm(prefix, key);
     dout(20) << __func__ << "  rm " << p->first << "~" << p->second << dendl;
     if (p->second > length) {
       uint64_t newoff = offset + length;
@@ -206,7 +206,7 @@ int FreelistManager::release(
     if (p->first + p->second == offset) {
       string prevkey;
       _key_encode_u64(p->first, &prevkey);
-      txn->rmkey(prefix, prevkey);
+      txn->rm(prefix, prevkey);
       dout(20) << __func__ << "  rm " << p->first << "~" << p->second
 	       << " (merge with previous)" << dendl;
       length += p->second;
@@ -233,7 +233,7 @@ int FreelistManager::release(
     if (p->first == offset + length) {
       string tailkey;
       _key_encode_u64(p->first, &tailkey);
-      txn->rmkey(prefix, tailkey);
+      txn->rm(prefix, tailkey);
       dout(20) << __func__ << "  rm " << p->first << "~" << p->second
 	       << " (merge with next)" << dendl;
       length += p->second;

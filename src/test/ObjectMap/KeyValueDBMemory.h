@@ -48,12 +48,12 @@ public:
     const bufferlist &bl
     );
 
-  int rmkey(
+  int rm(
     const string &prefix,
     const string &key
     );
 
-  int rmkeys_by_prefix(
+  int rm_by_prefix(
     const string &prefix
     );
 
@@ -89,11 +89,11 @@ public:
 	       const std::pair<string,string> &key)
 	: db(db), key(key) {}
       void finish(int r) {
-	db->rmkey(key.first, key.second);
+	db->rm(key.first, key.second);
       }
     };
 
-    void rmkey(const string &prefix, const string &key) {
+    void rm(const string &prefix, const string &key) {
       on_commit.push_back(new RmKeysOp(db, std::make_pair(prefix, key)));
     }
 
@@ -104,10 +104,10 @@ public:
 		       const string &prefix)
 	: db(db), prefix(prefix) {}
       void finish(int r) {
-	db->rmkeys_by_prefix(prefix);
+	db->rm_by_prefix(prefix);
       }
     };
-    void rmkeys_by_prefix(const string &prefix) {
+    void rm_by_prefix(const string &prefix) {
       on_commit.push_back(new RmKeysByPrefixOp(db, prefix));
     }
 

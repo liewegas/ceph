@@ -3745,7 +3745,7 @@ int BlueStore::_txc_finalize(OpSequencer *osr, TransContext *txc)
     if ((*p)->ref_map.empty()) {
       dout(20) << "  enode " << std::hex << (*p)->hash << std::dec
 	       << " ref_map is empty" << dendl;
-      txc->t->rmkey(PREFIX_OBJ, (*p)->key);
+      txc->t->rm(PREFIX_OBJ, (*p)->key);
     } else {
       bufferlist bl;
       ::encode((*p)->ref_map, bl);
@@ -6070,7 +6070,7 @@ int BlueStore::_do_remove(
   o->exists = false;
   o->onode = bluestore_onode_t();
   txc->onodes.erase(o);
-  txc->t->rmkey(PREFIX_OBJ, o->key);
+  txc->t->rm(PREFIX_OBJ, o->key);
   return 0;
 }
 
@@ -6178,7 +6178,7 @@ void BlueStore::_do_omap_clear(TransContext *txc, uint64_t id)
 	       << dendl;
       break;
     }
-    txc->t->rmkey(PREFIX_OMAP, it->key());
+    txc->t->rm(PREFIX_OMAP, it->key());
     dout(30) << __func__ << "  rm " << pretty_binary_string(it->key()) << dendl;
     it->next();
   }
@@ -6270,7 +6270,7 @@ int BlueStore::_omap_rmkeys(TransContext *txc,
     get_omap_key(o->onode.omap_head, key, &final_key);
     dout(30) << __func__ << "  rm " << pretty_binary_string(final_key)
 	     << " <- " << key << dendl;
-    txc->t->rmkey(PREFIX_OMAP, final_key);
+    txc->t->rm(PREFIX_OMAP, final_key);
   }
   r = 0;
 
@@ -6301,7 +6301,7 @@ int BlueStore::_omap_rmkey_range(TransContext *txc,
 	       << dendl;
       break;
     }
-    txc->t->rmkey(PREFIX_OMAP, it->key());
+    txc->t->rm(PREFIX_OMAP, it->key());
     dout(30) << __func__ << "  rm " << pretty_binary_string(it->key()) << dendl;
     it->next();
   }
@@ -6509,7 +6509,7 @@ int BlueStore::_rename(TransContext *txc,
     assert(txc->onodes.count(newo) == 0);
   }
 
-  txc->t->rmkey(PREFIX_OBJ, oldo->key);
+  txc->t->rm(PREFIX_OBJ, oldo->key);
   txc->write_onode(oldo);
   newo = oldo;
 
@@ -6582,7 +6582,7 @@ int BlueStore::_remove_collection(TransContext *txc, coll_t cid,
     (*c)->exists = false;
     c->reset();
   }
-  txc->t->rmkey(PREFIX_COLL, stringify(cid));
+  txc->t->rm(PREFIX_COLL, stringify(cid));
   r = 0;
 
  out:

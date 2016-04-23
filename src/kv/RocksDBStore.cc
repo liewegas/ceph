@@ -367,8 +367,8 @@ void RocksDBStore::RocksDBTransactionImpl::set(
   }
 }
 
-void RocksDBStore::RocksDBTransactionImpl::rmkey(const string &prefix,
-					         const string &k)
+void RocksDBStore::RocksDBTransactionImpl::rm(const string &prefix,
+					      const string &k)
 {
   bat->Delete(combine_strings(prefix, k));
 }
@@ -379,7 +379,7 @@ void RocksDBStore::RocksDBTransactionImpl::rm_single(const string &prefix,
   bat->SingleDelete(combine_strings(prefix, k));
 }
 
-void RocksDBStore::RocksDBTransactionImpl::rmkeys_by_prefix(const string &prefix)
+void RocksDBStore::RocksDBTransactionImpl::rm_by_prefix(const string &prefix)
 {
   KeyValueDB::Iterator it = db->get_iterator(prefix);
   for (it->seek_to_first();

@@ -148,13 +148,13 @@ public:
       const string &prefix,
       const string &k,
       const bufferlist &bl) override;
-    void rmkey(
+    void rm(
       const string &prefix,
       const string &k) override;
     void rm_single(
       const string &prefix,
       const string &k) override;
-    void rmkeys_by_prefix(
+    void rm_by_prefix(
       const string &prefix
       ) override;
   };

@@ -194,13 +194,13 @@ int KeyValueDBMemory::set(const string &prefix,
   return 0;
 }
 
-int KeyValueDBMemory::rmkey(const string &prefix,
-			    const string &key) {
+int KeyValueDBMemory::rm(const string &prefix,
+			 const string &key) {
   db.erase(make_pair(prefix,key));
   return 0;
 }
 
-int KeyValueDBMemory::rmkeys_by_prefix(const string &prefix) {
+int KeyValueDBMemory::rm_by_prefix(const string &prefix) {
   map<std::pair<string,string>,bufferlist>::iterator i;
   i = db.lower_bound(make_pair(prefix, ""));
   if (i == db.end())
@@ -212,7 +212,7 @@ int KeyValueDBMemory::rmkeys_by_prefix(const string &prefix) {
       break;
 
     ++i;
-    rmkey(key.first, key.second);
+    rm(key.first, key.second);
   }
   return 0;
 }

@@ -281,7 +281,7 @@ class MonitorDBStore
 	dbt->set(op.prefix, op.key, op.bl);
 	break;
       case Transaction::OP_ERASE:
-	dbt->rmkey(op.prefix, op.key);
+	dbt->rm(op.prefix, op.key);
 	break;
       case Transaction::OP_COMPACT:
 	compact.push_back(make_pair(op.prefix, make_pair(op.key, op.endkey)));
@@ -571,7 +571,7 @@ class MonitorDBStore
     KeyValueDB::Transaction dbt = db->get_transaction();
 
     for (iter = prefixes.begin(); iter != prefixes.end(); ++iter) {
-      dbt->rmkeys_by_prefix((*iter));
+      dbt->rm_by_prefix((*iter));
     }
     int r = db->submit_transaction_sync(dbt);
     assert(r >= 0);

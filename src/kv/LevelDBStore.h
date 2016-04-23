@@ -190,10 +190,10 @@ public:
       const string &prefix,
       const string &k,
       const bufferlist &bl);
-    void rmkey(
+    void rm(
       const string &prefix,
       const string &k);
-    void rmkeys_by_prefix(
+    void rm_by_prefix(
       const string &prefix
       );
   };
