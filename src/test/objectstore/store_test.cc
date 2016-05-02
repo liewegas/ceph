@@ -804,6 +804,55 @@ TEST_P(StoreTest, AppendZeroTrailingSharedBlock) {
   }
 }
 
+TEST_P(StoreTest, UseCacheTail) {
+  ObjectStore::Sequencer osr("test");
+  int r;
+  coll_t cid;
+  ghobject_t a(hobject_t(sobject_t("fooo", CEPH_NOSNAP)));
+  {
+    ObjectStore::Transaction t;
+    t.create_collection(cid, 0);
+    cerr << "Creating collection " << cid << std::endl;
+    r = store->apply_transaction(&osr, std::move(t));
+    ASSERT_EQ(r, 0);
+  }
+  unsigned min_alloc = g_conf->bluestore_min_alloc_size;
+  unsigned size = 2048;
+   // make sure cache tail exist
+  {
+    bufferptr bpa(size);
+    memset(bpa.c_str(), 1, bpa.length());
+    bufferlist bla;
+    bla.append(bpa);
+
+    ObjectStore::Transaction t;
+    t.write(cid, a, 0, bla.length(), bla, 0);
+    r = store->apply_transaction(&osr, std::move(t));
+    ASSERT_EQ(r, 0);
+  }
+  //make sure use cache tail
+  {
+    bufferptr bpa(min_alloc - size);
+    memset(bpa.c_str(), 1, bpa.length());
+    bufferlist bla;
+    bla.append(bpa);
+
+    ObjectStore::Transaction t;
+    t.write(cid, a, size, bla.length(), bla, 0);
+    r = store->apply_transaction(&osr, std::move(t));
+    ASSERT_EQ(r, 0);
+
+  }
+  {
+    ObjectStore::Transaction t;
+    t.remove(cid, a);
+    t.remove_collection(cid);
+    cerr << "Cleaning" << std::endl;
+    r = store->apply_transaction(&osr, std::move(t));
+    ASSERT_EQ(r, 0);
+  }
+}
+
 TEST_P(StoreTest, SmallSequentialUnaligned) {
   ObjectStore::Sequencer osr("test");
   int r;
