@@ -300,7 +300,8 @@ int Pipe::accept()
   }
 
   // and my addr
-  ::encode(msgr->my_inst.addr, addrs);
+#warning fixme
+  ::encode(msgr->my_inst.addr, addrs, 0);  /* old format! */
 
   port = msgr->my_inst.addr.get_port();
 
@@ -311,7 +312,8 @@ int Pipe::accept()
     ldout(msgr->cct,0) << "accept failed to getpeername " << cpp_strerror(errno) << dendl;
     goto fail_unlocked;
   }
-  ::encode(socket_addr, addrs);
+#warning fixme
+  ::encode(socket_addr, addrs, 0);
 
   r = tcp_write(addrs.c_str(), addrs.length());
   if (r < 0) {
@@ -984,7 +986,8 @@ int Pipe::connect()
 
   msgr->learned_addr(peer_addr_for_me);
 
-  ::encode(msgr->my_inst.addr, myaddrbl);
+#warning fixme
+  ::encode(msgr->my_inst.addr, myaddrbl, 0);
 
   memset(&msg, 0, sizeof(msg));
   msgvec[0].iov_base = myaddrbl.c_str();

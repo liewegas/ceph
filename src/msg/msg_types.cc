@@ -131,6 +131,68 @@ bool entity_addr_t::parse(const char *s, const char **end)
 }
 
 
+// -------
+// entity_addrvec_t
+
+void entity_addrvec_t::encode(bufferlist& bl, uint64_t features) const
+{
+  if ((features & CEPH_FEATURE_MSG_ADDR2) == 0) {
+    // encode a single legacy entity_addr_t for unfeatured peers
+    if (v.size() > 0) {
+      ::encode(v[0], bl, 0);
+    } else {
+      ::encode(entity_addr_t(), bl, 0);
+    }
+    return;
+  }
+  ::encode((__u8)2, bl);
+  ::encode(v, bl, features);
+}
+
+void entity_addrvec_t::decode(bufferlist::iterator& bl)
+{
+  __u8 marker;
+  ::decode(marker, bl);
+  if (marker == 0) {
+    // legacy!
+    ::decode(marker, bl);
+    __u16 rest;
+    ::decode(rest, bl);
+    entity_addr_t addr;
+    addr.type = ((__u32)marker << 16) + rest;
+    ::decode(addr.nonce, bl);
+    ::decode(addr.addr, bl);
+    v.clear();
+    v.push_back(addr);
+    return;
+  }
+  if (marker > 2)
+    throw buffer::malformed_input("entity_addrvec_t marker > 2");
+  ::decode(v, bl);
+}
+
+void entity_addrvec_t::dump(Formatter *f) const
+{
+  f->open_array_section("addrs");
+  for (vector<entity_addr_t>::const_iterator p = v.begin();
+       p != v.end(); ++p) {
+    f->open_object_section("addr");
+    p->dump(f);
+    f->close_section();
+  }
+  f->close_section();
+}
+
+void entity_addrvec_t::generate_test_instances(list<entity_addrvec_t*>& ls)
+{
+  ls.push_back(new entity_addrvec_t());
+  ls.push_back(new entity_addrvec_t());
+  ls.back()->v.push_back(entity_addr_t());
+  ls.push_back(new entity_addrvec_t());
+  ls.back()->v.push_back(entity_addr_t());
+  ls.back()->v.push_back(entity_addr_t());
+}
+
 
 ostream& operator<<(ostream& out, const sockaddr_storage &ss)
 {

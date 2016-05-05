@@ -78,8 +78,8 @@ public:
     ::encode(epoch, payload);
     ::encode(round, payload);
     ::encode(timestamp, payload);
-    ::encode(skews, payload);
-    ::encode(latencies, payload);
+    ::encode(skews, payload, features);
+    ::encode(latencies, payload, features);
   }
 
 };

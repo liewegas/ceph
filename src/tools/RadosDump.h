@@ -167,12 +167,12 @@ struct object_begin {
   // If superblock doesn't include CEPH_FS_FEATURE_INCOMPAT_SHARDS then
   // generation will be NO_GEN, shard_id will be NO_SHARD for a replicated
   // pool.  This means we will allow the decode by struct_v 1.
-  void encode(bufferlist& bl) const {
+  void encode(bufferlist& bl, uint64_t features) const {
     ENCODE_START(3, 1, bl);
     ::encode(hoid.hobj, bl);
     ::encode(hoid.generation, bl);
     ::encode(hoid.shard_id, bl);
-    ::encode(oi, bl);
+    ::encode(oi, bl, features);
     ENCODE_FINISH(bl);
   }
   void decode(bufferlist::iterator& bl) {

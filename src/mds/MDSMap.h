@@ -147,8 +147,10 @@ public:
     entity_inst_t get_inst() const { return entity_inst_t(entity_name_t::MDS(rank), addr); }
 
     void encode(bufferlist& bl, uint64_t features) const {
-      if ((features & CEPH_FEATURE_MDSENC) == 0 ) encode_unversioned(bl);
-      else encode_versioned(bl, features);
+      if ((features & CEPH_FEATURE_MDSENC) == 0)
+	encode_unversioned(bl);
+      else
+	encode_versioned(bl, features);
     }
     void decode(bufferlist::iterator& p);
     void dump(Formatter *f) const;

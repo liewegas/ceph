@@ -56,7 +56,7 @@ public:
   void encode_payload(uint64_t features) {
     paxos_encode();
     ::encode(fsid, payload);
-    ::encode(target_osd, payload);
+    ::encode(target_osd, payload, features);
     ::encode(epoch, payload);
     ::encode(request_ack, payload);
   }
