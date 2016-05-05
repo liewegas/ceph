@@ -271,6 +271,12 @@ public:
     return _lock.is_locked();
   }
 
+  uint64_t get_up_osd_features() const {
+    assert(is_locked());
+    assert(osdmap_ref);
+    return osdmap_ref->get_up_osd_features();
+  }
+
 #ifdef PG_DEBUG_REFS
   uint64_t get_with_id();
   void put_with_id(uint64_t);

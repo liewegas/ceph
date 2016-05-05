@@ -680,7 +680,7 @@ int cls_current_subop_num(cls_method_context_t hctx)
 uint64_t cls_get_features(cls_method_context_t hctx)
 {
   ReplicatedPG::OpContext *ctx = *(ReplicatedPG::OpContext **)hctx;
-  return ctx->pg->get_osdmap()->get_up_osd_features();
+  return ctx->pg->get_up_osd_features();
 }
 
 void cls_cxx_subop_version(cls_method_context_t hctx, string *s)
