@@ -938,6 +938,10 @@ OPTION(bluestore_block_db_create, OPT_BOOL, false)
 OPTION(bluestore_block_wal_path, OPT_STR, "")
 OPTION(bluestore_block_wal_size, OPT_U64, 96 * 1024*1024) // rocksdb wal
 OPTION(bluestore_block_wal_create, OPT_BOOL, false)
+OPTION(bluestore_csum, OPT_BOOL, true)
+OPTION(bluestore_csum_type, OPT_STR, "crc32c")
+OPTION(bluestore_min_csum_block, OPT_U32, 4096)
+OPTION(bluestore_max_csum_block, OPT_U32, 64*1024)
 OPTION(bluestore_min_alloc_size, OPT_U32, 64*1024)
 OPTION(bluestore_onode_map_size, OPT_U32, 1024)   // onodes per collection
 OPTION(bluestore_cache_tails, OPT_BOOL, true)   // cache tail blocks in Onode
