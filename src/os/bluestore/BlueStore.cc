@@ -3707,11 +3707,11 @@ void BlueStore::_txc_state_proc(TransContext *txc)
       txc->state = TransContext::STATE_KV_QUEUED;
       if (!g_conf->bluestore_sync_transaction) {
 	if (g_conf->bluestore_sync_submit_transaction) {
-	  _txc_update_fm(txc);
+	  _txc_finalize_kv(txc, txc->t);
 	  assert(0 == db->submit_transaction(txc->t));
 	}
       } else {
-	_txc_update_fm(txc);
+	_txc_finalize_kv(txc, txc->t);
 	assert(0 == db->submit_transaction_sync(txc->t));
       }
       {
@@ -3931,35 +3931,31 @@ void BlueStore::_osr_reap_done(OpSequencer *osr)
   }
 }
 
-void BlueStore::_txc_update_fm(TransContext *txc)
+void BlueStore::_txc_finalize_kv(TransContext *txc, KeyValueDB::Transaction t)
 {
-  if (txc->wal_txn)
-    dout(20) << __func__ << " txc " << txc
-      << " allocated " << txc->allocated
-      << " (will release " << txc->released << " after wal)"
-      << dendl;
-  else
-    dout(20) << __func__ << " txc " << txc
-      << " allocated " << txc->allocated
-      << " released " << txc->released
-      << dendl;
+  dout(20) << __func__ << " txc " << txc
+	   << " allocated " << txc->allocated
+	   << " released " << txc->released
+	   << dendl;
 
   for (interval_set<uint64_t>::iterator p = txc->allocated.begin();
       p != txc->allocated.end();
       ++p) {
-    fm->allocate(p.get_start(), p.get_len(), txc->t);
+    fm->allocate(p.get_start(), p.get_len(), t);
   }
+  txc->allocated.clear();
 
   for (interval_set<uint64_t>::iterator p = txc->released.begin();
       p != txc->released.end();
       ++p) {
     dout(20) << __func__ << " release 0x" << std::hex << p.get_start()
 	     << "~0x" << p.get_len() << std::dec << dendl;
-    fm->release(p.get_start(), p.get_len(), txc->t);
+    fm->release(p.get_start(), p.get_len(), t);
 
     if (!g_conf->bluestore_debug_no_reuse_blocks)
       alloc->release(p.get_start(), p.get_len());
   }
+  txc->released.clear();
 }
 
 
@@ -3998,7 +3994,7 @@ void BlueStore::_kv_sync_thread()
 	for (std::deque<TransContext *>::iterator it = kv_committing.begin();
 	     it != kv_committing.end();
 	     ++it) {
-	  _txc_update_fm((*it));
+	  _txc_finalize_kv((*it), (*it)->t);
 	  assert(0 == db->submit_transaction((*it)->t));
 	}
       }
