@@ -4028,6 +4028,7 @@ void BlueStore::_kv_sync_thread()
 	bluestore_wal_transaction_t& wt =*(*it)->wal_txn;
 	// kv metadata updates
 	_txc_finalize_kv(*it, t);
+	_txc_write_nodes(*it, t);
 	// cleanup the data in overlays
 	for (auto& p : wt.ops) {
 	  for (auto q : p.removed_overlays) {
