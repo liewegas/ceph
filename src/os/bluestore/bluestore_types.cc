@@ -722,6 +722,14 @@ void bluestore_wal_op_t::encode(bufferlist& bl) const
 {
   ENCODE_START(1, 1, bl);
   ::encode(op, bl);
+  ::encode(read_extent_map, bl);
+  ::encode(read_blob_map, bl);
+  ::encode(write_map, bl);
+  ::encode(blob, bl);
+  ::encode(b_off, bl);
+  ::encode(b_len, bl);
+  ::encode(oid, bl);
+  
   ::encode(extent, bl);
   ::encode(src_extent, bl);
   ::encode(src_rmw_head, bl);
@@ -739,6 +747,14 @@ void bluestore_wal_op_t::decode(bufferlist::iterator& p)
 {
   DECODE_START(1, p);
   ::decode(op, p);
+  ::decode(read_extent_map, p);
+  ::decode(read_blob_map, p);
+  ::decode(write_map, p);
+  ::decode(blob, p);
+  ::decode(b_off, p);
+  ::decode(b_len, p);
+  ::decode(oid, p);
+  
   ::decode(extent, p);
   ::decode(src_extent, p);
   ::decode(src_rmw_head, p);
@@ -755,6 +771,35 @@ void bluestore_wal_op_t::decode(bufferlist::iterator& p)
 void bluestore_wal_op_t::dump(Formatter *f) const
 {
   f->dump_unsigned("op", (int)op);
+  f->open_array_section("read_extent_map");
+  for (const auto& e : read_extent_map) {
+    f->open_object_section("extent");
+    f->dump_unsigned("logical_offset", e.first);
+    e.second.dump(f);
+    f->close_section();
+  }
+  f->close_section();
+  f->open_array_section("read_blob_map");
+  for (const auto& b : read_blob_map) {
+    f->open_object_section("blob");
+    f->dump_unsigned("blob", b.first);
+    b.second.dump(f);
+    f->close_section();
+  }
+  f->close_section();
+  f->open_array_section("write_map");
+  for (const auto& p : write_map) {
+    f->open_object_section("buffer");
+    f->dump_unsigned("logical_offset", p.first);
+    f->dump_unsigned("length", p.second.length());
+    f->close_section();
+  }
+  f->close_section();
+  f->dump_unsigned("blob", blob);
+  f->dump_unsigned("b_off", b_off);
+  f->dump_unsigned("b_len", b_len);
+  f->dump_object("oid", oid);
+  
   f->dump_object("extent", extent);
   f->dump_object("src_extent", src_extent);
   f->dump_unsigned("src_rmw_head", src_rmw_head);
