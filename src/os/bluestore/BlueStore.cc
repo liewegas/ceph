@@ -2681,8 +2681,7 @@ int BlueStore::_do_read(
   bufferlist& bl,
   uint32_t op_flags)
 {
-  map<uint64_t,bluestore_lextent_t>::iterator bp, bend;
-  map<uint64_t,bluestore_overlay_t>::iterator op, oend;
+  map<uint64_t,bluestore_lextent_t>::iterator ep, eend;
   uint64_t block_size = bdev->get_block_size();
   int r = 0;
   IOContext ioc(NULL);   // FIXME?
@@ -2707,7 +2706,7 @@ int BlueStore::_do_read(
   bl.clear();
   _dump_onode(o);
 
-  if (offset > o->onode.size) {
+  if (offset >= o->onode.size) {
     goto out;
   }
 
@@ -2718,72 +2717,31 @@ int BlueStore::_do_read(
   o->flush();
 
   // loop over overlays and data fragments.  overlays take precedence.
-  bend = o->onode.extent_map.end();
-  bp = o->onode.extent_map.lower_bound(offset);
-  if (bp != o->onode.extent_map.begin()) {
-    --bp;
-  }
-  oend = o->onode.overlay_map.end();
-  op = o->onode.overlay_map.lower_bound(offset);
-  if (op != o->onode.overlay_map.begin()) {
-    --op;
+  eend = o->onode.extent_map.end();
+  ep = o->onode.extent_map.lower_bound(offset);
+  if (ep != o->onode.extent_map.begin()) {
+    --ep;
   }
   while (length > 0) {
-    if (op != oend && op->first + op->second.length < offset) {
-      dout(20) << __func__ << " skip overlay " << op->first << " " << op->second
+    if (ep != eend && ep->first + ep->second.length <= offset) {
+      dout(30) << __func__ << " skip lextent " << ep->first << " " << ep->second
 	       << dendl;
-      ++op;
-      continue;
-    }
-    if (bp != bend && bp->first + bp->second.length <= offset) {
-      dout(30) << __func__ << " skip lextent " << bp->first << " " << bp->second
-	       << dendl;
-      ++bp;
+      ++ep;
       continue;
     }
 
-    // overlay?
-    if (op != oend && op->first <= offset) {
-      uint64_t x_off = offset - op->first + op->second.value_offset;
-      uint64_t x_len = MIN(op->first + op->second.length - offset, length);
-      dout(20) << __func__ << "  overlay 0x" << std::hex << op->first << std::dec
-	       << " " << op->second << std::hex
-	       << " use 0x" << x_off << "~0x" << x_len << std::dec << dendl;
-      bufferlist v;
-      string key;
-      get_overlay_key(o->onode.nid, op->second.key, &key);
-      r = db->get(PREFIX_OVERLAY, key, &v);
-      if (r < 0) {
-        derr << " failed to fetch overlay(nid = " << o->onode.nid
-             << ", key = " << key 
-             << "): " << cpp_strerror(r) << dendl;
-        goto out;
-      }
-      bufferlist frag;
-      frag.substr_of(v, x_off, x_len);
-      bl.claim_append(frag);
-      ++op;
-      length -= x_len;
-      offset += x_len;
-      continue;
-    }
     unsigned x_len = length;
-    if (op != oend &&
-	op->first > offset &&
-	op->first - offset < x_len) {
-      x_len = op->first - offset;
-    }
 
     // extent?
-    if (bp != bend && bp->first <= offset) {
-      uint64_t x_off = offset - bp->first;
-      x_len = MIN(x_len, bp->second.length - x_off);
-      uint64_t p_off = x_off + bp->second.offset;
-      bluestore_blob_t *b = c->get_blob_ptr(o, bp->second.blob);
-      dout(30) << __func__ << " lextent 0x" << std::hex << bp->first << std::dec
-	       << ": " << bp->second
+    if (ep != eend && ep->first <= offset) {
+      uint64_t x_off = offset - ep->first;
+      x_len = MIN(x_len, ep->second.length - x_off);
+      uint64_t p_off = x_off + ep->second.offset;
+      bluestore_blob_t *b = c->get_blob_ptr(o, ep->second.blob);
+      dout(30) << __func__ << " lextent 0x" << std::hex << ep->first << std::dec
+	       << ": " << ep->second
 	       << " use 0x" << std::hex << p_off << "~0x" << x_len << std::dec
-	       << " blob " << bp->second.blob << " " << *b
+	       << " blob " << ep->second.blob << " " << *b
 	       << dendl;
       vector<bluestore_pextent_t>::iterator p = b->extents.begin();
       while (x_len > 0) {
@@ -2816,15 +2774,15 @@ int BlueStore::_do_read(
 	x_len -= p_len;
 	++p;
       }
-      if (x_off == bp->second.length) {
-	++bp;
+      if (x_off == ep->second.length) {
+	++ep;
       }
       continue;
     }
-    if (bp != bend &&
-	bp->first > offset &&
-	bp->first - offset < x_len) {
-      x_len = bp->first - offset;
+    if (ep != eend &&
+	ep->first > offset &&
+	ep->first - offset < x_len) {
+      x_len = ep->first - offset;
     }
 
     // zero.
