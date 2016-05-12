@@ -22,7 +22,7 @@ Small write strategies
   - kv commit
   - wal overwrite (of larger extent)
 
-* *C*: Vanilla WAL read/modify/write (like legacy bluestore).
+* *C*: Vanilla WAL read/modify/write on a single block (like legacy bluestore).
 
   - kv commit
   - wal read/modify/write
@@ -33,26 +33,23 @@ Small write strategies
   - write to a piecemeal blob (min_alloc_size or larger, but we use just one block of it)
   - kv commit
 
-* *E*: Copy-on-write wal event: read from location A, combine with new write, write to location B.
+* *E*: Fragment lextent space by writing small piece of data into a new sparse blob.
 
+  - write into a new (sparse) blob
   - kv commit
-  - wal read from immutable blob A, modify, write to blob B
 
-* *F*: Copy-on-write wal event: read from location A, combine with new write, write to location B.  Update csum/comp metadata.
++--------------------------+--------+--------------+-------------+--------------+---------------+
+|                          | raw    | raw (cached) | csum (4 KB) | csum (16 KB) | comp (128 KB) |
++--------------------------+--------+--------------+-------------+--------------+---------------+
+| 4 KB overwrite           | A      | A            | A           | B            | B or D        |
++--------------------------+--------+--------------+-------------+--------------+---------------+
+| 100 byte overwrite       | B or C | A            | B           | B            | B or D        |
++--------------------------+--------+--------------+-------------+--------------+---------------+
+| 100 byte append          | B or C | A            | B           | B            | B or D        |
++--------------------------+--------+--------------+-------------+--------------+---------------+
++--------------------------+--------+--------------+-------------+--------------+---------------+
+| 4 KB clone overwrite     | E      | E            | E           | E            | D or E        |
++--------------------------+--------+--------------+-------------+--------------+---------------+
+| 100 byte clone overwrite | E      | E            | E           | E            | D or E        |
++--------------------------+--------+--------------+-------------+--------------+---------------+
 
-  - kv commit
-  - wal read from immutable blob A, verify csum, modify, [csum and/or compress+allocate,] write to blob B
-  - kv update csum/comp/alloc metadata
-
-+----------------------+--------+--------------+-------------+--------------+---------------+
-|                      | raw    | raw (cached) | csum (4 KB) | csum (16 KB) | comp (128 KB) |
-+----------------------+--------+--------------+-------------+--------------+---------------+
-| 4 KB overwrite       | A      | A            | A           | B            | B or D        |
-+----------------------+--------+--------------+-------------+--------------+---------------+
-| 100 byte overwrite   | C      | A            | B           | B            | B or D        |
-+----------------------+--------+--------------+-------------+--------------+---------------+
-| 100 byte append      | C      | A            | B           | B            | B or D        |
-+----------------------+--------+--------------+-------------+--------------+---------------+
-+----------------------+--------+--------------+-------------+--------------+---------------+
-| 4 KB clone overwrite | D or E |              | D or F      | D or F       | D or F        |
-+----------------------+--------+--------------+-------------+--------------+---------------+
