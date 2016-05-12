@@ -97,7 +97,7 @@ class Checksummer {
     const vector<char>& csum_data
     ) {
     assert(length % csum_block_size == 0);
-    bufferlist::iterator p = bl.begin();
+    bufferlist::const_iterator p = bl.begin();
     assert(bl.length() >= length);
 
     typename Alg::state_t state;
@@ -136,6 +136,25 @@ public:
       return calculate<xxhash32>(csum_block_size, offset, length, bl, csum_data);
     case bluestore_blob_t::CSUM_CRC32C:
       return calculate<crc32c>(csum_block_size, offset, length, bl, csum_data);
+    default:
+      return -EOPNOTSUPP;
+    }
+  }
+  int verify(
+    unsigned type,  // bluestore_blob_t::CSumType
+    size_t csum_block_size,
+    size_t offset,
+    size_t length,
+    const bufferlist &bl,
+    const vector<char>& csum_data
+    ) {
+    switch (type) {
+    case bluestore_blob_t::CSUM_NONE:
+      return 0;
+    case bluestore_blob_t::CSUM_XXHASH32:
+      return verify<xxhash32>(csum_block_size, offset, length, bl, csum_data);
+    case bluestore_blob_t::CSUM_CRC32C:
+      return verify<crc32c>(csum_block_size, offset, length, bl, csum_data);
     default:
       return -EOPNOTSUPP;
     }
