@@ -5909,6 +5909,17 @@ int BlueStore::_do_write(
 		  [&](uint64_t offset, uint64_t length, bufferlist& t) {
 		    bdev->aio_write(offset, t, &txc->ioc, buffered);
 		  });
+	// hack: include some checksums?
+	if (g_conf->bluestore_csum &&
+	    x_off == 0 && bl.length() == b->length) {
+	  derr << __func__ << " csum on " << *b << dendl;
+	  b->init_csum(bluestore_blob_t::CSUM_CRC32C, 12);
+	  derr << __func__ << " csum_data.size " << b->csum_data.size() << dendl;
+	  checksummer->calculate(b->csum_type, b->get_csum_block_size(),
+				 0, bl.length(), bl,
+				 &b->csum_data);
+	  derr << __func__ << " did csum on " << *b << dendl;
+	}
 	++bp;
 	continue;
       }
