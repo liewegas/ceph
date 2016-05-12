@@ -2683,7 +2683,6 @@ int BlueStore::_do_read(
   uint32_t op_flags)
 {
   map<uint64_t,bluestore_lextent_t>::iterator ep, eend;
-  uint64_t block_size = bdev->get_block_size();
   int r = 0;
 
   // generally, don't buffer anything, unless the client explicitly requests
@@ -4318,8 +4317,6 @@ int BlueStore::_wal_finish(TransContext *txc)
 
 int BlueStore::_do_wal_op(TransContext *txc, bluestore_wal_op_t& wo)
 {
-  const uint64_t block_size = bdev->get_block_size();
-  const uint64_t block_mask = ~(block_size - 1);
   int r = 0;
 
   // read all the overlay data first for apply
@@ -5309,8 +5306,6 @@ int BlueStore::_do_allocate(
 	   << " bytes in " << o->onode.extent_map.size()
 	   << " lextents" << dendl;
   uint64_t min_alloc_size = g_conf->bluestore_min_alloc_size;
-  uint64_t block_size = bdev->get_block_size();
-  uint64_t block_mask = ~(block_size - 1);
 
   // start with any full blocks we will write
   uint64_t offset = orig_offset;
@@ -5661,7 +5656,6 @@ void BlueStore::_do_write_small(
 	   << std::dec << dendl;
   const uint64_t min_alloc_size = g_conf->bluestore_min_alloc_size;
   assert(length < min_alloc_size);
-  const uint64_t block_size = bdev->get_block_size();
 
   bufferlist bl;
   blp.copy(length, bl);
