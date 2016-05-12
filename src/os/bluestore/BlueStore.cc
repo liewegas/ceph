@@ -976,6 +976,14 @@ int BlueStore::_open_bdev(bool create)
     if (r < 0)
       goto fail_close;
   }
+
+  // initialize global block parameters
+  block_size = bdev->get_block_size();
+  block_mask = ~(block_size - 1);
+  block_size_order = 0;
+  for (uint64_t t = 1; t < block_size; ++t) {
+    ++block_size_order;
+  }
   return 0;
 
  fail_close:
@@ -2485,9 +2493,9 @@ void BlueStore::_sync()
 int BlueStore::statfs(struct statfs *buf)
 {
   memset(buf, 0, sizeof(*buf));
-  buf->f_blocks = bdev->get_size() / bdev->get_block_size();
-  buf->f_bsize = bdev->get_block_size();
-  buf->f_bfree = fm->get_total_free() / bdev->get_block_size();
+  buf->f_blocks = bdev->get_size() / block_size;
+  buf->f_bsize = block_size;
+  buf->f_bfree = fm->get_total_free() / block_size;
   buf->f_bavail = buf->f_bfree;
   dout(20) << __func__ << " free " << pretty_si_t(buf->f_bfree * buf->f_bsize)
 	   << " / " << pretty_si_t(buf->f_blocks * buf->f_bsize) << dendl;
