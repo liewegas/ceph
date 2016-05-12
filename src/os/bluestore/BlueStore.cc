@@ -2857,7 +2857,7 @@ int BlueStore::_read_extent_sparse(
   // FIXME: this is a trivial implementation that reads each region
   // independently - can be improved to read neighboring and/or close
   // enough regions together.
-
+  dout(20) << __func__ << " " << *blob << " " << *extent << dendl;
   IOContext ioc(NULL);   // FIXME?
   uint64_t chunk_size = MAX(blob->get_csum_block_size(), block_size);
 
@@ -5620,7 +5620,7 @@ void BlueStore::_do_write_small(
 	bufferlist head_bl;
 	int r = _do_read(c.get(), o, offset - head_pad - head_read, head_read,
 			 head_bl, 0);
-	assert(r == 0);
+	assert(r == (int)head_read);
 	b_off -= head_read;
 	b_len += head_read;
 	head_bl.claim_append(padded);
@@ -5630,7 +5630,7 @@ void BlueStore::_do_write_small(
 	bufferlist tail_bl;
 	int r = _do_read(c.get(), o, offset + length + tail_pad, tail_read,
 			 tail_bl, 0);
-	assert(r == 0);
+	assert(r == (int)tail_read);
 	b_len += tail_read;
 	padded.claim_append(tail_bl);
       }
@@ -5646,14 +5646,15 @@ void BlueStore::_do_write_small(
 	     [&](uint64_t offset, uint64_t length) {
 	       op->extents.emplace_back(bluestore_pextent_t(offset, length));
 	     });
+      op->data.claim(padded);
       dout(20) << __func__ << "  wal write 0x" << std::hex << b_off << "~0x"
 	       << b_len << std::dec << " of mutable blob " << *b
 	       << " at " << op->extents << dendl;
-      o->onode.punch_hole(offset - head_pad, length + head_pad + tail_pad,
-			  &wctx->lex_old);
-      bluestore_lextent_t& lex = o->onode.extent_map[offset - head_pad] =
-	bluestore_lextent_t(ep->second.blob, b_off, b_len, 0);
-      dout(20) << __func__ << "  lex 0x" << std::hex << offset - head_pad
+      o->onode.punch_hole(offset, length, &wctx->lex_old);
+      bluestore_lextent_t& lex = o->onode.extent_map[offset] =
+	bluestore_lextent_t(ep->second.blob, offset - ep->first, length, 0);
+      b->ref_map.get(lex.offset, lex.length);
+      dout(20) << __func__ << "  lex 0x" << std::hex << offset
 	       << std::dec << ": " << lex << dendl;
       dout(20) << __func__ << "  blob " << *b << dendl;
       return;
@@ -5893,6 +5894,8 @@ int BlueStore::_do_write(
 	 << dendl;
     goto out;
   }
+
+  _wctx_finish(txc, c, o, &wctx);
 
   if (end > o->onode.size) {
     dout(20) << __func__ << " extending size to 0x" << std::hex << end
