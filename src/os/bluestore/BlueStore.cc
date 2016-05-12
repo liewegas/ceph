@@ -6303,23 +6303,24 @@ int BlueStore::_do_truncate(
 {
   dout(15) << __func__ << " " << c->cid << " " << o->oid
 	   << " 0x" << std::hex << offset << std::dec << dendl;
-  assert(offset < o->onode.size);
 
-  // ensure any wal IO has completed before we truncate off any extents
-  // they may touch.
-  o->flush();
+  if (offset < o->onode.size) {
+    // ensure any wal IO has completed before we truncate off any extents
+    // they may touch.
+    o->flush();
+
+    WriteContext wctx;
+    o->onode.punch_hole(offset, o->onode.size, &wctx.lex_old);
+    _wctx_finish(txc, c, o, &wctx);
+  }
 
   // trim down cached tail
   if (o->tail_bl.length()) {
     // we could adjust this if we truncate down within the same
-    // block...
+    // chunk...
     dout(20) << __func__ << " clear cached tail" << dendl;
     o->clear_tail();
   }
-
-  WriteContext wctx;
-  o->onode.punch_hole(offset, o->onode.size, &wctx.lex_old);
-  _wctx_finish(txc, c, o, &wctx);
 
   o->onode.size = offset;
 
