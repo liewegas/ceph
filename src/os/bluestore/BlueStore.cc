@@ -2891,12 +2891,14 @@ int BlueStore::_read_extent_sparse(
     if (r < 0) {
       return r;
     }
-    r = _verify_csum(blob, cur->blob_xoffset, bl);
-    if (r < 0) {
-      dout(20) << __func__ << "  blob reading 0x" << std::hex
-	       << cur->logical_offset << "~0x" << blob->length
-	       << " csum verification failed" << dendl;
-      return r;
+    if (blob->csum_type) {
+      r = _verify_csum(blob, cur->blob_xoffset, bl);
+      if (r < 0) {
+	dout(20) << __func__ << "  blob reading 0x" << std::hex
+		 << cur->logical_offset << "~0x" << blob->length
+		 << " csum verification failed" << dendl;
+	return r;
+      }
     }
 
     (*result)[cur->logical_offset].substr_of(bl, front_extra, x_len);
