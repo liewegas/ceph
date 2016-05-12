@@ -4005,7 +4005,6 @@ void BlueStore::_txc_write_nodes(TransContext *txc, KeyValueDB::Transaction t)
     std::lock_guard<std::mutex> l((*p)->flush_lock);
     (*p)->flush_txns.insert(txc);
   }
-  txc->onodes.clear();
 
   // finalize bnodes
   for (set<BnodeRef>::iterator p = txc->bnodes.begin();
@@ -4023,7 +4022,6 @@ void BlueStore::_txc_write_nodes(TransContext *txc, KeyValueDB::Transaction t)
       t->set(PREFIX_OBJ, (*p)->key, bl);
     }
   }
-  txc->bnodes.clear();
 }
 
 void BlueStore::_txc_finish_kv(TransContext *txc)
