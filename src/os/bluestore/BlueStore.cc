@@ -2997,7 +2997,7 @@ int BlueStore::fiemap(
   CollectionHandle &c_,
   const ghobject_t& oid,
   uint64_t offset,
-  size_t len,
+  size_t length,
   bufferlist& bl)
 {
   Collection *c = static_cast<Collection*>(c_.get());
@@ -3012,85 +3012,54 @@ int BlueStore::fiemap(
   }
   _dump_onode(o);
 
-  dout(20) << __func__ << " 0x" << std::hex << offset << "~0x" << len
+  dout(20) << __func__ << " 0x" << std::hex << offset << "~0x" << length
 	   << " size 0x" << o->onode.size << std::dec << dendl;
 
-  map<uint64_t,bluestore_lextent_t>::iterator bp, bend;
-  map<uint64_t,bluestore_overlay_t>::iterator op, oend;
-
-  if (offset > o->onode.size)
+  map<uint64_t,bluestore_lextent_t>::iterator ep, eend;
+ if (offset > o->onode.size)
     goto out;
 
-  if (offset + len > o->onode.size) {
-    len = o->onode.size - offset;
+  if (offset + length > o->onode.size) {
+    length = o->onode.size - offset;
   }
 
-  // loop over overlays and data fragments.  overlays take precedence.
-  bend = o->onode.extent_map.end();
-  bp = o->onode.extent_map.lower_bound(offset);
-  if (bp != o->onode.extent_map.begin()) {
-    --bp;
+  eend = o->onode.extent_map.end();
+  ep = o->onode.extent_map.lower_bound(offset);
+  if (ep != o->onode.extent_map.begin()) {
+    --ep;
   }
-  oend = o->onode.overlay_map.end();
-  op = o->onode.overlay_map.lower_bound(offset);
-  if (op != o->onode.overlay_map.begin()) {
-    --op;
-  }
-  while (len > 0) {
+  while (length > 0) {
     dout(20) << __func__ << " offset " << offset << dendl;
-    if (op != oend && op->first + op->second.length < offset) {
-      ++op;
-      continue;
-    }
-    if (bp != bend && bp->first + bp->second.length <= offset) {
-      ++bp;
+    if (ep != eend && ep->first + ep->second.length <= offset) {
+      ++ep;
       continue;
     }
 
-    // overlay?
-    if (op != oend && op->first <= offset) {
-      uint64_t x_len = MIN(op->first + op->second.length - offset, len);
-      dout(30) << __func__ << " overlay 0x" << std::hex << offset << "~0x"
-	       << x_len << std::dec << dendl;
-      m.insert(offset, x_len);
-      len -= x_len;
-      offset += x_len;
-      ++op;
-      continue;
-    }
-
-    uint64_t x_len = len;
-    if (op != oend &&
-	op->first > offset &&
-	op->first - offset < x_len) {
-      x_len = op->first - offset;
-    }
-
-    // extent?
-    if (bp != bend && bp->first <= offset) {
-      uint64_t x_off = offset - bp->first;
-      x_len = MIN(x_len, bp->second.length - x_off);
+    uint64_t x_len = length;
+    if (ep != eend && ep->first <= offset) {
+      uint64_t x_off = offset - ep->first;
+      x_len = MIN(x_len, ep->second.length - x_off);
       dout(30) << __func__ << " lextent 0x" << std::hex << offset << "~0x"
-	       << x_len << std::dec << " blob " << bp->second.blob << dendl;
+	       << x_len << std::dec << " blob " << ep->second.blob << dendl;
       m.insert(offset, x_len);
-      len -= x_len;
+      length -= x_len;
       offset += x_len;
-      if (x_off + x_len == bp->second.length)
-	++bp;
+      if (x_off + x_len == ep->second.length)
+	++ep;
       continue;
     }
-    if (bp != bend &&
-	bp->first > offset &&
-	bp->first - offset < x_len) {
-      x_len = bp->first - offset;
+    if (ep != eend &&
+	ep->first > offset &&
+	ep->first - offset < x_len) {
+      x_len = ep->first - offset;
     }
     offset += x_len;
-    len -= x_len;
+    length -= x_len;
   }
 
  out:
   ::encode(m, bl);
-  dout(20) << __func__ << " 0x" << std::hex << offset << "~0x" << len
+  dout(20) << __func__ << " 0x" << std::hex << offset << "~0x" << length
 	   << " size = 0 (" << m << ")" << std::dec << dendl;
   return 0;
 }
