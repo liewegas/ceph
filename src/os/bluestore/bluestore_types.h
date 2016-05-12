@@ -587,33 +587,15 @@ WRITE_CLASS_ENCODER(bluestore_onode_t)
 struct bluestore_wal_op_t {
   typedef enum {
     OP_WRITE = 1,
-    OP_COPY = 2,
-    OP_ZERO = 4,
-    OP_BLOB_RMW = 5,
   } type_t;
   __u8 op = 0;
 
-  // read stage
-  map<uint64_t,bluestore_lextent_t> read_extent_map;
-  map<int64_t,bluestore_blob_t> read_blob_map;
-
-  // logical (over)write
-  map<uint64_t,bufferlist> write_map;  ///< new data we writing
-
-  // target blob
-  int64_t blob;           ///< blob id, in onode or bnode
-  uint64_t b_off, b_len;  ///< logical region of blob we are (re)writing
-  ghobject_t oid;  ///< blob owner (only using shard,pool,hash portion if blob<0)
-
-  bluestore_pextent_t extent;
-  bluestore_pextent_t src_extent;
-  uint64_t src_rmw_head, src_rmw_tail;
+  vector<bluestore_pextent_t> extents;
   bufferlist data;
+
   uint64_t nid;
   vector<bluestore_overlay_t> overlays;
   vector<uint64_t> removed_overlays;
-
-  bluestore_wal_op_t() : blob(0), src_rmw_head(0), src_rmw_tail(0), nid(0) {}
 
   void encode(bufferlist& bl) const;
   void decode(bufferlist::iterator& p);

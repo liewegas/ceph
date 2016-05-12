@@ -4315,131 +4315,24 @@ int BlueStore::_wal_finish(TransContext *txc)
 
 int BlueStore::_do_wal_op(TransContext *txc, bluestore_wal_op_t& wo)
 {
-  int r = 0;
+  bool buffered = false;
 
   // read all the overlay data first for apply
   _do_read_all_overlays(wo);
 
-  // NOTE: we are doing all reads and writes buffered so that we can
-  // avoid worrying about multiple RMW cycles over the same blocks.
-
   switch (wo.op) {
   case bluestore_wal_op_t::OP_WRITE:
-  {
-    dout(20) << __func__ << " write " << wo.extent << dendl;
-    // FIXME: do the reads async?
-    bufferlist bl;
-    bl.claim(wo.data);
-    uint64_t offset = wo.extent.offset;
-    bufferlist first;
-    uint64_t first_len = offset & ~block_mask;
-    if (first_len) {
-      uint64_t src_offset;
-      if (wo.src_rmw_head)
-	src_offset = wo.src_rmw_head & block_mask;
-      else
-	src_offset = wo.extent.offset & block_mask;
-      offset = offset & block_mask;
-      dout(20) << __func__ << "  reading initial partial block 0x"
-	       << std::hex << src_offset << "~0x" << block_size
-	       << std::dec << dendl;
-      r = bdev->read(src_offset, block_size, &first, &txc->ioc, true);
-      assert(r == 0);
-      bufferlist t;
-      t.substr_of(first, 0, first_len);
-      t.claim_append(bl);
-      bl.swap(t);
-    }
-    if (wo.extent.end() & ~block_mask) {
-      uint64_t last_offset;
-      if (wo.src_rmw_tail)
-	last_offset = wo.src_rmw_tail & block_mask;
-      else
-	last_offset = wo.extent.end() & block_mask;
-      bufferlist last;
-      if (last_offset == offset && first.length()) {
-	last.claim(first);   // same block we read above
-      } else {
-	dout(20) << __func__ << "  reading trailing partial block 0x"
-		 << std::hex << last_offset << "~0x" << block_size
-		 << std::dec << dendl;
-	r = bdev->read(last_offset, block_size, &last, &txc->ioc, true);
-        assert(r == 0);
+    {
+      dout(20) << __func__ << " write " << wo.extents << dendl;
+      bufferlist::iterator p = wo.data.begin();
+      for (auto& e : wo.extents) {
+	bufferlist bl;
+	p.copy(e.length, bl);
+	int r = bdev->aio_write(e.offset, bl, &txc->ioc, buffered);
+	assert(r == 0);
       }
-      bufferlist t;
-      uint64_t endoff = wo.extent.end() & ~block_mask;
-      t.substr_of(last, endoff, block_size - endoff);
-      bl.claim_append(t);
     }
-    assert((bl.length() & ~block_mask) == 0);
-    r = bdev->aio_write(offset, bl, &txc->ioc, true);
-    assert(r == 0);
-  }
-  break;
-
-  case bluestore_wal_op_t::OP_COPY:
-  {
-    dout(20) << __func__ << " copy " << wo.extent << " from " << wo.src_extent
-	     << dendl;
-    assert((wo.extent.offset & ~block_mask) == 0);
-    assert((wo.extent.length & ~block_mask) == 0);
-    assert(wo.extent.length == wo.src_extent.length);
-    assert((wo.src_extent.offset & ~block_mask) == 0);
-    bufferlist bl;
-    r = bdev->read(wo.src_extent.offset, wo.src_extent.length, &bl, &txc->ioc,
-		       true);
-    assert(r == 0);
-    assert(bl.length() == wo.extent.length);
-    r = bdev->aio_write(wo.extent.offset, bl, &txc->ioc, true);
-    assert(r == 0);
-  }
-  break;
-
-  case bluestore_wal_op_t::OP_ZERO:
-  {
-    dout(20) << __func__ << " zero " << wo.extent << dendl;
-    uint64_t offset = wo.extent.offset;
-    uint64_t length = wo.extent.length;
-    bufferlist first;
-    uint64_t first_len = offset & ~block_mask;
-    if (first_len) {
-      uint64_t first_offset = offset & block_mask;
-      dout(20) << __func__ << "  reading initial partial block 0x"
-	       << std::hex << first_offset << "~0x" << block_size
-	       << std::dec << dendl;
-      r = bdev->read(first_offset, block_size, &first, &txc->ioc, true);
-      assert(r == 0);
-      size_t z_len = MIN(block_size - first_len, length);
-      memset(first.c_str() + first_len, 0, z_len);
-      r = bdev->aio_write(first_offset, first, &txc->ioc, true);
-      assert(r == 0);
-      offset += block_size - first_len;
-      length -= z_len;
-    }
-    assert(offset % block_size == 0);
-    if (length >= block_size) {
-      uint64_t middle_len = length & block_mask;
-      dout(20) << __func__ << "  zero 0x" << std::hex << offset << "~0x"
-	       << length << std::dec << dendl;
-      r = bdev->aio_zero(offset, middle_len, &txc->ioc);
-      assert(r == 0);
-      offset += middle_len;
-      length -= middle_len;
-    }
-    assert(offset % block_size == 0);
-    if (length > 0) {
-      assert(length < block_size);
-      bufferlist last;
-      dout(20) << __func__ << "  reading trailing partial block 0x"
-	       << std::hex << offset << "~0x" << block_size << std::dec << dendl;
-      r = bdev->read(offset, block_size, &last, &txc->ioc, true);
-      assert(r == 0);
-      memset(last.c_str(), 0, length);
-      r = bdev->aio_write(offset, last, &txc->ioc, true);
-      assert(r == 0);
-    }
-  }
-  break;
+    break;
 
   default:
     assert(0 == "unrecognized wal op");
@@ -5686,43 +5579,57 @@ void BlueStore::_do_write_small(
   }
 
   if (b && b->has_flag(bluestore_blob_t::FLAG_MUTABLE)) {
-    uint64_t b_off = ep->second.offset + (offset - ep->first);
-
-    // consider whether we could pad our tail out with zeros
-    uint64_t tail_pad = ROUND_UP_TO(offset + length,
-				    MIN(block_size, b->get_csum_block_size())) -
-      (offset + length);
+    // consider whether we could pad our head/tail out with zeros
+    uint64_t chunk_size = MAX(block_size, b->get_csum_block_size());
+    uint64_t head_pad = offset % chunk_size;
+    if (head_pad && o->onode.has_any_lextents(offset - head_pad, chunk_size)) {
+      head_pad = 0;
+    }
+    uint64_t tail_pad =
+      ROUND_UP_TO(offset + length, chunk_size) - (offset + length);
     if (o->onode.has_any_lextents(offset + length, tail_pad)) {
       tail_pad = 0;
     }
+    bufferlist padded = bl;
+    if (head_pad) {
+      bufferlist z;
+      z.append_zero(head_pad);
+      z.claim_append(padded);
+      padded.claim(z);
+    }
+    if (tail_pad) {
+      padded.append_zero(tail_pad);
+    }
+    if (head_pad || tail_pad) {
+      dout(20) << __func__ << "  can pad head 0x" << std::hex << head_pad
+	       << " tail 0x" << tail_pad << std::dec << dendl;
+    }
 
-    // write into an existing mutable blob?  we assume this is only
-    // worth doing if we can fit our entire write (which is smaller than
-    // min_alloc_size) into the blob.  notably, this captures the small
-    // append case.
-    uint64_t b_len = length + tail_pad;
+    // direct write into an existing mutable blob?  we assume this is
+    // only worth doing if we can fit our entire write (which is
+    // smaller than min_alloc_size) into the blob.  notably, this
+    // captures the small append case.
+    uint64_t b_off = ep->second.offset + (offset - ep->first - head_pad);
+    uint64_t b_len = length + head_pad + tail_pad;
     if (b->get_ondisk_length() >= b_off + b_len &&
 	b->is_unreferenced(ep->second.offset + (orig_offset - ep->first),
 			   orig_length + tail_pad) &&
 	(!b->has_csum_data() || (b_off % b->get_csum_block_size() == 0 &&
 				 b_len % b->get_csum_block_size() == 0))) {
-      dout(20) << __func__ << "  using 0x" << std::hex << b_off << "~0x"
-	       << length << " tail pad 0x" << tail_pad << std::dec
-	       << " of mutable blob " << b << dendl;
-      if (tail_pad) {
-	bufferptr z(tail_pad);
-	z.zero();
-	bl.append(z);
-      }
-      b->map_bl(b_off, bl,
+      dout(20) << __func__ << "  write to unreferenced 0x" << std::hex
+	       << b_off << "~0x" << b_len
+	       << " pad 0x" << head_pad << " + 0x" << tail_pad
+	       << std::dec << " of mutable blob " << b << dendl;
+      b->map_bl(b_off, padded,
 		[&](uint64_t offset, uint64_t length, bufferlist& t) {
 		  bdev->aio_write(offset, t,
 				  &txc->ioc, wctx->buffered);
 		});
-      b->length = MAX(b->length, b_off + length - tail_pad);
+      b->length = MAX(b->length, b_off + b_len - tail_pad);
       o->onode.punch_hole(offset, length, &wctx->lex_old);
       bluestore_lextent_t& lex = o->onode.extent_map[offset] =
-	bluestore_lextent_t(ep->second.blob, b_off, length - tail_pad, 0);
+	bluestore_lextent_t(ep->second.blob, b_off + head_pad,
+			    length - tail_pad - head_pad, 0);
       b->ref_map.get(lex.offset, lex.length);
       dout(20) << __func__ << "  lex 0x" << std::hex << offset << std::dec
 	       << ": " << o->onode.extent_map[offset] << dendl;
@@ -5730,64 +5637,57 @@ void BlueStore::_do_write_small(
       return;
     }
 
-    // simple wal overwrite?
-    b_len = length;
-    if (b->get_ondisk_length() >= b_off + b_len) {
-      dout(20) << __func__ << "  wal overwrite 0x" << std::hex << b_off << "~0x"
-	       << b_len << std::dec << " of mutable blob " << *b << dendl;
+    // read some data to fill out the chunk?
+    uint64_t head_read = b_off % chunk_size;
+    uint64_t tail_read =
+      ROUND_UP_TO(b_off + b_len, chunk_size) - (b_off + b_len);
+    if ((head_read || tail_read) &&
+	b->get_ondisk_length() >= b_off + b_len + head_read + tail_read) {
+      dout(20) << __func__ << "  reading head 0x" << std::hex << head_read
+	       << " and tail 0x" << tail_read << std::dec << dendl;
+      if (head_read) {
+	bufferlist head_bl;
+	int r = _do_read(c.get(), o, offset - head_pad - head_read, head_read,
+			 head_bl, 0);
+	assert(r == 0);
+	b_off -= head_read;
+	b_len += head_read;
+	head_bl.claim_append(padded);
+	padded.swap(head_bl);
+      }
+      if (tail_read) {
+	bufferlist tail_bl;
+	int r = _do_read(c.get(), o, offset + length + tail_pad, tail_read,
+			 tail_bl, 0);
+	assert(r == 0);
+	b_len += tail_read;
+	padded.claim_append(tail_bl);
+      }
+    }
+    
+    // chunk-aligned wal overwrite?
+    if (b->get_ondisk_length() >= b_off + b_len &&
+	b_off % chunk_size == 0 &&
+	b_len % chunk_size == 0) {
       bluestore_wal_op_t *op = _get_wal_op(txc, o);
-      op->op = bluestore_wal_op_t::OP_BLOB_RMW;
-      op->blob = ep->second.blob;
-      op->oid = o->oid;
-      uint64_t bs = MAX(block_size, b->get_csum_block_size());
-      uint64_t front = b_off % bs;
-      if (front) {
-	bluestore_blob_t& rb = op->read_blob_map[1] = bluestore_blob_t(bs);
-	b->map(b_off - front, bs,
-	       [&](uint64_t offset, uint64_t length) {
-		 rb.extents.emplace_back(bluestore_pextent_t(offset, length));
-	       });
-	if (b->csum_type) {
-	  rb.init_csum(b->csum_type, b->csum_block_order);
-	  memcpy(rb.get_csum_item_ptr(0),
-		 b->get_csum_item_ptr(b_off / b->get_csum_block_size()),
-		 b->get_csum_value_size());
-	}
-	bluestore_lextent_t& lex = op->read_extent_map[0] =
-	  bluestore_lextent_t(1, 0, front, 0);
-	dout(20) << __func__ << "   front 0x" << std::hex << front << std::dec
-		 << " lex " << lex << " blob " << rb << dendl;
-      }
-      op->write_map[front].claim(bl);
-      uint64_t tail = (b_off + b_len) % bs;
-      if (tail) {
-	tail = bs - tail;
-      }
-      if (tail) {
-	bluestore_blob_t& rb = op->read_blob_map[2] = bluestore_blob_t(bs);
-	b->map(b_off + b_len + tail - bs, bs,
-	       [&](uint64_t offset, uint64_t length) {
-		 rb.extents.emplace_back(bluestore_pextent_t(offset, length));
-	       });
-	if (b->csum_type) {
-	  rb.init_csum(b->csum_type, b->csum_block_order);
-	  memcpy(rb.get_csum_item_ptr(0),
-		 b->get_csum_item_ptr(b_off + b_len / b->get_csum_block_size()),
-		 b->get_csum_value_size());
-	}
-	bluestore_lextent_t& lex = op->read_extent_map[b_off + b_len] =
-	  bluestore_lextent_t(2, 0, tail, 0);
-	dout(20) << __func__ << "    tail 0x" << std::hex << tail << std::dec
-		 << " lex " << lex << " blob " << rb << dendl;
-      }
-      op->b_off = b_off - front;
-      op->b_len = b_len + front + tail;
-      dout(20) << __func__ << "  wal overwrite 0x" << std::hex << op->b_off
-	       << "~0x" << op->b_len << std::dec
-	       << " on " << op->oid << dendl;
+      op->op = bluestore_wal_op_t::OP_WRITE;
+      b->map(b_off, b_len,
+	     [&](uint64_t offset, uint64_t length) {
+	       op->extents.emplace_back(bluestore_pextent_t(offset, length));
+	     });
+      dout(20) << __func__ << "  wal write 0x" << std::hex << b_off << "~0x"
+	       << b_len << std::dec << " of mutable blob " << *b
+	       << " at " << op->extents << dendl;
+      o->onode.punch_hole(offset - head_pad, length + head_pad + tail_pad,
+			  &wctx->lex_old);
+      bluestore_lextent_t& lex = o->onode.extent_map[offset - head_pad] =
+	bluestore_lextent_t(ep->second.blob, b_off, b_len, 0);
+      dout(20) << __func__ << "  lex 0x" << std::hex << offset - head_pad
+	       << std::dec << ": " << lex << dendl;
+      dout(20) << __func__ << "  blob " << *b << dendl;
       return;
     }
-  }     
+  }
       
   // new blob?
   if (ep == o->onode.extent_map.end() ||
@@ -5948,15 +5848,6 @@ void BlueStore::_wctx_finish(
     }
   }
 }
-
-/*
-int BlueStore::_do_write_refs(
-  TransContext *txc,
-  WriteContext *wctx)
-{
-  dout(10) << __func__ << dendl;
-
-  }*/
 
 int BlueStore::_do_write(
   TransContext *txc,
