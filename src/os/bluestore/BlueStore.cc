@@ -5310,7 +5310,7 @@ void BlueStore::_do_write_small(
   bluestore_lextent_t& lex = o->onode.extent_map[offset] =
     bluestore_lextent_t(blob, offset % min_alloc_size, length);
 #warning fixme
-  b->length = b_len;
+  b->length = b_off + b_len;
   b->ref_map.get(lex.offset, lex.length);
   // it's little; don't bother compressing
   b->set_flag(bluestore_blob_t::FLAG_MUTABLE);
