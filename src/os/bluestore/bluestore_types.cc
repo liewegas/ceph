@@ -614,7 +614,7 @@ void bluestore_onode_t::dump(Formatter *f) const
   f->open_object_section("extent_map");
   for (const auto& p : extent_map) {
     f->open_object_section("extent");
-    f->dump_unsigned("offset", p.first);
+    f->dump_unsigned("logical_offset", p.first);
     p.second.dump(f);
     f->close_section();
   }
