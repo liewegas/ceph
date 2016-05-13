@@ -5298,7 +5298,7 @@ void BlueStore::_do_write_small(
 
     ++ep;
   }
-      
+
   // new blob.
   int64_t blob;
   b = o->onode.add_blob(&blob);
@@ -5477,6 +5477,8 @@ void BlueStore::_wctx_finish(
       txc->write_bnode(o->bnode);
     }
   }
+
+  o->onode.compress_extent_map();
 }
 
 int BlueStore::_do_write(
