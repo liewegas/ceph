@@ -5259,9 +5259,13 @@ void BlueStore::_do_write_small(
 	bufferlist tail_bl;
 	int r = _do_read(c.get(), o, offset + length + tail_pad, tail_read,
 			 tail_bl, 0);
-	assert(r == (int)tail_read);
-	b_len += tail_read;
+	assert(r >= 0);
+	b_len += r;
 	padded.claim_append(tail_bl);
+	size_t zlen = tail_read - r;
+	if (zlen) {
+	  padded.append_zero(zlen);
+	}
       }
     }
     
@@ -5305,8 +5309,6 @@ void BlueStore::_do_write_small(
   o->onode.punch_hole(offset, length, &wctx->lex_old);
   bluestore_lextent_t& lex = o->onode.extent_map[offset] =
     bluestore_lextent_t(blob, offset % min_alloc_size, length);
-  dout(20) << __func__ << "  lex 0x" << std::hex << offset << std::dec
-	   << ": " << lex << dendl;
 #warning fixme
   b->length = b_len;
   b->ref_map.get(lex.offset, lex.length);
@@ -5318,7 +5320,29 @@ void BlueStore::_do_write_small(
     checksummer->calculate(b->csum_type, b->get_csum_block_size(),
 			   b_off, b_len, bl, &b->csum_data);
   }
-  wctx->add_blob_bl(b, bl, b_off);
+
+  // allocate and write
+  int r = alloc->reserve(min_alloc_size);
+  if (r < 0) {
+    derr << __func__ << " failed to reserve 0x" << std::hex << min_alloc_size
+	 << std::dec << dendl;
+    assert(0 == "enospc");
+  }
+  bluestore_pextent_t e;
+  uint32_t l;
+  r = alloc->allocate(min_alloc_size, min_alloc_size, 0 /* fixme hint */,
+		      &e.offset, &l);
+  assert(r == 0);
+  e.length = l;
+  txc->allocated.insert(e.offset, e.length);
+  b->extents.push_back(e);
+  b->map_bl(
+    b_off, bl,
+    [&](uint64_t offset, uint64_t length, bufferlist& t) {
+      bdev->aio_write(offset, t, &txc->ioc, wctx->buffered);
+    });
+  dout(20) << __func__ << "  lex 0x" << std::hex << offset << std::dec
+	   << ": " << lex << dendl;
   dout(20) << __func__ << "  new " << blob << ": " << *b << dendl;
   return;
 }
