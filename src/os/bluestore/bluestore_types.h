@@ -401,11 +401,10 @@ struct bluestore_blob_t {
     return &csum_data[cs * i];
   }
 
-  void init_csum(unsigned type, unsigned order) {
+  void init_csum(unsigned type, unsigned order, unsigned len) {
     csum_type = type;
     csum_block_order = order;
-    csum_data.resize(get_csum_value_size() * get_ondisk_length() /
-		     get_csum_block_size());
+    csum_data.resize(get_csum_value_size() * len / get_csum_block_size());
   }
 };
 WRITE_CLASS_ENCODER(bluestore_blob_t)

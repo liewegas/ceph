@@ -5659,7 +5659,6 @@ void BlueStore::_do_write_small(
     b->set_flag(bluestore_blob_t::FLAG_MUTABLE);
     if (csum_type) {
       // it's little; csum at block granularity.
-      b->init_csum(csum_type, block_size_order);
       checksummer->calculate(b->csum_type, b->get_csum_block_size(),
 			     0, min_alloc_size, bl, &b->csum_data);
     }
@@ -5754,7 +5753,7 @@ int BlueStore::_do_alloc_write(
 
     // checksum
     if (csum_type) {
-      b->init_csum(csum_type, 12); // FIXME adjust b size
+      b->init_csum(csum_type, 12, l->length()); // FIXME adjust b size
       checksummer->calculate(b->csum_type, b->get_csum_block_size(),
 			     0, l->length(), *l,
 			     &b->csum_data);
@@ -6130,7 +6129,7 @@ int BlueStore::_do_write(
 	if (csum_type &&
 	    x_off == 0 && bl.length() == b->length) {
 	  derr << __func__ << " csum on " << *b << dendl;
-	  b->init_csum(csum_type, 12);
+	  b->init_csum(csum_type, 12, bl.length());
 	  derr << __func__ << " csum_data.size " << b->csum_data.size() << dendl;
 	  checksummer->calculate(b->csum_type, b->get_csum_block_size(),
 				 0, bl.length(), bl,
