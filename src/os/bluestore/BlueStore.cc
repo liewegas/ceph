@@ -5202,10 +5202,9 @@ void BlueStore::_do_write_small(
 	       << " tail 0x" << tail_pad << std::dec << dendl;
     }
 
-    // direct write into an existing mutable blob?  we assume this is
-    // only worth doing if we can fit our entire write (which is
-    // smaller than min_alloc_size) into the blob.  notably, this
-    // captures the small append case.
+    // direct write into unused blocks of an existing mutable blob?
+    // and/or, overwriting a portion of the blob with duplicate
+    // (tail_cache) data?
     uint64_t b_off = ep->second.offset + (offset - ep->first - head_pad);
     uint64_t b_len = length + head_pad + tail_pad;
     if (b->get_ondisk_length() >= b_off + b_len &&
