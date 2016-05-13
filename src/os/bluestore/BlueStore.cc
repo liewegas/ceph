@@ -5567,6 +5567,10 @@ void BlueStore::_do_write_small(
 		  bdev->aio_write(offset, t,
 				  &txc->ioc, wctx->buffered);
 		});
+      if (b->csum_type) {
+	checksummer->calculate(b->csum_type, b->get_csum_block_size(),
+			       b_off, padded.length(), padded, &b->csum_data);
+      }
       b->length = MAX(b->length, b_off + b_len - tail_pad);
       int64_t blob = ep->second.blob;
       o->onode.punch_hole(offset, length, &wctx->lex_old);
@@ -5617,6 +5621,10 @@ void BlueStore::_do_write_small(
 	     [&](uint64_t offset, uint64_t length) {
 	       op->extents.emplace_back(bluestore_pextent_t(offset, length));
 	     });
+      if (b->csum_type) {
+	checksummer->calculate(b->csum_type, b->get_csum_block_size(),
+			       b_off, padded.length(), padded, &b->csum_data);
+      }
       op->data.claim(padded);
       dout(20) << __func__ << "  wal write 0x" << std::hex << b_off << "~0x"
 	       << b_len << std::dec << " of mutable blob " << *b
@@ -5649,6 +5657,12 @@ void BlueStore::_do_write_small(
     b->ref_map.get(lex.offset, lex.length);
     // it's little; don't bother compressing
     b->set_flag(bluestore_blob_t::FLAG_MUTABLE);
+    if (csum_type) {
+      // it's little; csum at block granularity.
+      b->init_csum(csum_type, block_size_order);
+      checksummer->calculate(b->csum_type, b->get_csum_block_size(),
+			     0, min_alloc_size, bl, &b->csum_data);
+    }
     wctx->bl_new.push_back(bl);
     dout(20) << __func__ << "  blob " << *b << dendl;
     return;
