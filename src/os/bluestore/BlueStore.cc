@@ -5152,14 +5152,31 @@ void BlueStore::_do_write_small(
 	     << std::dec << dendl;
   }
 
-  map<uint64_t,bluestore_lextent_t>::iterator ep = o->onode.find_lextent(offset);
+  // look for an existing mutable blob we can use
   bluestore_blob_t *b = 0;
-  if (ep != o->onode.extent_map.end()) {
+  map<uint64_t,bluestore_lextent_t>::iterator ep = o->onode.seek_lextent(offset);
+  if (ep != o->onode.extent_map.begin()) {
+    --ep;
     b = c->get_blob_ptr(o, ep->second.blob);
+    if (ep->first + b->get_max_length() <= offset) {
+      ++ep;
+    }
   }
+  while (ep != o->onode.extent_map.end()) {
+    if (ep->first >= offset + length) {
+      break;
+    }
+    int64_t blob = ep->second.blob;
+    b = c->get_blob_ptr(o, ep->second.blob);
+    if (!b->is_mutable()) {
+      dout(20) << __func__ << " ignoring immutable " << blob << ": " << *b
+	       << dendl;
+      ++ep;
+      continue;
+    }
+    dout(20) << __func__ << " considering " << blob << ": " << *b << dendl;
 
-  if (b && b->has_flag(bluestore_blob_t::FLAG_MUTABLE)) {
-    // consider whether we could pad our head/tail out with zeros
+    // can we pad our head/tail out with zeros?
     uint64_t chunk_size = MAX(block_size, b->get_csum_block_size());
     uint64_t head_pad = offset % chunk_size;
     if (head_pad && o->onode.has_any_lextents(offset - head_pad, chunk_size)) {
@@ -5199,7 +5216,7 @@ void BlueStore::_do_write_small(
       dout(20) << __func__ << "  write to unreferenced 0x" << std::hex
 	       << b_off << "~0x" << b_len
 	       << " pad 0x" << head_pad << " + 0x" << tail_pad
-	       << std::dec << " of mutable blob " << b << dendl;
+	       << std::dec << " of mutable " << blob << ": " << b << dendl;
       b->map_bl(b_off, padded,
 		[&](uint64_t offset, uint64_t length, bufferlist& t) {
 		  bdev->aio_write(offset, t,
@@ -5210,14 +5227,13 @@ void BlueStore::_do_write_small(
 			       b_off, padded.length(), padded, &b->csum_data);
       }
       b->length = MAX(b->length, b_off + b_len - tail_pad);
-      int64_t blob = ep->second.blob;
       o->onode.punch_hole(offset, length, &wctx->lex_old);
       bluestore_lextent_t& lex = o->onode.extent_map[offset] =
 	bluestore_lextent_t(blob, b_off + head_pad, length, 0);
       b->ref_map.get(lex.offset, lex.length);
       dout(20) << __func__ << "  lex 0x" << std::hex << offset << std::dec
 	       << ": " << lex << dendl;
-      dout(20) << __func__ << "  blob " << *b << dendl;
+      dout(20) << __func__ << "  old " << blob << ": " << *b << dendl;
       return;
     }
 
@@ -5265,56 +5281,46 @@ void BlueStore::_do_write_small(
       }
       op->data.claim(padded);
       dout(20) << __func__ << "  wal write 0x" << std::hex << b_off << "~0x"
-	       << b_len << std::dec << " of mutable blob " << *b
+	       << b_len << std::dec << " of mutable " << blob << ": " << *b
 	       << " at " << op->extents << dendl;
       o->onode.punch_hole(offset, length, &wctx->lex_old);
       bluestore_lextent_t& lex = o->onode.extent_map[offset] =
-	bluestore_lextent_t(ep->second.blob, offset - ep->first, length, 0);
+	bluestore_lextent_t(blob, offset - ep->first, length, 0);
       b->ref_map.get(lex.offset, lex.length);
       dout(20) << __func__ << "  lex 0x" << std::hex << offset
 	       << std::dec << ": " << lex << dendl;
-      dout(20) << __func__ << "  blob " << *b << dendl;
+      dout(20) << __func__ << "  old " << blob << ": " << *b << dendl;
       return;
     }
+
+    ++ep;
   }
       
-  // new blob?
-  if (ep == o->onode.extent_map.end() ||
-      ep->first >= offset + length ||
-      ep->first + ep->second.length <= offset) {
-    // we have no lextents over this range
-    int64_t blob;
-    bluestore_blob_t *b = o->onode.add_blob(&blob);
-    wctx->blob_new.push_back(b);
-    uint64_t b_off = offset % min_alloc_size;
-    uint64_t b_len = length;
-    _pad_zeros(txc, o, &bl, &b_off, &b_len, min_alloc_size);
-    uint64_t pad_front = (offset % min_alloc_size) - b_off;
-    uint64_t l_len = MIN(
-      MAX(o->onode.size, offset + length) - (offset - pad_front),
-      b_len);
-    bluestore_lextent_t& lex = o->onode.extent_map[offset - pad_front] =
-      bluestore_lextent_t(blob, b_off, l_len);
-    dout(20) << __func__ << "  lex 0x" << std::hex << offset - pad_front
-	     << std::dec << ": " << lex << dendl;
-    b->length = l_len;
-    b->ref_map.get(lex.offset, lex.length);
-    // it's little; don't bother compressing
-    b->set_flag(bluestore_blob_t::FLAG_MUTABLE);
-    if (csum_type) {
-      // it's little; csum at block granularity.
-      b->init_csum(csum_type, block_size_order, b_len);
-      checksummer->calculate(b->csum_type, b->get_csum_block_size(),
-			     b_off, b_len, bl, &b->csum_data);
-    }
-    wctx->bl_new.push_back(bl);
-    dout(20) << __func__ << "  blob " << *b << dendl;
-    return;
+  // new blob.
+  int64_t blob;
+  b = o->onode.add_blob(&blob);
+  uint64_t b_off = offset % min_alloc_size;
+  uint64_t b_len = length;
+  _pad_zeros(txc, o, &bl, &b_off, &b_len, block_size);
+  o->onode.punch_hole(offset, length, &wctx->lex_old);
+  bluestore_lextent_t& lex = o->onode.extent_map[offset] =
+    bluestore_lextent_t(blob, offset % min_alloc_size, length);
+  dout(20) << __func__ << "  lex 0x" << std::hex << offset << std::dec
+	   << ": " << lex << dendl;
+#warning fixme
+  b->length = b_len;
+  b->ref_map.get(lex.offset, lex.length);
+  // it's little; don't bother compressing
+  b->set_flag(bluestore_blob_t::FLAG_MUTABLE);
+  if (csum_type) {
+    // it's little; csum at block granularity.
+    b->init_csum(csum_type, block_size_order, min_alloc_size);
+    checksummer->calculate(b->csum_type, b->get_csum_block_size(),
+			   b_off, b_len, bl, &b->csum_data);
   }
-
-  // cow wal event
-  
-  assert(0 == "write me");
+  wctx->add_blob_bl(b, bl, b_off);
+  dout(20) << __func__ << "  new " << blob << ": " << *b << dendl;
+  return;
 }
 
 void BlueStore::_do_write_big(
