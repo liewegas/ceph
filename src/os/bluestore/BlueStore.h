@@ -931,7 +931,19 @@ private:
     extents2read_t* result);
 
   int _verify_csum(const bluestore_blob_t* blob, uint64_t blob_xoffset, const bufferlist& bl) const;
-  int _decompress(const bufferlist& source, bufferlist* result);
+  int _decompress(bufferlist& source, bufferlist* result);
+
+  // --------------------------------------------------------
+  // compressed block header
+  struct CompressionHeader {
+    std::string type;
+    CompressionHeader(const std::string& _type)
+      : type(_type) {}
+
+    void encode(bufferlist& bl) const;
+    void decode(bufferlist::iterator& p);
+  };
+  WRITE_CLASS_ENCODER(bluestore_bdev_label_t)
 
 
   // --------------------------------------------------------
