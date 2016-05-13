@@ -5566,9 +5566,10 @@ void BlueStore::_do_write_small(
 				  &txc->ioc, wctx->buffered);
 		});
       b->length = MAX(b->length, b_off + b_len - tail_pad);
+      int64_t blob = ep->second.blob;
       o->onode.punch_hole(offset, length, &wctx->lex_old);
       bluestore_lextent_t& lex = o->onode.extent_map[offset] =
-	bluestore_lextent_t(ep->second.blob, b_off + head_pad,
+	bluestore_lextent_t(blob, b_off + head_pad,
 			    length - tail_pad - head_pad, 0);
       b->ref_map.get(lex.offset, lex.length);
       dout(20) << __func__ << "  lex 0x" << std::hex << offset << std::dec
