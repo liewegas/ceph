@@ -4963,6 +4963,8 @@ void BlueStore::_pad_zeros(
   bufferlist *bl, uint64_t *offset, uint64_t *length,
   uint64_t chunk_size)
 {
+  dout(30) << __func__ << " 0x" << std::hex << *offset << "~0x" << *length
+	   << " chunk_size 0x" << chunk_size << std::dec << dendl;
   dout(40) << "before:\n";
   bl->hexdump(*_dout);
   *_dout << dendl;
@@ -5648,19 +5650,26 @@ void BlueStore::_do_write_small(
     int64_t blob;
     bluestore_blob_t *b = o->onode.add_blob(&blob);
     wctx->blob_new.push_back(b);
-    bluestore_lextent_t& lex = o->onode.extent_map[offset] =
-      bluestore_lextent_t(blob, offset % min_alloc_size, length);
-    dout(20) << __func__ << "  lex 0x" << std::hex << offset << std::dec
-	     << ": " << o->onode.extent_map[offset] << dendl;
-    _pad_zeros(txc, o, &bl, &offset, &length, min_alloc_size);
-    b->length = length;
+    uint64_t b_off = offset % min_alloc_size;
+    uint64_t b_len = length;
+    _pad_zeros(txc, o, &bl, &b_off, &b_len, min_alloc_size);
+    uint64_t pad_front = (offset % min_alloc_size) - b_off;
+    uint64_t l_len = MIN(
+      MAX(o->onode.size, offset + length) - (offset - pad_front),
+      b_len);
+    bluestore_lextent_t& lex = o->onode.extent_map[offset - pad_front] =
+      bluestore_lextent_t(blob, b_off, l_len);
+    dout(20) << __func__ << "  lex 0x" << std::hex << offset - pad_front
+	     << std::dec << ": " << lex << dendl;
+    b->length = l_len;
     b->ref_map.get(lex.offset, lex.length);
     // it's little; don't bother compressing
     b->set_flag(bluestore_blob_t::FLAG_MUTABLE);
     if (csum_type) {
       // it's little; csum at block granularity.
+      b->init_csum(csum_type, block_size_order, b_len);
       checksummer->calculate(b->csum_type, b->get_csum_block_size(),
-			     0, min_alloc_size, bl, &b->csum_data);
+			     b_off, b_len, bl, &b->csum_data);
     }
     wctx->bl_new.push_back(bl);
     dout(20) << __func__ << "  blob " << *b << dendl;
