@@ -5276,7 +5276,11 @@ void BlueStore::_do_write_small(
 	bufferlist head_bl;
 	int r = _do_read(c.get(), o, offset - head_pad - head_read, head_read,
 			 head_bl, 0);
-	assert(r == (int)head_read);
+	assert(r >= 0 && r <= (int)head_read);
+	size_t zlen = head_read - r;
+	if (zlen) {
+	  head_bl.append_zero(zlen);
+	}
 	b_off -= head_read;
 	b_len += head_read;
 	head_bl.claim_append(padded);
@@ -5286,7 +5290,7 @@ void BlueStore::_do_write_small(
 	bufferlist tail_bl;
 	int r = _do_read(c.get(), o, offset + length + tail_pad, tail_read,
 			 tail_bl, 0);
-	assert(r >= 0);
+	assert(r >= 0 && r <= (int)tail_read);
 	b_len += r;
 	padded.claim_append(tail_bl);
 	size_t zlen = tail_read - r;
