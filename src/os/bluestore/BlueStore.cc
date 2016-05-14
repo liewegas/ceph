@@ -5163,9 +5163,6 @@ void BlueStore::_do_write_small(
   bufferlist bl;
   blp.copy(length, bl);
 
-  uint64_t orig_offset = offset;
-  uint64_t orig_length = length;
-
   // use tail cache?  only worry about a perfect append for now.
   // (fixme: we could also handle near-appends that fall within the
   // same block or read_block or whatever.)
@@ -5235,15 +5232,13 @@ void BlueStore::_do_write_small(
     }
 
     // direct write into unused blocks of an existing mutable blob?
-    // and/or, overwriting a portion of the blob with duplicate
-    // (tail_cache) data?
     uint64_t b_off = ep->second.offset + (offset - ep->first - head_pad);
     uint64_t b_len = length + head_pad + tail_pad;
     if (b->get_ondisk_length() >= b_off + b_len &&
-	b->is_unreferenced(ep->second.offset + (orig_offset - ep->first),
-			   orig_length + tail_pad) &&
+	b->is_unreferenced(b_off, b_len) &&
 	(!b->has_csum_data() || (b_off % b->get_csum_block_size() == 0 &&
 				 b_len % b->get_csum_block_size() == 0))) {
+#warning this is currently racy; we may be pipelined with an op that derefs this range.  once we have a buffer cache the problem will go away.
       dout(20) << __func__ << "  write to unreferenced 0x" << std::hex
 	       << b_off << "~0x" << b_len
 	       << " pad 0x" << head_pad << " + 0x" << tail_pad
@@ -5257,12 +5252,12 @@ void BlueStore::_do_write_small(
 	checksummer->calculate(b->csum_type, b->get_csum_block_size(),
 			       b_off, padded.length(), padded, &b->csum_data);
       }
-      b->length = MAX(b->length, b_off + b_len - tail_pad);
       o->onode.punch_hole(offset, length, &wctx->lex_old);
       dout(20) << __func__ << "  lexold 0x" << std::hex << offset << std::dec
 	       << ": " << ep->second << dendl;
       bluestore_lextent_t& lex = o->onode.extent_map[offset] =
 	bluestore_lextent_t(blob, b_off + head_pad, length, 0);
+      b->length = MAX(b->length, b_off + b_len);
       b->ref_map.get(lex.offset, lex.length);
       dout(20) << __func__ << "  lex 0x" << std::hex << offset << std::dec
 	       << ": " << lex << dendl;
@@ -5323,6 +5318,7 @@ void BlueStore::_do_write_small(
       o->onode.punch_hole(offset, length, &wctx->lex_old);
       bluestore_lextent_t& lex = o->onode.extent_map[offset] =
 	bluestore_lextent_t(blob, offset - ep->first, length, 0);
+      b->length = MAX(b->length, b_off + b_len);
       b->ref_map.get(lex.offset, lex.length);
       dout(20) << __func__ << "  lex 0x" << std::hex << offset
 	       << std::dec << ": " << lex << dendl;
@@ -5342,7 +5338,6 @@ void BlueStore::_do_write_small(
   o->onode.punch_hole(offset, length, &wctx->lex_old);
   bluestore_lextent_t& lex = o->onode.extent_map[offset] =
     bluestore_lextent_t(blob, offset % min_alloc_size, length);
-#warning fixme
   b->length = b_off + b_len;
   b->ref_map.get(lex.offset, lex.length);
   // it's little; don't bother compressing
