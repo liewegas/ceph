@@ -6023,60 +6023,38 @@ int BlueStore::_clone(TransContext *txc,
     goto out;
 
   if (g_conf->bluestore_clone_cow) {
-#if 0
     if (!oldo->onode.extent_map.empty()) {
       BnodeRef e = c->get_bnode(newo->oid.hobj.get_hash());
+      // move blobs
       map<int64_t,int64_t> moved_blobs;
       for (auto& p : oldo->onode.extent_map) {
-	if (p.second.is_shared()) {
-	  e->blob_map[-p.second.blob].num_refs++;
-	} else if (moved_blobs.count(p.second.blob)) {
-	  e->blob_map[moved_blobs[p.second.blob]].num_refs++;
-	} else {
+	if (!p.second.is_shared()) {
 	  int64_t id = e->get_new_blob_id();
 	  moved_blobs[p.second.blob] = id;
-	  e->blob_map[id] = oldo->onode.blob_map[p.second.blob];
-	  e->blob_map[id].num_refs++;
+	  dout(30) << __func__ << "  moving old onode blob " << p.second.blob
+		   << " to bnode blob " << id << dendl;
+	  bluestore_blob_t& b = e->blob_map[id] =
+	    oldo->onode.blob_map[p.second.blob];
+	  b.clear_flag(bluestore_blob_t::FLAG_MUTABLE);
 	  oldo->onode.blob_map.erase(p.second.blob);
 	}
       }
-      if (!moved_blobs.empty()) {
-	for (auto& p : oldo->onode.extent_map) {
-	  if (moved_blobs.count(p.second.blob)) {
-	    p.second.blob = -moved_blobs[p.second.blob];
-	  }
+      // update lextents
+      for (auto& p : oldo->onode.extent_map) {
+	if (moved_blobs.count(p.second.blob)) {
+	  p.second.blob = -moved_blobs[p.second.blob];
 	}
+	newo->onode.extent_map[p.first] = p.second;
+	e->blob_map[-p.second.blob].ref_map.get(p.second.offset,
+						p.second.length);
       }
-      newo->onode.extent_map = oldo->onode.extent_map;
       newo->bnode = e;
-      dout(20) << __func__ << " extent_map " << newo->onode.extent_map << dendl;
-      dout(20) << __func__ << " blob_map " << e->blob_map << dendl;
+      _dump_onode(newo);
       txc->write_bnode(e);
       if (!moved_blobs.empty())
 	txc->write_onode(oldo);
     }
-
-    //don't care _can_overlay_write()
-    for (auto& v : oldo->onode.overlay_map) {
-      string key;
-      bufferlist val;
-      get_overlay_key(oldo->onode.nid, v.second.key, &key);
-      int r  = db->get(PREFIX_OVERLAY, key, &val);
-      if (r < 0) {
-	derr << __func__ << " get oid " << oldo->oid << " overlay value(key=" << v.second.key
-	  << ")" << "failed: " << cpp_strerror(r) << dendl;
-	goto out;
-      }
-
-      newo->onode.overlay_map[v.first] = bluestore_overlay_t(++newo->onode.last_overlay_key, 0, v.second.length);
-      dout(20) << __func__ << " added " << v.first << " " << v.second.length << dendl;
-      key.clear();
-      get_overlay_key(newo->onode.nid, newo->onode.last_overlay_key, &key);
-      txc->t->set(PREFIX_OVERLAY, key, val);
-    }
-
     newo->onode.size = oldo->onode.size;
-#endif
   } else {
     // read + write
     r = _do_read(c.get(), oldo, 0, oldo->onode.size, bl, 0);
