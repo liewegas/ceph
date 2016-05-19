@@ -38,7 +38,6 @@
 class Allocator;
 class FreelistManager;
 class BlueFS;
-class Checksummer;
 
 enum {
   l_bluestore_first = 732430,
@@ -865,7 +864,6 @@ private:
   std::mutex reap_lock;
   list<CollectionRef> removed_collections;
 
-  Checksummer *checksummer;
   int csum_type;
 
   uint64_t block_size;     ///< block size of block device (power of 2)
