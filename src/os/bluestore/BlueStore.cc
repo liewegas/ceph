@@ -6161,14 +6161,16 @@ int BlueStore::_clone(TransContext *txc,
       map<int64_t,int64_t> moved_blobs;
       for (auto& p : oldo->onode.extent_map) {
 	if (!p.second.is_shared()) {
-	  int64_t id = e->get_new_blob_id();
-	  moved_blobs[p.second.blob] = id;
-	  dout(30) << __func__ << "  moving old onode blob " << p.second.blob
-		   << " to bnode blob " << id << dendl;
-	  bluestore_blob_t& b = e->blob_map[id] =
-	    oldo->onode.blob_map[p.second.blob];
-	  b.clear_flag(bluestore_blob_t::FLAG_MUTABLE);
-	  oldo->onode.blob_map.erase(p.second.blob);
+	  if(moved_blobs.count(p.second.blob) == 0) {
+	    int64_t id = e->get_new_blob_id();
+	    moved_blobs[p.second.blob] = id;
+	    dout(30) << __func__ << "  moving old onode blob " << p.second.blob
+		     << " to bnode blob " << id << dendl;
+	    bluestore_blob_t& b = e->blob_map[id] =
+	      oldo->onode.blob_map[p.second.blob];
+	    b.clear_flag(bluestore_blob_t::FLAG_MUTABLE);
+	    oldo->onode.blob_map.erase(p.second.blob);
+	  }
 	}
       }
       // update lextents
