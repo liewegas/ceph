@@ -76,7 +76,7 @@ class FakeDispatcher : public Dispatcher {
     uint64_t count;
     ConnectionRef con;
 
-    Session(ConnectionRef c): RefCountedObject(g_ceph_context), lock("FakeDispatcher::Session::lock"), count(0), con(c) {
+    explicit Session(ConnectionRef c): RefCountedObject(g_ceph_context), lock("FakeDispatcher::Session::lock"), count(0), con(c) {
     }
     uint64_t get_count() { return count; }
   };
@@ -89,7 +89,7 @@ class FakeDispatcher : public Dispatcher {
   bool got_connect;
   bool loopback;
 
-  FakeDispatcher(bool s): Dispatcher(g_ceph_context), lock("FakeDispatcher::lock"),
+  explicit FakeDispatcher(bool s): Dispatcher(g_ceph_context), lock("FakeDispatcher::lock"),
                           is_server(s), got_new(false), got_remote_reset(false),
                           got_connect(false), loopback(false) {}
   bool ms_can_fast_dispatch_any() const { return true; }
@@ -552,7 +552,9 @@ TEST_P(MessengerTest, ClientStandbyTest) {
   usleep(300*1000);
   // client should be standby, so we use original connection
   {
-    conn->send_keepalive();
+    // Try send message to verify got remote reset callback
+    m = new MPing();
+    ASSERT_EQ(conn->send_message(m), 0);
     {
       Mutex::Locker l(cli_dispatcher.lock);
       while (!cli_dispatcher.got_remote_reset)
@@ -983,6 +985,15 @@ class SyntheticWorkload {
     ConnectionRef conn = _get_random_connection();
     dispatcher.clear_pending(conn);
     conn->mark_down();
+    pair<Messenger*, Messenger*> &p = available_connections[conn];
+    // it's a lossless policy, so we need to mark down each side
+    if (!p.first->get_default_policy().server && !p.second->get_default_policy().server) {
+      ASSERT_EQ(conn->get_messenger(), p.first);
+      ConnectionRef peer = p.second->get_connection(p.first->get_myinst());
+      peer->mark_down();
+      dispatcher.clear_pending(peer);
+      available_connections.erase(peer);
+    }
     ASSERT_EQ(available_connections.erase(conn), 1U);
   }
 
@@ -1037,7 +1048,7 @@ TEST_P(MessengerTest, SyntheticStressTest) {
     test_msg.generate_connection();
   }
   gen_type rng(time(NULL));
-  for (int i = 0; i < 10000; ++i) {
+  for (int i = 0; i < 5000; ++i) {
     if (!(i % 10)) {
       cerr << "Op " << i << ": ";
       test_msg.print_internal_state();
@@ -1190,6 +1201,9 @@ TEST_P(MessengerTest, SyntheticInjectTest3) {
 TEST_P(MessengerTest, SyntheticInjectTest4) {
   g_ceph_context->_conf->set_val("ms_inject_socket_failures", "30");
   g_ceph_context->_conf->set_val("ms_inject_internal_delays", "0.1");
+  g_ceph_context->_conf->set_val("ms_inject_delay_probability", "1");
+  g_ceph_context->_conf->set_val("ms_inject_delay_type", "client osd", false, false);
+  g_ceph_context->_conf->set_val("ms_inject_delay_max", "5");
   SyntheticWorkload test_msg(16, 32, GetParam(), 100,
                              Messenger::Policy::lossless_peer(0, 0),
                              Messenger::Policy::lossless_peer(0, 0));
@@ -1218,6 +1232,9 @@ TEST_P(MessengerTest, SyntheticInjectTest4) {
   test_msg.wait_for_done();
   g_ceph_context->_conf->set_val("ms_inject_socket_failures", "0");
   g_ceph_context->_conf->set_val("ms_inject_internal_delays", "0");
+  g_ceph_context->_conf->set_val("ms_inject_delay_probability", "0");
+  g_ceph_context->_conf->set_val("ms_inject_delay_type", "", false, false);
+  g_ceph_context->_conf->set_val("ms_inject_delay_max", "0");
 }
 
 
@@ -1227,7 +1244,7 @@ class MarkdownDispatcher : public Dispatcher {
   bool last_mark;
  public:
   atomic_t count;
-  MarkdownDispatcher(bool s): Dispatcher(g_ceph_context), lock("MarkdownDispatcher::lock"),
+  explicit MarkdownDispatcher(bool s): Dispatcher(g_ceph_context), lock("MarkdownDispatcher::lock"),
                               last_mark(false), count(0) {}
   bool ms_can_fast_dispatch_any() const { return false; }
   bool ms_can_fast_dispatch(Message *m) const {
@@ -1370,6 +1387,7 @@ TEST(DummyTest, ValueParameterizedTestsAreNotSupportedOnThisPlatform) {}
 int main(int argc, char **argv) {
   vector<const char*> args;
   argv_to_vec(argc, (const char **)argv, args);
+  env_to_vec(args);
 
   global_init(NULL, args, CEPH_ENTITY_TYPE_CLIENT, CODE_ENVIRONMENT_UTILITY, 0);
   g_ceph_context->_conf->set_val("auth_cluster_required", "none");

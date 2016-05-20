@@ -17,9 +17,7 @@
 
 #include "OSD.h"
 #include "PGBackend.h"
-#include "osd_types.h"
 #include "ECUtil.h"
-#include <boost/optional/optional_io.hpp>
 #include "erasure-code/ErasureCodeInterface.h"
 
 class ECTransaction : public PGBackend::PGTransaction {
@@ -52,11 +50,11 @@ public:
   };
   struct TouchOp {
     hobject_t oid;
-    TouchOp(const hobject_t &oid) : oid(oid) {}
+    explicit TouchOp(const hobject_t &oid) : oid(oid) {}
   };
   struct RemoveOp {
     hobject_t oid;
-    RemoveOp(const hobject_t &oid) : oid(oid) {}
+    explicit RemoveOp(const hobject_t &oid) : oid(oid) {}
   };
   struct SetAttrsOp {
     hobject_t oid;
@@ -104,7 +102,6 @@ public:
   /// Write
   void touch(
     const hobject_t &hoid) {
-    bufferlist bl;
     ops.push_back(TouchOp(hoid));
   }
   void append(
@@ -194,15 +191,15 @@ public:
     }
   }
   void get_append_objects(
-    set<hobject_t> *out) const;
+     set<hobject_t, hobject_t::BitwiseComparator> *out) const;
   void generate_transactions(
-    map<hobject_t, ECUtil::HashInfoRef> &hash_infos,
+    map<hobject_t, ECUtil::HashInfoRef, hobject_t::BitwiseComparator> &hash_infos,
     ErasureCodeInterfaceRef &ecimpl,
     pg_t pgid,
     const ECUtil::stripe_info_t &sinfo,
     map<shard_id_t, ObjectStore::Transaction> *transactions,
-    set<hobject_t> *temp_added,
-    set<hobject_t> *temp_removed,
+    set<hobject_t, hobject_t::BitwiseComparator> *temp_added,
+    set<hobject_t, hobject_t::BitwiseComparator> *temp_removed,
     stringstream *out = 0) const;
 };
 

@@ -367,7 +367,7 @@ static int va_ceph_argparse_witharg(std::vector<const char*> &args,
       else if (first[strlen_a] == '\0') {
 	// find second part (or not)
 	if (i+1 == args.end()) {
-	  oss << "Option " << *i << " requires an argument.";
+	  oss << "Option " << *i << " requires an argument." << std::endl;
 	  i = args.erase(i);
 	  return -EINVAL;
 	}
@@ -521,6 +521,8 @@ static void generic_usage(bool is_server)
   --id/-i ID        set ID portion of my name\n\
   --name/-n TYPE.ID set name\n\
   --cluster NAME    set cluster name (default: ceph)\n\
+  --setuser USER    set uid to user or uid (and gid to user's gid)\n\
+  --setgroup GROUP  set gid to group or gid\n\
   --version         show version and quit\n\
 " << std::endl;
 
@@ -531,6 +533,8 @@ static void generic_usage(bool is_server)
     cout << "\
   --debug_ms N      set message debug level (e.g. 1)\n";
   }
+
+  cout.flush();
 }
 
 void generic_server_usage()

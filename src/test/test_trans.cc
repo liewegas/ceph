@@ -15,7 +15,7 @@
 #include <iostream>
 #include "common/ceph_argparse.h"
 #include "common/debug.h"
-#include "os/FileStore.h"
+#include "os/filestore/FileStore.h"
 #include "global/global_init.h"
 #include "include/assert.h"
 
@@ -55,11 +55,12 @@ int main(int argc, const char **argv)
     return -1;
   }
 
+  ObjectStore::Sequencer osr(__func__);
   ObjectStore::Transaction t;
   char buf[1 << 20];
   bufferlist bl;
   bl.append(buf, sizeof(buf));
-  t.create_collection(coll_t());
+  t.create_collection(coll_t(), 0);
 
   for (int i=0; i<mb; i++) {
     char f[30];
@@ -69,9 +70,9 @@ int main(int argc, const char **argv)
   }
   
   dout(0) << "starting thread" << dendl;
-  foo.create();
+  foo.create("foo");
   dout(0) << "starting op" << dendl;
-  fs->apply_transaction(t);
+  fs->apply_transaction(&osr, std::move(t));
 
 }
 

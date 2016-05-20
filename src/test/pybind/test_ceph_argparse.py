@@ -1,6 +1,6 @@
 #!/usr/bin/nosetests --nocapture
-# -*- mode:python; tab-width:4; indent-tabs-mode:t -*-
-# vim: ts=4 sw=4 smarttab expandtab
+# -*- mode:python; tab-width:4; indent-tabs-mode:t; coding:utf-8 -*-
+# vim: ts=4 sw=4 smarttab expandtab fileencoding=utf-8
 #
 # Ceph - scalable distributed file system
 #
@@ -25,7 +25,10 @@ import re
 import json
 
 def get_command_descriptions(what):
-    return os.popen("./get_command_descriptions " + "--" + what).read()
+    CEPH_BIN = os.environ['CEPH_BIN']
+    if CEPH_BIN == "":
+        CEPH_BIN = "."
+    return os.popen(CEPH_BIN + "/get_command_descriptions " + "--" + what).read()
 
 def test_parse_json_funcsigs():
     commands = get_command_descriptions("all")
@@ -86,6 +89,15 @@ class TestArgparse:
                                                     'toomany']))
 
 
+class TestBasic:
+
+	def test_non_ascii_in_non_options(self):
+		# unicode() is not able to convert this str parameter into unicode
+		# using the default encoding 'ascii'. and validate_command() should
+		# not choke on it.
+		assert_is_none(validate_command(sigdict, ['章鱼和鱿鱼']))
+
+
 class TestPG(TestArgparse):
 
     def test_stat(self):
@@ -93,9 +105,6 @@ class TestPG(TestArgparse):
 
     def test_getmap(self):
         self.assert_valid_command(['pg', 'getmap'])
-
-    def test_send_pg_creates(self):
-        self.assert_valid_command(['pg', 'send_pg_creates'])
 
     def test_dump(self):
         self.assert_valid_command(['pg', 'dump'])
@@ -374,9 +383,6 @@ class TestMDS(TestArgparse):
     def test_set_max_mds(self):
         self.check_1_natural_arg('mds', 'set_max_mds')
 
-    def test_setmap(self):
-        self.check_1_natural_arg('mds', 'setmap')
-
     def test_set_state(self):
         self.assert_valid_command(['mds', 'set_state', '1', '2'])
         assert_equal({}, validate_command(sigdict, ['mds', 'set_state']))
@@ -399,7 +405,11 @@ class TestMDS(TestArgparse):
         assert_equal({}, validate_command(sigdict, ['mds', 'rm', '1', 'mds.42']))
 
     def test_rmfailed(self):
-        self.check_1_natural_arg('mds', 'rmfailed')
+        self.assert_valid_command(['mds', 'rmfailed', '0'])
+        self.assert_valid_command(['mds', 'rmfailed', '0', '--yes-i-really-mean-it'])
+        assert_equal({}, validate_command(sigdict, ['mds', 'rmfailed', '0',
+                                                    '--yes-i-really-mean-it',
+                                                    'toomany']))
 
     def test_cluster_down(self):
         self.check_no_arg('mds', 'cluster_down')
@@ -484,6 +494,11 @@ class TestFS(TestArgparse):
         self.assert_valid_command(['fs', 'ls'])
         assert_equal({}, validate_command(sigdict, ['fs', 'ls', 'toomany']))
 
+    def test_fs_set_default(self):
+        self.assert_valid_command(['fs', 'set_default', 'cephfs'])
+        assert_equal({}, validate_command(sigdict, ['fs', 'set_default']))
+        assert_equal({}, validate_command(sigdict, ['fs', 'set_default', 'cephfs', 'toomany']))
+
 class TestMon(TestArgparse):
 
     def test_dump(self):
@@ -552,7 +567,7 @@ class TestOSD(TestArgparse):
                                                     'toomany']))
 
     def test_metadata(self):
-        self.check_1_natural_arg('osd', 'metadata')
+        self.check_0_or_1_natural_arg('osd', 'metadata')
 
     def test_scrub(self):
         self.check_1_string_arg('osd', 'scrub')
@@ -597,7 +612,7 @@ class TestOSD(TestArgparse):
         self.assert_valid_command(['osd', 'crush', 'dump'])
         assert_equal({}, validate_command(sigdict, ['osd', 'crush']))
         assert_equal({}, validate_command(sigdict, ['osd', 'crush',
-                                                    'dump', 
+                                                    'dump',
                                                     'toomany']))
 
     def test_setcrushmap(self):
@@ -982,7 +997,7 @@ class TestOSD(TestArgparse):
         assert_equal({}, validate_command(sigdict, ['osd', 'pool', 'create',
                                                     'poolname',
                                                     '128', '128',
-                                                    'erasure', '^^^', 
+                                                    'erasure', '^^^',
 													'ruleset']))
         assert_equal({}, validate_command(sigdict, ['osd', 'pool', 'create',
                                                     'poolname',
@@ -1026,7 +1041,10 @@ class TestOSD(TestArgparse):
 
     def test_pool_get(self):
         for var in ('size', 'min_size', 'crash_replay_interval',
-                    'pg_num', 'pgp_num', 'crush_ruleset', 'auid'):
+                    'pg_num', 'pgp_num', 'crush_ruleset', 'auid', 'fast_read',
+                    'scrub_min_interval', 'scrub_max_interval',
+                    'deep_scrub_interval', 'recovery_priority',
+                    'recovery_op_priority'):
             self.assert_valid_command(['osd', 'pool', 'get', 'poolname', var])
         assert_equal({}, validate_command(sigdict, ['osd', 'pool']))
         assert_equal({}, validate_command(sigdict, ['osd', 'pool',
@@ -1043,7 +1061,10 @@ class TestOSD(TestArgparse):
     def test_pool_set(self):
         for var in ('size', 'min_size', 'crash_replay_interval',
                     'pg_num', 'pgp_num', 'crush_ruleset',
-                    'hashpspool', 'auid'):
+                    'hashpspool', 'auid', 'fast_read',
+                    'scrub_min_interval', 'scrub_max_interval',
+                    'deep_scrub_interval', 'recovery_priority',
+                    'recovery_op_priority'):
             self.assert_valid_command(['osd', 'pool',
                                        'set', 'poolname', var, 'value'])
         assert_equal({}, validate_command(sigdict, ['osd', 'pool',
@@ -1083,9 +1104,8 @@ class TestOSD(TestArgparse):
     def test_reweight_by_utilization(self):
         self.assert_valid_command(['osd', 'reweight-by-utilization'])
         self.assert_valid_command(['osd', 'reweight-by-utilization', '100'])
-        assert_equal({}, validate_command(sigdict, ['osd',
-                                                    'reweight-by-utilization',
-                                                    '50']))
+		self.assert_valid_command(['osd', 'reweight-by-utilization', '100', '.1'])
+        self.assert_valid_command(['osd', 'reweight-by-utilization', '--no-increasing'])
         assert_equal({}, validate_command(sigdict, ['osd',
                                                     'reweight-by-utilization',
                                                     '100',
@@ -1151,7 +1171,7 @@ class TestConfigKey(TestArgparse):
     def test_list(self):
         self.check_no_arg('config-key', 'list')
 # Local Variables:
-# compile-command: "cd ../.. ; make -j4 && 
+# compile-command: "cd ../.. ; make -j4 &&
 #  PYTHONPATH=pybind nosetests --stop \
 #  test/pybind/test_ceph_argparse.py # test_ceph_argparse.py:TestOSD.test_rm"
 # End:

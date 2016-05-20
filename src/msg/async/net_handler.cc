@@ -38,7 +38,7 @@ int NetHandler::create_socket(int domain, bool reuse_addr)
     return -errno;
   }
 
-  /* Make sure connection-intensive things like the benckmark
+  /* Make sure connection-intensive things like the benchmark
    * will be able to close/open sockets a zillion of times */
   if (reuse_addr) {
     if (::setsockopt(s, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on)) == -1) {
@@ -92,7 +92,7 @@ void NetHandler::set_socket_options(int sd)
   }
 
   // block ESIGPIPE
-#ifdef CEPH_USE_SO_NOSIGPIPE
+#ifdef SO_NOSIGPIPE
   int val = 1;
   int r = ::setsockopt(sd, SOL_SOCKET, SO_NOSIGPIPE, (void*)&val, sizeof(val));
   if (r) {
@@ -116,7 +116,10 @@ int NetHandler::generic_connect(const entity_addr_t& addr, bool nonblock)
       return ret;
     }
   }
-  ret = ::connect(s, (sockaddr*)&addr.addr, addr.addr_size());
+
+  set_socket_options(s);
+
+  ret = ::connect(s, addr.get_sockaddr(), addr.get_sockaddr_len());
   if (ret < 0) {
     if (errno == EINPROGRESS && nonblock)
       return s;
@@ -126,9 +129,21 @@ int NetHandler::generic_connect(const entity_addr_t& addr, bool nonblock)
     return -errno;
   }
 
-  set_socket_options(s);
-
   return s;
+}
+
+int NetHandler::reconnect(const entity_addr_t &addr, int sd)
+{
+  int ret = ::connect(sd, addr.get_sockaddr(), addr.get_sockaddr_len());
+
+  if (ret < 0 && errno != EISCONN) {
+    ldout(cct, 10) << __func__ << " reconnect: " << strerror(errno) << dendl;
+    if (errno == EINPROGRESS || errno == EALREADY)
+      return 1;
+    return -errno;
+  }
+
+  return 0;
 }
 
 int NetHandler::connect(const entity_addr_t &addr)

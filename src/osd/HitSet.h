@@ -21,7 +21,6 @@
 #include "include/unordered_set.h"
 #include "common/bloom_filter.hpp"
 #include "common/hobject.h"
-#include "common/Formatter.h"
 
 /**
  * generic container for a HitSet
@@ -92,7 +91,7 @@ public:
     };
 
     Params()  {}
-    Params(Impl *i) : impl(i) {}
+    explicit Params(Impl *i) : impl(i) {}
     virtual ~Params() {}
 
     boost::scoped_ptr<Params::Impl> impl;
@@ -115,8 +114,8 @@ public:
   };
 
   HitSet() : impl(NULL), sealed(false) {}
-  HitSet(Impl *i) : impl(i), sealed(false) {}
-  HitSet(const HitSet::Params& params);
+  explicit HitSet(Impl *i) : impl(i), sealed(false) {}
+  explicit HitSet(const HitSet::Params& params);
 
   HitSet(const HitSet& o) {
     sealed = o.sealed;
@@ -195,7 +194,7 @@ public:
   };
 
   ExplicitHashHitSet() : count(0) {}
-  ExplicitHashHitSet(const ExplicitHashHitSet::Params *p) : count(0) {}
+  explicit ExplicitHashHitSet(const ExplicitHashHitSet::Params *p) : count(0) {}
   ExplicitHashHitSet(const ExplicitHashHitSet &o) : count(o.count),
       hits(o.hits) {}
 
@@ -234,13 +233,7 @@ public:
     ::decode(hits, bl);
     DECODE_FINISH(bl);
   }
-  void dump(Formatter *f) const {
-    f->dump_unsigned("insert_count", count);
-    f->open_array_section("hash_set");
-    for (ceph::unordered_set<uint32_t>::const_iterator p = hits.begin(); p != hits.end(); ++p)
-      f->dump_unsigned("hash", *p);
-    f->close_section();
-  }
+  void dump(Formatter *f) const;
   static void generate_test_instances(list<ExplicitHashHitSet*>& o) {
     o.push_back(new ExplicitHashHitSet);
     o.push_back(new ExplicitHashHitSet);
@@ -272,7 +265,7 @@ public:
   };
 
   ExplicitObjectHitSet() : count(0) {}
-  ExplicitObjectHitSet(const ExplicitObjectHitSet::Params *p) : count(0) {}
+  explicit ExplicitObjectHitSet(const ExplicitObjectHitSet::Params *p) : count(0) {}
   ExplicitObjectHitSet(const ExplicitObjectHitSet &o) : count(o.count),
       hits(o.hits) {}
 
@@ -311,16 +304,7 @@ public:
     ::decode(hits, bl);
     DECODE_FINISH(bl);
   }
-  void dump(Formatter *f) const {
-    f->dump_unsigned("insert_count", count);
-    f->open_array_section("set");
-    for (ceph::unordered_set<hobject_t>::const_iterator p = hits.begin(); p != hits.end(); ++p) {
-      f->open_object_section("object");
-      p->dump(f);
-      f->close_section();
-    }
-    f->close_section();
-  }
+  void dump(Formatter *f) const;
   static void generate_test_instances(list<ExplicitObjectHitSet*>& o) {
     o.push_back(new ExplicitObjectHitSet);
     o.push_back(new ExplicitObjectHitSet);
@@ -386,11 +370,7 @@ public:
       ::decode(seed, bl);
       DECODE_FINISH(bl);
     }
-    void dump(Formatter *f) const {
-      f->dump_float("false_positive_probability", get_fpp());
-      f->dump_int("target_size", target_size);
-      f->dump_int("seed", seed);
-    }
+    void dump(Formatter *f) const;
     void dump_stream(ostream& o) const {
       o << "false_positive_probability: "
 	<< get_fpp() << ", target_size: " << target_size
@@ -409,7 +389,7 @@ public:
   BloomHitSet(unsigned inserts, double fpp, int seed)
     : bloom(inserts, fpp, seed)
   {}
-  BloomHitSet(const BloomHitSet::Params *p) : bloom(p->target_size,
+  explicit BloomHitSet(const BloomHitSet::Params *p) : bloom(p->target_size,
                                                     p->get_fpp(),
                                                     p->seed)
   {}
@@ -459,11 +439,7 @@ public:
     ::decode(bloom, bl);
     DECODE_FINISH(bl);
   }
-  void dump(Formatter *f) const {
-    f->open_object_section("bloom_filter");
-    bloom.dump(f);
-    f->close_section();
-  }
+  void dump(Formatter *f) const;
   static void generate_test_instances(list<BloomHitSet*>& o) {
     o.push_back(new BloomHitSet);
     o.push_back(new BloomHitSet(10, .1, 1));

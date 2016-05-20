@@ -107,6 +107,7 @@ public:
     crush->choose_total_tries = 19;
     crush->chooseleaf_descend_once = 0;
     crush->chooseleaf_vary_r = 0;
+    crush->chooseleaf_stable = 0;
     crush->allowed_bucket_algs = CRUSH_LEGACY_ALLOWED_BUCKET_ALGS;
   }
   void set_tunables_bobtail() {
@@ -115,6 +116,7 @@ public:
     crush->choose_total_tries = 50;
     crush->chooseleaf_descend_once = 1;
     crush->chooseleaf_vary_r = 0;
+    crush->chooseleaf_stable = 0;
     crush->allowed_bucket_algs = CRUSH_LEGACY_ALLOWED_BUCKET_ALGS;
   }
   void set_tunables_firefly() {
@@ -123,6 +125,7 @@ public:
     crush->choose_total_tries = 50;
     crush->chooseleaf_descend_once = 1;
     crush->chooseleaf_vary_r = 1;
+    crush->chooseleaf_stable = 0;
     crush->allowed_bucket_algs = CRUSH_LEGACY_ALLOWED_BUCKET_ALGS;
   }
   void set_tunables_hammer() {
@@ -131,6 +134,20 @@ public:
     crush->choose_total_tries = 50;
     crush->chooseleaf_descend_once = 1;
     crush->chooseleaf_vary_r = 1;
+    crush->chooseleaf_stable = 0;
+    crush->allowed_bucket_algs =
+      (1 << CRUSH_BUCKET_UNIFORM) |
+      (1 << CRUSH_BUCKET_LIST) |
+      (1 << CRUSH_BUCKET_STRAW) |
+      (1 << CRUSH_BUCKET_STRAW2);
+  }
+  void set_tunables_jewel() {
+    crush->choose_local_tries = 0;
+    crush->choose_local_fallback_tries = 0;
+    crush->choose_total_tries = 50;
+    crush->chooseleaf_descend_once = 1;
+    crush->chooseleaf_vary_r = 1;
+    crush->chooseleaf_stable = 1;
     crush->allowed_bucket_algs =
       (1 << CRUSH_BUCKET_UNIFORM) |
       (1 << CRUSH_BUCKET_LIST) |
@@ -143,11 +160,11 @@ public:
     crush->straw_calc_version = 0;
   }
   void set_tunables_optimal() {
-    set_tunables_hammer();
+    set_tunables_jewel();
     crush->straw_calc_version = 1;
   }
   void set_tunables_default() {
-    set_tunables_bobtail();
+    set_tunables_firefly();
     crush->straw_calc_version = 1;
   }
 
@@ -186,6 +203,13 @@ public:
     crush->chooseleaf_vary_r = n;
   }
 
+  int get_chooseleaf_stable() const {
+    return crush->chooseleaf_stable;
+  }
+  void set_chooseleaf_stable(int n) {
+    crush->chooseleaf_stable = n;
+  }
+
   int get_straw_calc_version() const {
     return crush->straw_calc_version;
   }
@@ -207,7 +231,7 @@ public:
       crush->choose_total_tries == 19 &&
       crush->chooseleaf_descend_once == 0 &&
       crush->chooseleaf_vary_r == 0 &&
-      crush->straw_calc_version == 0 &&
+      crush->chooseleaf_stable == 0 &&
       crush->allowed_bucket_algs == CRUSH_LEGACY_ALLOWED_BUCKET_ALGS;
   }
   bool has_bobtail_tunables() const {
@@ -217,7 +241,7 @@ public:
       crush->choose_total_tries == 50 &&
       crush->chooseleaf_descend_once == 1 &&
       crush->chooseleaf_vary_r == 0 &&
-      crush->straw_calc_version == 0 &&
+      crush->chooseleaf_stable == 0 &&
       crush->allowed_bucket_algs == CRUSH_LEGACY_ALLOWED_BUCKET_ALGS;
   }
   bool has_firefly_tunables() const {
@@ -227,7 +251,7 @@ public:
       crush->choose_total_tries == 50 &&
       crush->chooseleaf_descend_once == 1 &&
       crush->chooseleaf_vary_r == 1 &&
-      crush->straw_calc_version == 0 &&
+      crush->chooseleaf_stable == 0 &&
       crush->allowed_bucket_algs == CRUSH_LEGACY_ALLOWED_BUCKET_ALGS;
   }
   bool has_hammer_tunables() const {
@@ -237,15 +261,28 @@ public:
       crush->choose_total_tries == 50 &&
       crush->chooseleaf_descend_once == 1 &&
       crush->chooseleaf_vary_r == 1 &&
-      crush->straw_calc_version == 1 &&
+      crush->chooseleaf_stable == 0 &&
       crush->allowed_bucket_algs == ((1 << CRUSH_BUCKET_UNIFORM) |
 				      (1 << CRUSH_BUCKET_LIST) |
 				      (1 << CRUSH_BUCKET_STRAW) |
 				      (1 << CRUSH_BUCKET_STRAW2));
-}
+  }
+  bool has_jewel_tunables() const {
+    return
+      crush->choose_local_tries == 0 &&
+      crush->choose_local_fallback_tries == 0 &&
+      crush->choose_total_tries == 50 &&
+      crush->chooseleaf_descend_once == 1 &&
+      crush->chooseleaf_vary_r == 1 &&
+      crush->chooseleaf_stable == 1 &&
+      crush->allowed_bucket_algs == ((1 << CRUSH_BUCKET_UNIFORM) |
+				      (1 << CRUSH_BUCKET_LIST) |
+				      (1 << CRUSH_BUCKET_STRAW) |
+				      (1 << CRUSH_BUCKET_STRAW2));
+  }
 
   bool has_optimal_tunables() const {
-    return has_firefly_tunables();
+    return has_jewel_tunables();
   }
   bool has_legacy_tunables() const {
     return has_argonaut_tunables();
@@ -265,13 +302,32 @@ public:
     return
       crush->chooseleaf_vary_r != 0;
   }
+  bool has_nondefault_tunables5() const {
+    return
+        crush->chooseleaf_stable != 0;
+  }
 
   bool has_v2_rules() const;
   bool has_v3_rules() const;
   bool has_v4_buckets() const;
+  bool has_v5_rules() const;
 
   bool is_v2_rule(unsigned ruleid) const;
   bool is_v3_rule(unsigned ruleid) const;
+  bool is_v5_rule(unsigned ruleid) const;
+
+  string get_min_required_version() const {
+    if (has_v5_rules() || has_nondefault_tunables5())
+      return "jewel";
+    else if (has_v4_buckets())
+      return "hammer";
+    else if (has_nondefault_tunables3())
+      return "firefly";
+    else if (has_nondefault_tunables2() || has_nondefault_tunables())
+      return "bobtail";
+    else
+      return "argonaut";
+  }
 
   // default bucket types
   unsigned get_default_bucket_alg() const {
@@ -670,7 +726,7 @@ private:
   }
   crush_rule_step *get_rule_step(unsigned ruleno, unsigned step) const {
     crush_rule *n = get_rule(ruleno);
-    if (!n) return (crush_rule_step *)(-EINVAL);
+    if (IS_ERR(n)) return (crush_rule_step *)(-EINVAL);
     if (step >= n->len) return (crush_rule_step *)(-EINVAL);
     return &n->steps[step];
   }
@@ -779,6 +835,9 @@ public:
   int set_rule_step_set_chooseleaf_vary_r(unsigned ruleno, unsigned step, int val) {
     return set_rule_step(ruleno, step, CRUSH_RULE_SET_CHOOSELEAF_VARY_R, val, 0);
   }
+  int set_rule_step_set_chooseleaf_stable(unsigned ruleno, unsigned step, int val) {
+    return set_rule_step(ruleno, step, CRUSH_RULE_SET_CHOOSELEAF_STABLE, val, 0);
+  }
   int set_rule_step_choose_firstn(unsigned ruleno, unsigned step, int val, int type) {
     return set_rule_step(ruleno, step, CRUSH_RULE_CHOOSE_FIRSTN, val, type);
   }
@@ -846,7 +905,7 @@ private:
       return (-EINVAL);
 
     // check that the bucket that we want to detach exists
-    assert( get_bucket(item) );
+    assert(bucket_exists(item));
 
     // get the bucket's weight
     crush_bucket *b = get_bucket(item);
@@ -1035,20 +1094,31 @@ public:
     for (int i=0; i<numrep; i++)
       out[i] = rawout[i];
   }
+  
+  bool check_crush_rule(int ruleset, int type, int size,  ostream& ss) {
+   
+    assert(crush);    
 
-  int read_from_file(const char *fn) {
-    bufferlist bl;
-    std::string error;
-    int r = bl.read_file(fn, &error);
-    if (r < 0) return r;
-    bufferlist::iterator blp = bl.begin();
-    decode(blp);
-    return 0;
-  }
-  int write_to_file(const char *fn) {
-    bufferlist bl;
-    encode(bl);
-    return bl.write_file(fn);
+    __u32 i;
+    for (i = 0; i < crush->max_rules; i++) {
+      if (crush->rules[i] &&
+          crush->rules[i]->mask.ruleset == ruleset &&
+          crush->rules[i]->mask.type == type) {
+
+        if (crush->rules[i]->mask.min_size <= size &&
+            crush->rules[i]->mask.max_size >= size) {
+          return true;
+        } else if (size < crush->rules[i]->mask.min_size) {
+          ss << "pool size is smaller than the crush rule min size";
+          return false;
+        } else {
+          ss << "pool size is bigger than the crush rule max size";
+          return false;
+        }
+      }
+    }
+
+    return false;
   }
 
   void encode(bufferlist &bl, bool lean=false) const;

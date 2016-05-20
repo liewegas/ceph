@@ -2,7 +2,7 @@ AUTOMAKE_OPTIONS = gnu
 ACLOCAL_AMFLAGS = -I m4
 EXTRA_DIST = autogen.sh ceph.spec.in ceph.spec install-deps.sh
 # the "." here makes sure check-local builds gtest and gmock before they are used
-SUBDIRS = . src man doc
+SUBDIRS = . src man doc systemd selinux
 
 EXTRA_DIST += \
 	src/test/run-cli-tests \
@@ -10,13 +10,20 @@ EXTRA_DIST += \
 	src/test/cli \
 	src/test/downloads \
 	systemd/ceph.tmpfiles.d \
+	etc/default/ceph \
+	etc/sysconfig/ceph \
+	etc/sysconfig/SuSEfirewall2.d/services/ceph-mon \
+	etc/sysconfig/SuSEfirewall2.d/services/ceph-osd-mds \
 	udev/50-rbd.rules \
-	udev/60-ceph-partuuid-workaround.rules \
 	udev/95-ceph-osd.rules \
-	udev/95-ceph-osd-alt.rules \
 	share/known_hosts_drop.ceph.com \
 	share/id_dsa_drop.ceph.com \
 	share/id_dsa_drop.ceph.com.pub
+
+NPROC = nproc
+if FREEBSD
+	NPROC = sysctl -n hw.ncpu
+endif
 
 # why is it so hard to make autotools to this?
 install-data-local::
@@ -42,7 +49,7 @@ check-local:: all
 	@cd src/gmock && $(MAKE) $(AM_MAKEFLAGS) lib/libgmock.la lib/libgmock_main.la
 #	exercise cli tools
 	u=`ulimit -u` ; \
-	p=`expr $(shell nproc) / 2` ; \
+	p=`expr $(shell ${NPROC}) / 2` ; \
 	n=`expr $$p \* 1024` ; \
 	if ${CHECK_ULIMIT} && echo ${MAKEFLAGS} | grep --quiet -e -j && test $$u -lt $$n ; then \
 		echo "ulimit -u is $$u which is lower than $$n = $$p / 2 * 1024" ; \
@@ -53,13 +60,18 @@ check-local:: all
 		exit 1 ; \
 	fi
 
+# display the output of failed check_SCRIPTS after a failed make check
+export VERBOSE = true
+
+TESTS = $(check_SCRIPTS)
+
 check_SCRIPTS = \
 	src/test/run-cli-tests
 
 # "make distclean" both runs this and recurses into src/gtest, if
 # gtest is in DIST_SUBDIRS. Take extra care to not fail when
 # effectively cleaned twice.
-clean-local:
+clean-local::
 	@if test -e src/gmock/Makefile; then \
 	  echo "Making clean in src/gmock"; \
 	  cd src/gmock && $(MAKE) $(AM_MAKEFLAGS) clean; \

@@ -19,10 +19,10 @@
 #include <dirent.h>
 #include <stdlib.h>
 #include "include/int_types.h"
+#include "include/uuid.h"
 
 #ifdef __linux__
 #include <linux/fs.h>
-#include "include/uuid.h"
 #include <blkid/blkid.h>
 
 #define UUID_LEN 36
@@ -187,25 +187,33 @@ int get_device_by_uuid(uuid_d dev_uuid, const char* label, char* partition,
   blkid_dev dev = NULL;
   int rc = 0;
 
-  uuid_unparse((const unsigned char*)&dev_uuid.uuid, uuid_str);
+  dev_uuid.print(uuid_str);
 
   if (blkid_get_cache(&cache, NULL) >= 0)
     dev = blkid_find_dev_with_tag(cache, label, (const char*)uuid_str);
+  else
+    rc = -EINVAL;
 
   if (dev) {
     temp_partition_ptr = blkid_dev_devname(dev);
     strncpy(partition, temp_partition_ptr, PATH_MAX);
     rc = get_block_device_base(partition, basename,
       sizeof(basename));
-    if (rc >= 0)
+    if (rc >= 0) {
       strncpy(device, basename, sizeof(basename));
-    else
-      return -ENODEV;
-
-    return 0;
+      rc = 0;
+    } else {
+      rc = -ENODEV;
+    }
+  } else {
+    rc = -EINVAL;
   }
 
-  return -EINVAL;
+  /* From what I can tell, blkid_put_cache cleans up dev, which
+   * appears to be a pointer into cache, as well */
+  if (cache)
+    blkid_put_cache(cache);
+  return rc;
 }
 #elif defined(__APPLE__)
 #include <sys/disk.h>
@@ -267,5 +275,24 @@ int get_device_by_uuid(uuid_d dev_uuid, const char* label, char* partition,
   return -EOPNOTSUPP;
 }
 #else
-# error "Unable to query block device size: unsupported platform, please report."
+int get_block_device_size(int fd, int64_t *psize)
+{
+  return -EOPNOTSUPP;
+}
+
+bool block_device_support_discard(const char *devname)
+{
+  return false;
+}
+
+int block_device_discard(int fd, int64_t offset, int64_t len)
+{
+  return -EOPNOTSUPP;
+}
+
+int get_device_by_uuid(uuid_d dev_uuid, const char* label, char* partition,
+	char* device)
+{
+  return -EOPNOTSUPP;
+}
 #endif

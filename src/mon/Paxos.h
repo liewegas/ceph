@@ -112,12 +112,8 @@ e 12v
 #include "include/types.h"
 #include "mon_types.h"
 #include "include/buffer.h"
-#include "messages/PaxosServiceMessage.h"
 #include "msg/msg_types.h"
-
 #include "include/Context.h"
-
-#include "common/Timer.h"
 #include "common/perf_counters.h"
 #include <errno.h>
 
@@ -282,7 +278,7 @@ public:
    *
    * @return 'true' if we are on the Recovering state; 'false' otherwise.
    */
-  bool is_recovering() const { return (state & STATE_RECOVERING); }
+  bool is_recovering() const { return (state == STATE_RECOVERING); }
   /**
    * Check if we are active.
    *
@@ -629,7 +625,7 @@ private:
   class C_CollectTimeout : public Context {
     Paxos *paxos;
   public:
-    C_CollectTimeout(Paxos *p) : paxos(p) {}
+    explicit C_CollectTimeout(Paxos *p) : paxos(p) {}
     void finish(int r) {
       if (r == -ECANCELED)
 	return;
@@ -643,7 +639,7 @@ private:
   class C_AcceptTimeout : public Context {
     Paxos *paxos;
   public:
-    C_AcceptTimeout(Paxos *p) : paxos(p) {}
+    explicit C_AcceptTimeout(Paxos *p) : paxos(p) {}
     void finish(int r) {
       if (r == -ECANCELED)
 	return;
@@ -657,7 +653,7 @@ private:
   class C_LeaseAckTimeout : public Context {
     Paxos *paxos;
   public:
-    C_LeaseAckTimeout(Paxos *p) : paxos(p) {}
+    explicit C_LeaseAckTimeout(Paxos *p) : paxos(p) {}
     void finish(int r) {
       if (r == -ECANCELED)
 	return;
@@ -671,7 +667,7 @@ private:
   class C_LeaseTimeout : public Context {
     Paxos *paxos;
   public:
-    C_LeaseTimeout(Paxos *p) : paxos(p) {}
+    explicit C_LeaseTimeout(Paxos *p) : paxos(p) {}
     void finish(int r) {
       if (r == -ECANCELED)
 	return;
@@ -685,7 +681,7 @@ private:
   class C_LeaseRenew : public Context {
     Paxos *paxos;
   public:
-    C_LeaseRenew(Paxos *p) : paxos(p) {}
+    explicit C_LeaseRenew(Paxos *p) : paxos(p) {}
     void finish(int r) {
       if (r == -ECANCELED)
 	return;
@@ -696,7 +692,7 @@ private:
   class C_Trimmed : public Context {
     Paxos *paxos;
   public:
-    C_Trimmed(Paxos *p) : paxos(p) { }
+    explicit C_Trimmed(Paxos *p) : paxos(p) { }
     void finish(int r) {
       paxos->trimming = false;
     }
@@ -789,7 +785,7 @@ private:
    * knows something we don't and the Leader will have to abort the current
    * proposal in order to retry with the Proposal Number specified by the Peon.
    * It may also occur that the Peon replied with a lower Proposal Number, in
-   * which case we assume it is a reply to an an older value and we'll simply
+   * which case we assume it is a reply to an older value and we'll simply
    * drop it.
    * This function will also check if the Peon replied with an accepted but
    * yet uncommitted value. In this case, if its version is higher than our
@@ -1186,11 +1182,6 @@ public:
    */
   bool store_state(MMonPaxos *m);
   void _sanity_check_store();
-
-  /**
-   * remove legacy paxos versions from before conversion
-   */
-  void remove_legacy_versions();
 
   /**
    * Helper function to decode a bufferlist into a transaction and append it

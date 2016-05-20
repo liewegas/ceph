@@ -25,7 +25,7 @@
 class MonClient;
 class MMDSBeacon;
 class Message;
-class MDS;
+class MDSRank;
 
 
 /**
@@ -50,6 +50,8 @@ class Beacon : public Dispatcher
   CompatSet compat;
   mds_rank_t standby_for_rank;
   std::string standby_for_name;
+  fs_cluster_id_t standby_for_fscid;
+  bool standby_replay;
   MDSMap::DaemonState want_state;
 
   // Internal beacon state
@@ -67,7 +69,7 @@ class Beacon : public Dispatcher
   class C_MDS_BeaconSender : public Context {
     Beacon *beacon;
   public:
-    C_MDS_BeaconSender(Beacon *beacon_) : beacon(beacon_) {}
+    explicit C_MDS_BeaconSender(Beacon *beacon_) : beacon(beacon_) {}
     void finish(int r) {
       assert(beacon->lock.is_locked_by_me());
       beacon->sender = NULL;
@@ -85,7 +87,7 @@ public:
   Beacon(CephContext *cct_, MonClient *monc_, std::string name);
   ~Beacon();
 
-  void init(MDSMap const *mdsmap, MDSMap::DaemonState want_state_, mds_rank_t standby_rank_, std::string const &standby_name_);
+  void init(MDSMap const *mdsmap);
   void shutdown();
 
   bool ms_dispatch(Message *m); 
@@ -94,13 +96,13 @@ public:
   void ms_handle_remote_reset(Connection *c) {}
 
   void notify_mdsmap(MDSMap const *mdsmap);
-  void notify_want_state(MDSMap::DaemonState const newstate);
-  void notify_health(MDS const *mds);
-
-  void set_standby_for(mds_rank_t rank_, std::string const &name_);
+  void notify_health(MDSRank const *mds);
 
   void handle_mds_beacon(MMDSBeacon *m);
   void send();
+
+  void set_want_state(MDSMap const *mdsmap, MDSMap::DaemonState const newstate);
+  MDSMap::DaemonState get_want_state() const;
 
   /**
    * Send a beacon, and block until the ack is received from the mon

@@ -18,7 +18,7 @@
 #include "CInode.h"
 #include "CDir.h"
 
-#include "MDS.h"
+#include "MDSRank.h"
 #include "MDCache.h"
 #include "Locker.h"
 #include "LogSegment.h"
@@ -621,4 +621,3 @@ std::string CDentry::linkage_t::get_remote_d_type_string() const
     default: assert(0); return "";
   }
 }
-

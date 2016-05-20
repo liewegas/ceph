@@ -26,46 +26,39 @@
 using namespace std;
 
 #include "include/types.h"
+#include "common/simple_cache.hpp"
 #include "msg/Messenger.h"
 
 #include "osd/OSDMap.h"
 
 #include "PaxosService.h"
-#include "Session.h"
 
 class Monitor;
 class PGMap;
-
-#include "messages/MOSDBoot.h"
-#include "messages/MMonCommand.h"
-#include "messages/MOSDMap.h"
-#include "messages/MPoolOp.h"
+class MonSession;
+class MOSDMap;
 
 #include "erasure-code/ErasureCodeInterface.h"
-
-#include "common/TrackedOp.h"
 #include "mon/MonOpRequest.h"
 
 #define OSD_METADATA_PREFIX "osd_metadata"
 
 /// information about a particular peer's failure reports for one osd
 struct failure_reporter_t {
-  int num_reports;          ///< reports from this reporter
   utime_t failed_since;     ///< when they think it failed
-  MonOpRequestRef op;       ///< most recent failure op request
+  MonOpRequestRef op;       ///< failure op request
 
-  failure_reporter_t() : num_reports(0) {}
-  failure_reporter_t(utime_t s) : num_reports(1), failed_since(s) {}
+  failure_reporter_t() {}
+  explicit failure_reporter_t(utime_t s) : failed_since(s) {}
   ~failure_reporter_t() { }
 };
 
 /// information about all failure reports for one osd
 struct failure_info_t {
-  map<int, failure_reporter_t> reporters;  ///< reporter -> # reports
+  map<int, failure_reporter_t> reporters;  ///< reporter -> failed_since etc
   utime_t max_failed_since;                ///< most recent failed_since
-  int num_reports;
 
-  failure_info_t() : num_reports(0) {}
+  failure_info_t() {}
 
   utime_t get_failed_since() {
     if (max_failed_since == utime_t() && !reporters.empty()) {
@@ -82,7 +75,7 @@ struct failure_info_t {
   // set the message for the latest report.  return any old op request we had,
   // if any, so we can discard it.
   MonOpRequestRef add_report(int who, utime_t failed_since,
-                              MonOpRequestRef op) {
+			     MonOpRequestRef op) {
     map<int, failure_reporter_t>::iterator p = reporters.find(who);
     if (p == reporters.end()) {
       if (max_failed_since == utime_t())
@@ -90,10 +83,7 @@ struct failure_info_t {
       else if (max_failed_since < failed_since)
 	max_failed_since = failed_since;
       p = reporters.insert(map<int, failure_reporter_t>::value_type(who, failure_reporter_t(failed_since))).first;
-    } else {
-      p->second.num_reports++;
     }
-    num_reports++;
 
     MonOpRequestRef ret = p->second.op;
     p->second.op = op;
@@ -115,7 +105,6 @@ struct failure_info_t {
     map<int, failure_reporter_t>::iterator p = reporters.find(who);
     if (p == reporters.end())
       return;
-    num_reports -= p->second.num_reports;
     reporters.erase(p);
     if (reporters.empty())
       max_failed_since = utime_t();
@@ -136,15 +125,10 @@ private:
 
   map<int,double> osd_weight;
 
-  /*
-   * cache what epochs we think osds have.  this is purely
-   * optimization to try to avoid sending the same inc maps twice.
-   */
-  map<int,epoch_t> osd_epoch;
+  SimpleLRU<version_t, bufferlist> inc_osd_cache;
+  SimpleLRU<version_t, bufferlist> full_osd_cache;
 
-  void note_osd_has_epoch(int osd, epoch_t epoch);
-
-  void check_failures(utime_t now);
+  bool check_failures(utime_t now);
   bool check_failure(utime_t now, int target_osd, failure_info_t& fi);
 
   // map thrashing
@@ -156,6 +140,12 @@ private:
   CrushWrapper &_get_stable_crush();
   void _get_pending_crush(CrushWrapper& newcrush);
 
+  enum FastReadType {
+    FAST_READ_OFF,
+    FAST_READ_ON,
+    FAST_READ_DEFAULT
+  };
+
   // svc
 public:  
   void create_initial();
@@ -165,7 +155,6 @@ private:
   void encode_pending(MonitorDBStore::TransactionRef t);
   void on_active();
   void on_shutdown();
-
   /**
    * we haven't delegated full version stashing to paxosservice for some time
    * now, making this function useless in current context.
@@ -226,11 +215,23 @@ private:
   MOSDMap *build_incremental(epoch_t first, epoch_t last);
   void send_full(MonOpRequestRef op);
   void send_incremental(MonOpRequestRef op, epoch_t first);
-  void send_incremental(epoch_t first, MonSession *session, bool onetime);
+public:
+  // @param req an optional op request, if the osdmaps are replies to it. so
+  //            @c Monitor::send_reply() can mark_event with it.
+  void send_incremental(epoch_t first, MonSession *session, bool onetime,
+			MonOpRequestRef req = MonOpRequestRef());
 
-  int reweight_by_utilization(int oload, std::string& out_str, bool by_pg,
-			      const set<int64_t> *pools);
-
+private:
+  int reweight_by_utilization(int oload,
+			      double max_change,
+			      int max_osds,
+			      bool by_pg,
+			      const set<int64_t> *pools,
+			      bool no_increasing,
+			      bool dry_run,
+			      std::stringstream *ss,
+			      std::string *out_str,
+			      Formatter *f);
   void print_utilization(ostream &out, Formatter *f, bool tree) const;
 
   bool check_source(PaxosServiceMessage *m, uuid_d fsid);
@@ -314,6 +315,7 @@ private:
 		       const string &erasure_code_profile,
                        const unsigned pool_type,
                        const uint64_t expected_num_objects,
+                       FastReadType fast_read,
 		       ostream *ss);
   int prepare_new_pool(MonOpRequestRef op);
 
@@ -386,24 +388,20 @@ private:
   bool preprocess_remove_snaps(MonOpRequestRef op);
   bool prepare_remove_snaps(MonOpRequestRef op);
 
-  CephContext *cct;
   OpTracker op_tracker;
 
   int load_metadata(int osd, map<string, string>& m, ostream *err);
 
  public:
-  OSDMonitor(CephContext *cct, Monitor *mn, Paxos *p, string service_name)
-  : PaxosService(mn, p, service_name),
-    thrash_map(0), thrash_last_up_osd(-1),
-    op_tracker(cct, true, 1)
-  { }
+  OSDMonitor(CephContext *cct, Monitor *mn, Paxos *p, const string& service_name);
 
   void tick();  // check state, take actions
 
   int parse_osd_id(const char *s, stringstream *pss);
 
   void get_health(list<pair<health_status_t,string> >& summary,
-		  list<pair<health_status_t,string> > *detail) const;
+		  list<pair<health_status_t,string> > *detail,
+		  CephContext *cct) const override;
   bool preprocess_command(MonOpRequestRef op);
   bool prepare_command(MonOpRequestRef op);
   bool prepare_command_impl(MonOpRequestRef op, map<string,cmd_vartype>& cmdmap);
@@ -414,13 +412,15 @@ private:
 
   void handle_osd_timeouts(const utime_t &now,
 			   std::map<int,utime_t> &last_osd_report);
-  void mark_all_down();
 
   void send_latest(MonOpRequestRef op, epoch_t start=0);
   void send_latest_now_nodelete(MonOpRequestRef op, epoch_t start=0) {
     op->mark_osdmon_event(__func__);
     send_incremental(op, start);
   }
+
+  int get_version(version_t ver, bufferlist& bl) override;
+  int get_version_full(version_t ver, bufferlist& bl) override;
 
   epoch_t blacklist(const entity_addr_t& a, utime_t until);
 

@@ -18,8 +18,15 @@
 #include <unistd.h>
 #include <getopt.h>
 #include <assert.h>
+#include <string>
 
+#if defined(__FreeBSD__)
+#include <sys/param.h>
+#endif
+
+#include "include/compat.h"
 #include "include/rbd/librbd.h"
+#include "common/Mutex.h"
 
 static int gotrados = 0;
 char *pool_name;
@@ -27,7 +34,7 @@ char *mount_image_name;
 rados_t cluster;
 rados_ioctx_t ioctx;
 
-static pthread_mutex_t readdir_lock;
+Mutex readdir_lock("read_dir");
 
 struct rbd_stat {
 	u_char valid;
@@ -206,11 +213,11 @@ iter_images(void *cookie,
 {
 	struct rbd_image *im;
 
-	pthread_mutex_lock(&readdir_lock);
-
+	readdir_lock.Lock();
+	
 	for (im = rbd_image_data.images; im != NULL; im = im->next)
 		iter(cookie, im->image_name);
-	pthread_mutex_unlock(&readdir_lock);
+	readdir_lock.Unlock();
 }
 
 static void count_images_cb(void *cookie, const char *image)
@@ -222,9 +229,9 @@ static int count_images(void)
 {
 	unsigned int count = 0;
 
-	pthread_mutex_lock(&readdir_lock);
+	readdir_lock.Lock();
 	enumerate_images(&rbd_image_data);
-	pthread_mutex_unlock(&readdir_lock);
+	readdir_lock.Unlock();
 
 	iter_images(&count, count_images_cb);
 	return count;
@@ -263,9 +270,9 @@ static int rbdfs_getattr(const char *path, struct stat *stbuf)
 	}
 
 	if (!in_opendir) {
-		pthread_mutex_lock(&readdir_lock);
+		readdir_lock.Lock();
 		enumerate_images(&rbd_image_data);
-		pthread_mutex_unlock(&readdir_lock);
+		readdir_lock.Unlock();
 	}
 	fd = open_rbd_image(path + 1);
 	if (fd < 0)
@@ -297,9 +304,9 @@ static int rbdfs_open(const char *path, struct fuse_file_info *fi)
 	if (path[0] == 0)
 		return -ENOENT;
 
-	pthread_mutex_lock(&readdir_lock);
+	readdir_lock.Lock();
 	enumerate_images(&rbd_image_data);
-	pthread_mutex_unlock(&readdir_lock);
+	readdir_lock.Unlock();
 	fd = open_rbd_image(path + 1);
 	if (fd < 0)
 		return -ENOENT;
@@ -351,7 +358,7 @@ static int rbdfs_write(const char *path, const char *buf, size_t size,
 
 		if ((size_t)(offset + size) > rbdsize(fi->fh)) {
 			int r;
-			fprintf(stderr, "rbdfs_write resizing %s to 0x%"PRIxMAX"\n",
+			fprintf(stderr, "rbdfs_write resizing %s to 0x%" PRIxMAX "\n",
 				path, offset+size);
 			r = rbd_resize(rbd->image, offset+size);
 			if (r < 0)
@@ -395,9 +402,9 @@ static int rbdfs_statfs(const char *path, struct statvfs *buf)
 
 	num[0] = 1;
 	num[1] = 0;
-	pthread_mutex_lock(&readdir_lock);
+	readdir_lock.Lock();
 	enumerate_images(&rbd_image_data);
-	pthread_mutex_unlock(&readdir_lock);
+	readdir_lock.Unlock();
 	iter_images(num, rbdfs_statfs_image_cb);
 
 #define	RBDFS_BSIZE	4096
@@ -428,10 +435,10 @@ static int rbdfs_fsync(const char *path, int datasync,
 static int rbdfs_opendir(const char *path, struct fuse_file_info *fi)
 {
 	// only one directory, so global "in_opendir" flag should be fine
-	pthread_mutex_lock(&readdir_lock);
+	readdir_lock.Lock();
 	in_opendir++;
 	enumerate_images(&rbd_image_data);
-	pthread_mutex_unlock(&readdir_lock);
+	readdir_lock.Unlock();
 	return 0;
 }
 
@@ -469,9 +476,9 @@ static int rbdfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 static int rbdfs_releasedir(const char *path, struct fuse_file_info *fi)
 {
 	// see opendir comments
-	pthread_mutex_lock(&readdir_lock);
+	readdir_lock.Lock();
 	in_opendir--;
-	pthread_mutex_unlock(&readdir_lock);
+	readdir_lock.Unlock();
 	return 0;
 }
 
@@ -517,16 +524,59 @@ rbdfs_destroy(void *unused)
 	rados_shutdown(cluster);
 }
 
+int
+rbdfs_checkname(const char *checkname)
+{
+    const char *extra[] = {"@", "/"};
+    std::string strCheckName(checkname);
+    
+    if (strCheckName.empty())
+        return -EINVAL;
+
+    unsigned int sz = sizeof(extra) / sizeof(const char*);
+    for (unsigned int i = 0; i < sz; i++)
+    {
+        std::string ex(extra[i]);
+        if (std::string::npos != strCheckName.find(ex))
+            return -EINVAL;
+    }
+
+    return 0;
+}
+
 // return -errno on error.  fi->fh is not set until open time
 
 int
 rbdfs_create(const char *path, mode_t mode, struct fuse_file_info *fi)
 {
-	int r;
-	int order = imageorder;
+         int r;
+         int order = imageorder;
 
-	r = rbd_create2(ioctx, path+1, imagesize, imagefeatures, &order);
-	return r;
+         r = rbdfs_checkname(path+1);
+         if (r != 0)
+         {
+            return r;  
+         }
+
+         r = rbd_create2(ioctx, path+1, imagesize, imagefeatures, &order);
+         return r;
+}
+
+int
+rbdfs_rename(const char *path, const char *destname)
+{
+    int r;
+
+    r = rbdfs_checkname(destname+1);
+    if (r != 0)
+    {
+      return r;
+    }
+
+    if (strcmp(path, "/") == 0)
+        return -EINVAL;
+
+    return rbd_rename(ioctx, path+1, destname+1);
 }
 
 int
@@ -562,7 +612,8 @@ rbdfs_truncate(const char *path, off_t size)
 		return -ENOENT;
 
 	rbd = &opentbl[fd];
-	fprintf(stderr, "truncate %s to %"PRIdMAX" (0x%"PRIxMAX")\n", path, size, size);
+	fprintf(stderr, "truncate %s to %" PRIdMAX " (0x%" PRIxMAX ")\n",
+          path, size, size);
 	r = rbd_resize(rbd->image, size);
 	if (r < 0)
 		return r;
@@ -596,7 +647,12 @@ struct rbdfuse_attr {
 
 int
 rbdfs_setxattr(const char *path, const char *name, const char *value,
-		 size_t size, int flags)
+	       size_t size,
+	       int flags
+#if defined(DARWIN)
+	       ,uint32_t pos
+#endif
+    )
 {
 	struct rbdfuse_attr *ap;
 	if (strcmp(path, "/") != 0)
@@ -605,7 +661,7 @@ rbdfs_setxattr(const char *path, const char *name, const char *value,
 	for (ap = attrs; ap->attrname != NULL; ap++) {
 		if (strcmp(name, ap->attrname) == 0) {
 			*ap->attrvalp = strtoull(value, NULL, 0);
-			fprintf(stderr, "rbd-fuse: %s set to 0x%"PRIx64"\n",
+			fprintf(stderr, "rbd-fuse: %s set to 0x%" PRIx64 "\n",
 				ap->attrname, *ap->attrvalp);
 			return 0;
 		}
@@ -615,7 +671,11 @@ rbdfs_setxattr(const char *path, const char *name, const char *value,
 
 int
 rbdfs_getxattr(const char *path, const char *name, char *value,
-		 size_t size)
+		 size_t size
+#if defined(DARWIN)
+	       ,uint32_t position
+#endif
+  )
 {
 	struct rbdfuse_attr *ap;
 	char buf[128];
@@ -624,7 +684,7 @@ rbdfs_getxattr(const char *path, const char *name, char *value,
 
 	for (ap = attrs; ap->attrname != NULL; ap++) {
 		if (strcmp(name, ap->attrname) == 0) {
-			sprintf(buf, "%"PRIu64, *ap->attrvalp);
+			sprintf(buf, "%" PRIu64, *ap->attrvalp);
 			if (value != NULL && size >= strlen(buf))
 				strcpy(value, buf);
 			fprintf(stderr, "rbd-fuse: get %s\n", ap->attrname);
@@ -663,7 +723,7 @@ const static struct fuse_operations rbdfs_oper = {
   unlink:     rbdfs_unlink,
   rmdir:      0,
   symlink:    0,
-  rename:     0,
+  rename:     rbdfs_rename,
   link:       0,
   chmod:      0,
   chown:      0,
@@ -823,8 +883,6 @@ int main(int argc, char *argv[])
 	if (fuse_opt_parse(&args, &rbd_options, rbdfs_opts, rbdfs_opt_proc) == -1) {
 		exit(1);
 	}
-
-	pthread_mutex_init(&readdir_lock, NULL);
 
 	return fuse_main(args.argc, args.argv, &rbdfs_oper, NULL);
 }

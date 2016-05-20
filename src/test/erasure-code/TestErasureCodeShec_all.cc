@@ -19,6 +19,7 @@
 // SUMMARY: TestErasureCodeShec combination of k,m,c by 301 patterns
 
 #include <errno.h>
+#include <stdlib.h>
 
 #include "crush/CrushWrapper.h"
 #include "osd/osd_types.h"
@@ -76,7 +77,6 @@ TEST_P(ParameterTest, parameter_all)
   ErasureCodeProfile *profile = new ErasureCodeProfile();
   (*profile)["plugin"] = "shec";
   (*profile)["technique"] = "";
-  (*profile)["directory"] = "/usr/lib64/ceph/erasure-code";
   (*profile)["ruleset-failure-domain"] = "osd";
   (*profile)["k"] = k;
   (*profile)["m"] = m;
@@ -296,6 +296,10 @@ int main(int argc, char **argv)
 
   global_init(NULL, args, CEPH_ENTITY_TYPE_CLIENT, CODE_ENVIRONMENT_UTILITY, 0);
   common_init_finish(g_ceph_context);
+
+  const char* env = getenv("CEPH_LIB");
+  string directory(env ? env : ".libs");
+  g_conf->set_val("erasure_code_dir", directory, false, false);
 
   ::testing::InitGoogleTest(&argc, argv);
 

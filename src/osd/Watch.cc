@@ -71,7 +71,7 @@ class NotifyTimeoutCB : public CancelableContext {
   NotifyRef notif;
   bool canceled; // protected by notif lock
 public:
-  NotifyTimeoutCB(NotifyRef notif) : notif(notif), canceled(false) {}
+  explicit NotifyTimeoutCB(NotifyRef notif) : notif(notif), canceled(false) {}
   void finish(int) {
     notif->osd->watch_lock.Unlock();
     notif->lock.Lock();
@@ -234,7 +234,7 @@ class HandleWatchTimeout : public CancelableContext {
   WatchRef watch;
 public:
   bool canceled; // protected by watch->pg->lock
-  HandleWatchTimeout(WatchRef watch) : watch(watch), canceled(false) {}
+  explicit HandleWatchTimeout(WatchRef watch) : watch(watch), canceled(false) {}
   void cancel() {
     canceled = true;
   }
@@ -258,7 +258,7 @@ class HandleDelayedWatchTimeout : public CancelableContext {
   WatchRef watch;
 public:
   bool canceled;
-  HandleDelayedWatchTimeout(WatchRef watch) : watch(watch), canceled(false) {}
+  explicit HandleDelayedWatchTimeout(WatchRef watch) : watch(watch), canceled(false) {}
   void cancel() {
     canceled = true;
   }
@@ -360,10 +360,10 @@ void Watch::got_ping(utime_t t)
 void Watch::connect(ConnectionRef con, bool _will_ping)
 {
   if (conn == con) {
-    dout(10) << "connecting - already connected" << dendl;
+    dout(10) << __func__ << " con " << con << " - already connected" << dendl;
     return;
   }
-  dout(10) << "connecting" << dendl;
+  dout(10) << __func__ << " con " << con << dendl;
   conn = con;
   will_ping = _will_ping;
   OSD::Session* sessionref(static_cast<OSD::Session*>(con->get_priv()));
@@ -386,7 +386,7 @@ void Watch::connect(ConnectionRef con, bool _will_ping)
 
 void Watch::disconnect()
 {
-  dout(10) << "disconnect" << dendl;
+  dout(10) << "disconnect (con was " << conn << ")" << dendl;
   conn = ConnectionRef();
   if (!will_ping)
     register_cb();
@@ -513,7 +513,7 @@ void WatchConState::removeWatch(WatchRef watch)
   watches.erase(watch);
 }
 
-void WatchConState::reset()
+void WatchConState::reset(Connection *con)
 {
   set<WatchRef> _watches;
   {
@@ -526,7 +526,11 @@ void WatchConState::reset()
     boost::intrusive_ptr<ReplicatedPG> pg((*i)->get_pg());
     pg->lock();
     if (!(*i)->is_discarded()) {
-      (*i)->disconnect();
+      if ((*i)->is_connected(con)) {
+	(*i)->disconnect();
+      } else {
+	generic_derr << __func__ << " not still connected to " << (*i) << dendl;
+      }
     }
     pg->unlock();
   }

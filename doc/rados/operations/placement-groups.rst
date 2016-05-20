@@ -23,6 +23,8 @@ calculated automatically. Here are a few values commonly used:
 - If you have more than 50 OSDs, you need to understand the tradeoffs
   and how to calculate the ``pg_num`` value by yourself
 
+- For calculating ``pg_num`` value by yourself please take help of `pgcalc`_ tool 
+
 As the number of OSDs increases, chosing the right value for pg_num
 becomes more important because it has a significant influence on the
 behavior of the cluster as well as the durability of the data when
@@ -58,11 +60,10 @@ cannot realistically track placement on a per-object basis.
                   |                       |
                   +-----------------------+
 
-Placement groups are invisible to the Ceph user: the CRUSH algorithm
-determines in which placement group the object will be
-placed. Although CRUSH is a deterministic function using the object
-name as a parameter, there is no way to force an object into a given
-placement group.
+The Ceph client will calculate which placement group an object should
+be in. It does this by hashing the object ID and applying an operation
+based on the number of PGs in the defined pool and the ID of the pool.
+See `Mapping PGs to OSDs`_ for details.
 
 The object's contents within a placement group are stored in a set of
 OSDs. For instance, in a replicated pool of size two, each placement
@@ -431,3 +432,5 @@ entirely. To mark the "unfound" objects as "lost", execute the following::
 
 
 .. _Create a Pool: ../pools#createpool
+.. _Mapping PGs to OSDs: ../../../architecture#mapping-pgs-to-osds
+.. _pgcalc: http://ceph.com/pgcalc/

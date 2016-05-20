@@ -26,6 +26,8 @@
 #include "messages/MNop.h"
 
 #define dout_subsys ceph_subsys_xio
+#undef dout_prefix
+#define dout_prefix *_dout << "xio."
 
 Mutex mtx("XioMessenger Package Lock");
 atomic_t initialized;
@@ -145,7 +147,7 @@ static int on_msg(struct xio_session *session,
     }
   }
 
-  return xcon->on_msg_req(session, req, more_in_batch,
+  return xcon->on_msg(session, req, more_in_batch,
 			  cb_user_context);
 }
 
@@ -248,14 +250,125 @@ static string xio_uri_from_entity(const string &type,
   return xio_uri;
 } /* xio_uri_from_entity */
 
+void XioInit::package_init(CephContext *cct) {
+   if (! initialized.read()) {
+
+     mtx.Lock();
+     if (! initialized.read()) {
+
+       xio_init();
+
+       // claim a reference to the first context we see
+       xio_log::context = cct->get();
+
+       int xopt;
+       xopt = xio_log::get_level();
+       xio_set_opt(NULL, XIO_OPTLEVEL_ACCELIO, XIO_OPTNAME_LOG_LEVEL,
+ 		  &xopt, sizeof(xopt));
+       xio_set_opt(NULL, XIO_OPTLEVEL_ACCELIO, XIO_OPTNAME_LOG_FN,
+ 		  (const void*)xio_log::log_dout, sizeof(xio_log_fn));
+
+       xopt = 1;
+       xio_set_opt(NULL, XIO_OPTLEVEL_ACCELIO, XIO_OPTNAME_DISABLE_HUGETBL,
+ 		  &xopt, sizeof(xopt));
+
+       if (g_code_env == CODE_ENVIRONMENT_DAEMON) {
+         xopt = 1;
+         xio_set_opt(NULL, XIO_OPTLEVEL_RDMA, XIO_OPTNAME_ENABLE_FORK_INIT,
+ 		    &xopt, sizeof(xopt));
+       }
+
+       xopt = XIO_MSGR_IOVLEN;
+       xio_set_opt(NULL, XIO_OPTLEVEL_ACCELIO, XIO_OPTNAME_MAX_IN_IOVLEN,
+ 		  &xopt, sizeof(xopt));
+       xio_set_opt(NULL, XIO_OPTLEVEL_ACCELIO, XIO_OPTNAME_MAX_OUT_IOVLEN,
+ 		  &xopt, sizeof(xopt));
+
+       /* enable flow-control */
+       xopt = 1;
+       xio_set_opt(NULL, XIO_OPTLEVEL_ACCELIO, XIO_OPTNAME_ENABLE_FLOW_CONTROL,
+                  &xopt, sizeof(xopt));
+
+       /* and set threshold for buffer callouts */
+       xopt = max(cct->_conf->xio_max_send_inline, 512);
+       xio_set_opt(NULL, XIO_OPTLEVEL_ACCELIO, XIO_OPTNAME_MAX_INLINE_XIO_DATA,
+                  &xopt, sizeof(xopt));
+       xopt = 216;
+       xio_set_opt(NULL, XIO_OPTLEVEL_ACCELIO, XIO_OPTNAME_MAX_INLINE_XIO_HEADER,
+                  &xopt, sizeof(xopt));
+
+       size_t queue_depth = cct->_conf->xio_queue_depth;
+       struct xio_mempool_config mempool_config = {
+         6,
+         {
+           {1024,  0,  queue_depth,  262144},
+           {4096,  0,  queue_depth,  262144},
+           {16384, 0,  queue_depth,  262144},
+           {65536, 0,  128,  65536},
+           {262144, 0,  32,  16384},
+           {1048576, 0, 8,  8192}
+         }
+       };
+       xio_set_opt(NULL,
+                   XIO_OPTLEVEL_ACCELIO, XIO_OPTNAME_CONFIG_MEMPOOL,
+                   &mempool_config, sizeof(mempool_config));
+
+       /* and unregisterd one */
+ #define XMSG_MEMPOOL_QUANTUM 4096
+
+       xio_msgr_noreg_mpool =
+ 	xio_mempool_create(-1 /* nodeid */,
+ 			   XIO_MEMPOOL_FLAG_REGULAR_PAGES_ALLOC);
+
+       (void) xio_mempool_add_slab(xio_msgr_noreg_mpool, 64,
+ 				       cct->_conf->xio_mp_min,
+ 				       cct->_conf->xio_mp_max_64,
+ 				       XMSG_MEMPOOL_QUANTUM, 0);
+       (void) xio_mempool_add_slab(xio_msgr_noreg_mpool, 256,
+ 				       cct->_conf->xio_mp_min,
+ 				       cct->_conf->xio_mp_max_256,
+ 				       XMSG_MEMPOOL_QUANTUM, 0);
+       (void) xio_mempool_add_slab(xio_msgr_noreg_mpool, 1024,
+ 				       cct->_conf->xio_mp_min,
+ 				       cct->_conf->xio_mp_max_1k,
+ 				       XMSG_MEMPOOL_QUANTUM, 0);
+       (void) xio_mempool_add_slab(xio_msgr_noreg_mpool, getpagesize(),
+ 				       cct->_conf->xio_mp_min,
+ 				       cct->_conf->xio_mp_max_page,
+ 				       XMSG_MEMPOOL_QUANTUM, 0);
+
+       /* initialize ops singleton */
+       xio_msgr_ops.on_session_event = on_session_event;
+       xio_msgr_ops.on_new_session = on_new_session;
+       xio_msgr_ops.on_session_established = NULL;
+       xio_msgr_ops.on_msg = on_msg;
+       xio_msgr_ops.on_ow_msg_send_complete = on_ow_msg_send_complete;
+       xio_msgr_ops.on_msg_error = on_msg_error;
+       xio_msgr_ops.on_cancel = on_cancel;
+       xio_msgr_ops.on_cancel_request = on_cancel_request;
+
+       /* mark initialized */
+       initialized.set(1);
+     }
+     mtx.Unlock();
+   }
+ }
+
 /* XioMessenger */
+#undef dout_prefix
+#define dout_prefix _prefix(_dout, this)
+static ostream& _prefix(std::ostream *_dout, XioMessenger *msgr) {
+  return *_dout << "-- " << msgr->get_myaddr() << " ";
+}
+
 XioMessenger::XioMessenger(CephContext *cct, entity_name_t name,
 			   string mname, uint64_t _nonce, uint64_t features,
 			   DispatchStrategy *ds)
   : SimplePolicyMessenger(cct, name, mname, _nonce),
+    XioInit(cct),
     nsessions(0),
     shutdown_called(false),
-    portals(this, cct->_conf->xio_portal_threads),
+    portals(this, get_nportals(), get_nconns_per_portal()),
     dispatch_strategy(ds),
     loop_con(new XioLoopbackConnection(this)),
     special_handling(0),
@@ -272,108 +385,6 @@ XioMessenger::XioMessenger(CephContext *cct, entity_name_t name,
   XioPool::trace_mempool = (cct->_conf->xio_trace_mempool);
   XioPool::trace_msgcnt = (cct->_conf->xio_trace_msgcnt);
 
-  /* package init */
-  if (! initialized.read()) {
-
-    mtx.Lock();
-    if (! initialized.read()) {
-
-      xio_init();
-
-      // claim a reference to the first context we see
-      xio_log::context = cct->get();
-
-      int xopt;
-      xopt = xio_log::get_level();
-      xio_set_opt(NULL, XIO_OPTLEVEL_ACCELIO, XIO_OPTNAME_LOG_LEVEL,
-		  &xopt, sizeof(xopt));
-      xio_set_opt(NULL, XIO_OPTLEVEL_ACCELIO, XIO_OPTNAME_LOG_FN,
-		  (const void*)xio_log::log_dout, sizeof(xio_log_fn));
-
-      xopt = 1;
-      xio_set_opt(NULL, XIO_OPTLEVEL_ACCELIO, XIO_OPTNAME_DISABLE_HUGETBL,
-		  &xopt, sizeof(xopt));
-
-      if (g_code_env == CODE_ENVIRONMENT_DAEMON) {
-        xopt = 1;
-        xio_set_opt(NULL, XIO_OPTLEVEL_RDMA, XIO_OPTNAME_ENABLE_FORK_INIT,
-		    &xopt, sizeof(xopt));
-      }
-
-      xopt = XIO_MSGR_IOVLEN;
-      xio_set_opt(NULL, XIO_OPTLEVEL_ACCELIO, XIO_OPTNAME_MAX_IN_IOVLEN,
-		  &xopt, sizeof(xopt));
-      xio_set_opt(NULL, XIO_OPTLEVEL_ACCELIO, XIO_OPTNAME_MAX_OUT_IOVLEN,
-		  &xopt, sizeof(xopt));
-
-      /* enable flow-control */
-      xopt = 1;
-      xio_set_opt(NULL, XIO_OPTLEVEL_ACCELIO, XIO_OPTNAME_ENABLE_FLOW_CONTROL,
-                 &xopt, sizeof(xopt));
-
-      /* and set threshold for buffer callouts */
-      xopt = 16384;
-      xio_set_opt(NULL, XIO_OPTLEVEL_ACCELIO, XIO_OPTNAME_MAX_INLINE_XIO_DATA,
-                 &xopt, sizeof(xopt));
-      xopt = 216;
-      xio_set_opt(NULL, XIO_OPTLEVEL_ACCELIO, XIO_OPTNAME_MAX_INLINE_XIO_HEADER,
-                 &xopt, sizeof(xopt));
-
-      struct xio_mempool_config mempool_config = {
-        6,
-        {
-          {1024,  0,  4096,  262144},
-          {4096,  0,  4096,  262144},
-          {16384, 0,  4096,  262144},
-          {65536, 0,  1024,  65536},
-          {262144, 0,  512,  16384},
-          {1048576, 0, 128,  8192}
-        }
-      };
-      xio_set_opt(NULL,
-                  XIO_OPTLEVEL_ACCELIO, XIO_OPTNAME_CONFIG_MEMPOOL,
-                  &mempool_config, sizeof(mempool_config));
-
-      /* and unregisterd one */
-#define XMSG_MEMPOOL_QUANTUM 4096
-
-      xio_msgr_noreg_mpool =
-	xio_mempool_create(-1 /* nodeid */,
-			   XIO_MEMPOOL_FLAG_REGULAR_PAGES_ALLOC);
-
-      (void) xio_mempool_add_slab(xio_msgr_noreg_mpool, 64,
-				       cct->_conf->xio_mp_min,
-				       cct->_conf->xio_mp_max_64,
-				       XMSG_MEMPOOL_QUANTUM, 0);
-      (void) xio_mempool_add_slab(xio_msgr_noreg_mpool, 256,
-				       cct->_conf->xio_mp_min,
-				       cct->_conf->xio_mp_max_256,
-				       XMSG_MEMPOOL_QUANTUM, 0);
-      (void) xio_mempool_add_slab(xio_msgr_noreg_mpool, 1024,
-				       cct->_conf->xio_mp_min,
-				       cct->_conf->xio_mp_max_1k,
-				       XMSG_MEMPOOL_QUANTUM, 0);
-      (void) xio_mempool_add_slab(xio_msgr_noreg_mpool, getpagesize(),
-				       cct->_conf->xio_mp_min,
-				       cct->_conf->xio_mp_max_page,
-				       XMSG_MEMPOOL_QUANTUM, 0);
-
-      /* initialize ops singleton */
-      xio_msgr_ops.on_session_event = on_session_event;
-      xio_msgr_ops.on_new_session = on_new_session;
-      xio_msgr_ops.on_session_established = NULL;
-      xio_msgr_ops.on_msg = on_msg;
-      xio_msgr_ops.on_ow_msg_send_complete = on_ow_msg_send_complete;
-      xio_msgr_ops.on_msg_error = on_msg_error;
-      xio_msgr_ops.on_cancel = on_cancel;
-      xio_msgr_ops.on_cancel_request = on_cancel_request;
-
-      /* mark initialized */
-      initialized.set(1);
-    }
-    mtx.Unlock();
-  }
-
   dispatch_strategy->set_messenger(this);
 
   /* update class instance count */
@@ -381,6 +392,12 @@ XioMessenger::XioMessenger(CephContext *cct, entity_name_t name,
 
   local_features = features;
   loop_con->set_features(features);
+
+  ldout(cct,2) << "Create msgr: " << this << " instance: "
+    << nInstances.read() << " type: " << name.type_str()
+    << " subtype: " << mname << " nportals: " << get_nportals()
+    << " nconns_per_portal: " << get_nconns_per_portal() << " features: "
+    << features << dendl;
 
 } /* ctor */
 
@@ -392,6 +409,16 @@ int XioMessenger::pool_hint(uint32_t dsize) {
   return xio_mempool_add_slab(xio_msgr_noreg_mpool, dsize, 0,
 				   cct->_conf->xio_mp_max_hint,
 				   XMSG_MEMPOOL_QUANTUM, 0);
+}
+
+int XioMessenger::get_nconns_per_portal()
+{
+  return max(cct->_conf->xio_max_conns_per_portal, 32);
+}
+
+int XioMessenger::get_nportals()
+{
+  return max(cct->_conf->xio_portal_threads, 1);
 }
 
 void XioMessenger::learned_addr(const entity_addr_t &peer_addr_for_me)
@@ -453,8 +480,8 @@ int XioMessenger::session_event(struct xio_session *session,
     (void) xio_query_connection(conn, &xcona,
 				XIO_CONNECTION_ATTR_LOCAL_ADDR|
 				XIO_CONNECTION_ATTR_PEER_ADDR);
-    (void) entity_addr_from_sockaddr(&peer_addr_for_me, (struct sockaddr *) &xcona.local_addr);
-    (void) entity_addr_from_sockaddr(&paddr, (struct sockaddr *) &xcona.peer_addr);
+    peer_addr_for_me.set_sockaddr((struct sockaddr *)&xcona.local_addr);
+    paddr.set_sockaddr((struct sockaddr *)&xcona.peer_addr);
     //set_myaddr(peer_addr_for_me);
     learned_addr(peer_addr_for_me);
     ldout(cct,2) << "client: connected from " << peer_addr_for_me << " to " << paddr << dendl;
@@ -477,9 +504,8 @@ int XioMessenger::session_event(struct xio_session *session,
 				XIO_CONNECTION_ATTR_PEER_ADDR|
 				XIO_CONNECTION_ATTR_LOCAL_ADDR);
     /* XXX assumes RDMA */
-    (void) entity_addr_from_sockaddr(&s_inst.addr,
-				     (struct sockaddr *) &xcona.peer_addr);
-    (void) entity_addr_from_sockaddr(&peer_addr_for_me, (struct sockaddr *) &xcona.local_addr);
+    s_inst.addr.set_sockaddr((struct sockaddr *)&xcona.peer_addr);
+    peer_addr_for_me.set_sockaddr((struct sockaddr *)&xcona.local_addr);
 
     xcon = new XioConnection(this, XioConnection::PASSIVE, s_inst);
     xcon->session = session;
@@ -507,22 +533,18 @@ int XioMessenger::session_event(struct xio_session *session,
     /* XXXX pre-merge of session startup negotiation ONLY! */
     xcon->cstate.state_up_ready(XioConnection::CState::OP_FLAG_NONE);
 
-    ldout(cct,2) << "new connection session " << session
-		 << " xcon " << xcon << dendl;
-    ldout(cct,2) << "server: connected from " << s_inst.addr << " to " << peer_addr_for_me << dendl;
+    ldout(cct,2) << "New connection session " << session
+      << " xcon " << xcon << " on msgr: " << this << " portal: " << xcon->portal << dendl;
+    ldout(cct,2) << "Server: connected from " << s_inst.addr << " to " << peer_addr_for_me << dendl;
   }
   break;
   case XIO_SESSION_CONNECTION_ERROR_EVENT:
-    ldout(cct,2) << xio_session_event_types[event_data->event]
-      << " user_context " << event_data->conn_user_context << dendl;
-    /* informational (Eyal)*/
-    break;
   case XIO_SESSION_CONNECTION_CLOSED_EVENT: /* orderly discon */
   case XIO_SESSION_CONNECTION_DISCONNECTED_EVENT: /* unexpected discon */
   case XIO_SESSION_CONNECTION_REFUSED_EVENT:
-    ldout(cct,2) << xio_session_event_types[event_data->event]
-      << " user_context " << event_data->conn_user_context << dendl;
     xcon = static_cast<XioConnection*>(event_data->conn_user_context);
+    ldout(cct,2) << xio_session_event_types[event_data->event]
+      << " xcon " << xcon << " session " << session  << dendl;
     if (likely(!!xcon)) {
       Spinlock::Locker lckr(conns_sp);
       XioConnection::EntitySet::iterator conn_iter =
@@ -544,9 +566,9 @@ int XioMessenger::session_event(struct xio_session *session,
     }
     break;
   case XIO_SESSION_CONNECTION_TEARDOWN_EVENT:
-    ldout(cct,2) << xio_session_event_types[event_data->event]
-      << " user_context " << event_data->conn_user_context << dendl;
     xcon = static_cast<XioConnection*>(event_data->conn_user_context);
+    ldout(cct,2) << xio_session_event_types[event_data->event]
+      << " xcon " << xcon << " session " << session << dendl;
     xcon->on_teardown_event();
     break;
   case XIO_SESSION_TEARDOWN_EVENT:
@@ -578,7 +600,7 @@ enum bl_type
 #define MAX_XIO_BUF_SIZE 1044480
 
 static inline int
-xio_count_buffers(buffer::list& bl, int& req_size, int& msg_off, int& req_off)
+xio_count_buffers(const buffer::list& bl, int& req_size, int& msg_off, int& req_off)
 {
 
   const std::list<buffer::ptr>& buffers = bl.buffers();
@@ -623,7 +645,7 @@ xio_count_buffers(buffer::list& bl, int& req_size, int& msg_off, int& req_off)
 }
 
 static inline void
-xio_place_buffers(buffer::list& bl, XioMsg *xmsg, struct xio_msg*& req,
+xio_place_buffers(const buffer::list& bl, XioMsg *xmsg, struct xio_msg*& req,
 		  struct xio_iovec_ex*& msg_iov, int& req_size,
 		  int ex_cnt, int& msg_off, int& req_off, bl_type type)
 {
@@ -696,38 +718,13 @@ xio_place_buffers(buffer::list& bl, XioMsg *xmsg, struct xio_msg*& req,
 
 int XioMessenger::bind(const entity_addr_t& addr)
 {
-  const entity_addr_t *a = &addr;
-  struct entity_addr_t _addr = *a;
-
-  if (a->is_blank_ip()) {
-    a = &_addr;
-    std::vector <std::string> my_sections;
-    cct->_conf->get_my_sections(my_sections);
-    std::string rdma_local_str;
-    if (cct->_conf->get_val_from_conf_file(my_sections, "rdma local",
-				      rdma_local_str, true) == 0) {
-      struct entity_addr_t local_rdma_addr;
-      local_rdma_addr = *a;
-      const char *ep;
-      if (!local_rdma_addr.parse(rdma_local_str.c_str(), &ep)) {
-	ldout(cct,0) << "ERROR:  Cannot parse rdma local: " << rdma_local_str << dendl;
-	return -EINVAL;
-      }
-      if (*ep) {
-	ldout(cct,0) << "WARNING: 'rdma local trailing garbage ignored: '" << ep << dendl;
-      }
-      ldout(cct, 2) << "Found rdma_local address " << rdma_local_str.c_str() << dendl;
-      int p = _addr.get_port();
-      _addr.set_sockaddr(reinterpret_cast<struct sockaddr *>(
-			  &local_rdma_addr.ss_addr()));
-      _addr.set_port(p);
-    } else {
-      ldout(cct,0) << "WARNING: need 'rdma local' config for remote use!" <<dendl;
-    }
+  if (addr.is_blank_ip()) {
+      lderr(cct) << "ERROR: need rdma ip for remote use! " << dendl;
+      cout << "Error: xio bind failed. public/cluster ip not specified" << std::endl;
+      return -1;
   }
 
-  entity_addr_t shift_addr = *a;
-
+  entity_addr_t shift_addr = addr;
   string base_uri = xio_uri_from_entity(cct->_conf->xio_transport_type,
 					shift_addr, false /* want_port */);
   ldout(cct,4) << "XioMessenger " << this << " bind: xio_uri "
@@ -739,6 +736,7 @@ int XioMessenger::bind(const entity_addr_t& addr)
     shift_addr.set_port(port0);
     shift_addr.nonce = nonce;
     set_myaddr(shift_addr);
+    need_addr = false;
     did_bind = true;
   }
   return r;
@@ -933,7 +931,7 @@ assert(req->out.pdata_iov.nents || !nbuffers);
      }
     tail->next = NULL;
   }
-  xcon->portal->enqueue_for_send(xcon, xmsg);
+  xcon->portal->enqueue(xcon, xmsg);
 
   return code;
 } /* send_message(Message *, Connection *) */
@@ -988,15 +986,11 @@ ConnectionRef XioMessenger::get_connection(const entity_inst_t& dest)
       << xio_uri << dendl;
 
     /* XXX client session creation parameters */
-    struct xio_session_params params = {
-      .type		= XIO_SESSION_CLIENT,
-      .initial_sn	= 0,
-      .ses_ops		= &xio_msgr_ops,
-      .user_context	= this,
-      .private_data	= NULL,
-      .private_data_len = 0,
-      .uri		= (char *)xio_uri.c_str()
-    };
+    struct xio_session_params params = {};
+    params.type         = XIO_SESSION_CLIENT;
+    params.ses_ops      = &xio_msgr_ops;
+    params.user_context = this;
+    params.uri          = xio_uri.c_str();
 
     XioConnection *xcon = new XioConnection(this, XioConnection::ACTIVE,
 					    dest);
@@ -1006,21 +1000,22 @@ ConnectionRef XioMessenger::get_connection(const entity_inst_t& dest)
       delete xcon;
       return NULL;
     }
-    nsessions.inc();
 
     /* this should cause callbacks with user context of conn, but
      * we can always set it explicitly */
-    struct xio_connection_params xcp = {
-      .session           = xcon->session,
-      .ctx               = this->portals.get_portal0()->ctx,
-      .conn_idx          = 0, /* XXX auto_count */
-      .enable_tos        = 0,
-      .tos               = 0,
-      .pad               = 0,
-      .out_addr          = NULL,
-      .conn_user_context = xcon
-    };
+    struct xio_connection_params xcp = {};
+    xcp.session           = xcon->session;
+    xcp.ctx               = xcon->portal->ctx;
+    xcp.conn_user_context = xcon;
+
     xcon->conn = xio_connect(&xcp);
+    if (!xcon->conn) {
+      xio_session_destroy(xcon->session);
+      delete xcon;
+      return NULL;
+    }
+
+    nsessions.inc();
     xcon->connected.set(true);
 
     /* sentinel ref */
@@ -1033,8 +1028,9 @@ ConnectionRef XioMessenger::get_connection(const entity_inst_t& dest)
     /* XXXX pre-merge of session startup negotiation ONLY! */
     xcon->cstate.state_up_ready(XioConnection::CState::OP_FLAG_NONE);
 
-    ldout(cct,2) << "new connection xcon: " << xcon <<
-      " up_ready on session " << xcon->session << dendl;
+    ldout(cct,2) << "New connection xcon: " << xcon <<
+      " up_ready on session " << xcon->session <<
+      " on msgr: " << this << " portal: " << xcon->portal << dendl;
 
     return xcon->get(); /* nref +1 */
   }

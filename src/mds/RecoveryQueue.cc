@@ -14,7 +14,7 @@
 
 #include "CInode.h"
 #include "MDCache.h"
-#include "MDS.h"
+#include "MDSRank.h"
 #include "Locker.h"
 #include "osdc/Filer.h"
 
@@ -33,7 +33,7 @@ protected:
     rq->_recovered(in, r, size, mtime);
   }
 
-  MDS *get_mds() {
+  MDSRank *get_mds() {
     return rq->mds;
   }
 
@@ -47,8 +47,8 @@ public:
 };
 
 
-RecoveryQueue::RecoveryQueue(MDS *mds_)
-  : mds(mds_), logger(NULL), filer(mds_->objecter, &mds_->finisher)
+RecoveryQueue::RecoveryQueue(MDSRank *mds_)
+  : mds(mds_), logger(NULL), filer(mds_->objecter, mds_->finisher)
 {}
 
 
@@ -99,8 +99,8 @@ void RecoveryQueue::_start(CInode *in)
 
     C_MDC_Recover *fin = new C_MDC_Recover(this, in);
     filer.probe(in->inode.ino, &in->inode.layout, in->last,
-		      pi->get_max_size(), &fin->size, &fin->mtime, false,
-		      0, fin);
+		pi->get_max_size(), &fin->size, &fin->mtime, false,
+		0, fin);
   } else {
     dout(10) << "skipping " << in->inode.size << " " << *in << dendl;
     in->state_clear(CInode::STATE_RECOVERING);

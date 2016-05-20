@@ -78,6 +78,32 @@ bool CrushWrapper::has_v4_buckets() const
   return false;
 }
 
+bool CrushWrapper::has_v5_rules() const
+{
+  for (unsigned i=0; i<crush->max_rules; i++) {
+    if (is_v5_rule(i)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool CrushWrapper::is_v5_rule(unsigned ruleid) const
+{
+  // check rule for use of SET_CHOOSELEAF_STABLE step
+  if (ruleid >= crush->max_rules)
+    return false;
+  crush_rule *r = crush->rules[ruleid];
+  if (!r)
+    return false;
+  for (unsigned j=0; j<r->len; j++) {
+    if (r->steps[j].op == CRUSH_RULE_SET_CHOOSELEAF_STABLE) {
+      return true;
+    }
+  }
+  return false;
+}
+
 int CrushWrapper::can_rename_item(const string& srcname,
                                   const string& dstname,
                                   ostream *ss) const
@@ -90,7 +116,7 @@ int CrushWrapper::can_rename_item(const string& srcname,
     if (is_valid_crush_name(dstname)) {
       return 0;
     } else {
-      *ss << "srcname = '" << srcname << "' does not match [-_.0-9a-zA-Z]+";
+      *ss << "dstname = '" << dstname << "' does not match [-_.0-9a-zA-Z]+";
       return -EINVAL;
     }
   } else {
@@ -176,7 +202,7 @@ bool CrushWrapper::subtree_contains(int root, int item) const
     return false;  // root is a leaf
 
   const crush_bucket *b = get_bucket(root);
-  if (!b)
+  if (IS_ERR(b))
     return false;
 
   for (unsigned j=0; j<b->size; j++) {
@@ -217,7 +243,12 @@ int CrushWrapper::remove_item(CephContext *cct, int item, bool unlink_only)
 
   if (item < 0 && !unlink_only) {
     crush_bucket *t = get_bucket(item);
-    if (t && t->size) {
+    if (IS_ERR(t)) {
+      ldout(cct, 1) << "remove_item bucket " << item << " does not exist" << dendl;
+      return -ENOENT;
+    }
+
+    if (t->size) {
       ldout(cct, 1) << "remove_item bucket " << item << " has " << t->size
 		    << " items, not empty" << dendl;
       return -ENOTEMPTY;
@@ -326,8 +357,14 @@ int CrushWrapper::remove_item_under(CephContext *cct, int item, int ancestor, bo
 
   if (item < 0 && !unlink_only) {
     crush_bucket *t = get_bucket(item);
-    if (t && t->size) {
-      ldout(cct, 1) << "remove_item_undef bucket " << item << " has " << t->size
+    if (IS_ERR(t)) {
+      ldout(cct, 1) << "remove_item_under bucket " << item
+                    << " does not exist" << dendl;
+      return -ENOENT;
+    }
+
+    if (t->size) {
+      ldout(cct, 1) << "remove_item_under bucket " << item << " has " << t->size
 		    << " items, not empty" << dendl;
       return -ENOTEMPTY;
     }
@@ -434,8 +471,8 @@ bool CrushWrapper::check_item_loc(CephContext *cct, int item, const map<string,s
       return false;
     }
 
+    assert(bucket_exists(id));
     crush_bucket *b = get_bucket(id);
-    assert(b);
 
     // see if item exists in this bucket
     for (unsigned j=0; j<b->size; j++) {
@@ -529,7 +566,7 @@ int CrushWrapper::get_children(int id, list<int> *children)
   }
 
   crush_bucket *b = get_bucket(id);
-  if (!b) {
+  if (IS_ERR(b)) {
     return -ENOENT;
   }
 
@@ -608,8 +645,8 @@ int CrushWrapper::insert_item(CephContext *cct, int item, float weight, string n
       return -EINVAL;
     }
 
+    // we have done sanity check above
     crush_bucket *b = get_bucket(id);
-    assert(b);
 
     if (p->first != b->type) {
       ldout(cct, 1) << "insert_item existing bucket has type "
@@ -771,8 +808,6 @@ int CrushWrapper::get_item_weight_in_loc(int id, const map<string,string> &loc)
     if (!bucket_exists(bid))
       continue;
     crush_bucket *b = get_bucket(bid);
-    if ( b == NULL)
-      continue;
     for (unsigned int i = 0; i < b->size; i++) {
       if (b->items[i] == id) {
 	return crush_get_bucket_item_weight(b, i);
@@ -814,8 +849,6 @@ int CrushWrapper::adjust_item_weight_in_loc(CephContext *cct, int id, int weight
     if (!bucket_exists(bid))
       continue;
     crush_bucket *b = get_bucket(bid);
-    if ( b == NULL)
-      continue;
     for (unsigned int i = 0; i < b->size; i++) {
       if (b->items[i] == id) {
 	int diff = crush_bucket_adjust_item_weight(crush, b, id, weight);
@@ -881,8 +914,6 @@ bool CrushWrapper::check_item_present(int id) const
 
 pair<string,string> CrushWrapper::get_immediate_parent(int id, int *_ret)
 {
-  pair <string, string> loc;
-  int ret = -ENOENT;
 
   for (int bidx = 0; bidx < crush->max_buckets; bidx++) {
     crush_bucket *b = crush->buckets[bidx];
@@ -892,15 +923,16 @@ pair<string,string> CrushWrapper::get_immediate_parent(int id, int *_ret)
       if (b->items[i] == id) {
         string parent_id = name_map[b->id];
         string parent_bucket_type = type_map[b->type];
-        loc = make_pair(parent_bucket_type, parent_id);
-        ret = 0;
+        if (_ret)
+          *_ret = 0;
+        return make_pair(parent_bucket_type, parent_id);
       }
   }
 
   if (_ret)
-    *_ret = ret;
+    *_ret = -ENOENT;
 
-  return loc;
+  return pair<string, string>();
 }
 
 int CrushWrapper::get_immediate_parent_id(int id, int *parent)
@@ -1184,6 +1216,7 @@ void CrushWrapper::encode(bufferlist& bl, bool lean) const
   ::encode(crush->chooseleaf_vary_r, bl);
   ::encode(crush->straw_calc_version, bl);
   ::encode(crush->allowed_bucket_algs, bl);
+  ::encode(crush->chooseleaf_stable, bl);
 }
 
 static void decode_32_or_64_string_map(map<int32_t,string>& m, bufferlist::iterator& blp)
@@ -1272,6 +1305,9 @@ void CrushWrapper::decode(bufferlist::iterator& blp)
     }
     if (!blp.end()) {
       ::decode(crush->allowed_bucket_algs, blp);
+    }
+    if (!blp.end()) {
+      ::decode(crush->chooseleaf_stable, blp);
     }
     finalize();
   }
@@ -1468,7 +1504,7 @@ namespace {
     typedef CrushTreeDumper::Item Item;
     const CrushWrapper *crush;
   public:
-    TreeDumper(const CrushWrapper *crush)
+    explicit TreeDumper(const CrushWrapper *crush)
       : crush(crush) {}
 
     void dump(Formatter *f) {
@@ -1519,11 +1555,14 @@ void CrushWrapper::dump_tunables(Formatter *f) const
   f->dump_int("choose_total_tries", get_choose_total_tries());
   f->dump_int("chooseleaf_descend_once", get_chooseleaf_descend_once());
   f->dump_int("chooseleaf_vary_r", get_chooseleaf_vary_r());
+  f->dump_int("chooseleaf_stable", get_chooseleaf_stable());
   f->dump_int("straw_calc_version", get_straw_calc_version());
   f->dump_int("allowed_bucket_algs", get_allowed_bucket_algs());
 
   // be helpful about it
-  if (has_hammer_tunables())
+  if (has_jewel_tunables())
+    f->dump_string("profile", "jewel");
+  else if (has_hammer_tunables())
     f->dump_string("profile", "hammer");
   else if (has_firefly_tunables())
     f->dump_string("profile", "firefly");
@@ -1536,12 +1575,17 @@ void CrushWrapper::dump_tunables(Formatter *f) const
   f->dump_int("optimal_tunables", (int)has_optimal_tunables());
   f->dump_int("legacy_tunables", (int)has_legacy_tunables());
 
+  // be helpful about minimum version required
+  f->dump_string("minimum_required_version", get_min_required_version());
+
   f->dump_int("require_feature_tunables", (int)has_nondefault_tunables());
   f->dump_int("require_feature_tunables2", (int)has_nondefault_tunables2());
-  f->dump_int("require_feature_tunables3", (int)has_nondefault_tunables3());
   f->dump_int("has_v2_rules", (int)has_v2_rules());
+  f->dump_int("require_feature_tunables3", (int)has_nondefault_tunables3());
   f->dump_int("has_v3_rules", (int)has_v3_rules());
   f->dump_int("has_v4_buckets", (int)has_v4_buckets());
+  f->dump_int("require_feature_tunables5", (int)has_nondefault_tunables5());
+  f->dump_int("has_v5_rules", (int)has_v5_rules());
 }
 
 void CrushWrapper::dump_rules(Formatter *f) const
@@ -1635,7 +1679,7 @@ class CrushTreePlainDumper : public CrushTreeDumper::Dumper<ostream> {
 public:
   typedef CrushTreeDumper::Dumper<ostream> Parent;
 
-  CrushTreePlainDumper(const CrushWrapper *crush)
+  explicit CrushTreePlainDumper(const CrushWrapper *crush)
     : Parent(crush) {}
 
   void dump(ostream *out) {
@@ -1669,7 +1713,7 @@ class CrushTreeFormattingDumper : public CrushTreeDumper::FormattingDumper {
 public:
   typedef CrushTreeDumper::FormattingDumper Parent;
 
-  CrushTreeFormattingDumper(const CrushWrapper *crush)
+  explicit CrushTreeFormattingDumper(const CrushWrapper *crush)
     : Parent(crush) {}
 
   void dump(Formatter *f) {

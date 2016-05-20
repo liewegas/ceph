@@ -50,16 +50,6 @@ static ostream& _prefix(std::ostream *_dout, WorkerPool *p) {
 }
 
 
-class C_processor_accept : public EventCallback {
-  Processor *pro;
-
- public:
-  C_processor_accept(Processor *p): pro(p) {}
-  void do_request(int id) {
-    pro->accept();
-  }
-};
-
 
 /*******************
  * Processor
@@ -95,8 +85,11 @@ int Processor::bind(const entity_addr_t &bind_addr, const set<int>& avoid_ports)
   if (r < 0) {
     ::close(listen_sd);
     listen_sd = -1;
-    return -errno;
+    return r;
   }
+
+  net.set_socket_options(listen_sd);
+
   // use whatever user specified (if anything)
   entity_addr_t listen_addr = bind_addr;
   listen_addr.set_family(family);
@@ -123,9 +116,10 @@ int Processor::bind(const entity_addr_t &bind_addr, const set<int>& avoid_ports)
         continue;
       }
 
-      rc = ::bind(listen_sd, (struct sockaddr *) &listen_addr.ss_addr(), listen_addr.addr_size());
+      rc = ::bind(listen_sd, listen_addr.get_sockaddr(),
+		  listen_addr.get_sockaddr_len());
       if (rc < 0) {
-        lderr(msgr->cct) << __func__ << " unable to bind to " << listen_addr.ss_addr()
+        lderr(msgr->cct) << __func__ << " unable to bind to " << listen_addr
                          << ": " << cpp_strerror(errno) << dendl;
         r = -errno;
         continue;
@@ -137,16 +131,18 @@ int Processor::bind(const entity_addr_t &bind_addr, const set<int>& avoid_ports)
           continue;
 
         listen_addr.set_port(port);
-        rc = ::bind(listen_sd, (struct sockaddr *) &listen_addr.ss_addr(), listen_addr.addr_size());
+        rc = ::bind(listen_sd, listen_addr.get_sockaddr(),
+		    listen_addr.get_sockaddr_len());
         if (rc == 0)
           break;
       }
       if (rc < 0) {
-        lderr(msgr->cct) << __func__ << " unable to bind to " << listen_addr.ss_addr()
+        lderr(msgr->cct) << __func__ << " unable to bind to " << listen_addr
                          << " on any port in range " << msgr->cct->_conf->ms_bind_port_min
                          << "-" << msgr->cct->_conf->ms_bind_port_max << ": "
                          << cpp_strerror(errno) << dendl;
         r = -errno;
+        listen_addr.set_port(0); // Clear port before retry, otherwise we shall fail again.
         continue;
       }
       ldout(msgr->cct, 10) << __func__ << " bound on random port " << listen_addr << dendl;
@@ -164,8 +160,9 @@ int Processor::bind(const entity_addr_t &bind_addr, const set<int>& avoid_ports)
   }
 
   // what port did we get?
-  socklen_t llen = sizeof(listen_addr.ss_addr());
-  rc = getsockname(listen_sd, (sockaddr*)&listen_addr.ss_addr(), &llen);
+  sockaddr_storage ss;
+  socklen_t llen = sizeof(ss);
+  rc = getsockname(listen_sd, (sockaddr*)&ss, &llen);
   if (rc < 0) {
     rc = -errno;
     lderr(msgr->cct) << __func__ << " failed getsockname: " << cpp_strerror(rc) << dendl;
@@ -173,6 +170,7 @@ int Processor::bind(const entity_addr_t &bind_addr, const set<int>& avoid_ports)
     listen_sd = -1;
     return rc;
   }
+  listen_addr.set_sockaddr((sockaddr*)&ss);
 
   ldout(msgr->cct, 10) << __func__ << " bound to " << listen_addr << dendl;
 
@@ -227,10 +225,9 @@ int Processor::start(Worker *w)
   ldout(msgr->cct, 1) << __func__ << " " << dendl;
 
   // start thread
-  if (listen_sd > 0) {
+  if (listen_sd >= 0) {
     worker = w;
-    w->center.create_file_event(listen_sd, EVENT_READABLE,
-                                EventCallbackRef(new C_processor_accept(this)));
+    w->center.create_file_event(listen_sd, EVENT_READABLE, listen_handler);
   }
 
   return 0;
@@ -241,9 +238,9 @@ void Processor::accept()
   ldout(msgr->cct, 10) << __func__ << " listen_sd=" << listen_sd << dendl;
   int errors = 0;
   while (errors < 4) {
-    entity_addr_t addr;
-    socklen_t slen = sizeof(addr.ss_addr());
-    int sd = ::accept(listen_sd, (sockaddr*)&addr.ss_addr(), &slen);
+    sockaddr_storage ss;
+    socklen_t slen = sizeof(ss);
+    int sd = ::accept(listen_sd, (sockaddr*)&ss, &slen);
     if (sd >= 0) {
       errors = 0;
       ldout(msgr->cct, 10) << __func__ << " accepted incoming on sd " << sd << dendl;
@@ -294,7 +291,7 @@ void *Worker::entry()
     }
   }
 
-  center.set_owner(pthread_self());
+  center.set_owner();
   while (!done) {
     ldout(cct, 20) << __func__ << " calling event process" << dendl;
 
@@ -352,7 +349,7 @@ void WorkerPool::start()
 {
   if (!started) {
     for (uint64_t i = 0; i < workers.size(); ++i) {
-      workers[i]->create();
+      workers[i]->create("ms_async_worker");
     }
     started = true;
   }
@@ -391,10 +388,11 @@ AsyncMessenger::AsyncMessenger(CephContext *cct, entity_name_t name,
 {
   ceph_spin_init(&global_seq_lock);
   cct->lookup_or_create_singleton_object<WorkerPool>(pool, WorkerPool::name);
-  Worker *w = pool->get_worker();
-  local_connection = new AsyncConnection(cct, this, &w->center, w->get_perf_counter());
+  local_worker = pool->get_worker();
+  local_connection = new AsyncConnection(cct, this, &local_worker->center, local_worker->get_perf_counter());
   local_features = features;
   init_local_connection();
+  reap_handler = new C_handle_reap(this);
 }
 
 /**
@@ -403,6 +401,7 @@ AsyncMessenger::AsyncMessenger(CephContext *cct, entity_name_t name,
  */
 AsyncMessenger::~AsyncMessenger()
 {
+  delete reap_handler;
   assert(!did_bind); // either we didn't bind or we shut down the Processor
   local_connection->mark_down();
 }
@@ -638,7 +637,7 @@ void AsyncMessenger::set_addr_unknowns(entity_addr_t &addr)
   Mutex::Locker l(lock);
   if (my_inst.addr.is_blank_ip()) {
     int port = my_inst.addr.get_port();
-    my_inst.addr.addr = addr.addr;
+    my_inst.addr.u = addr.u;
     my_inst.addr.set_port(port);
     _init_local_connection();
   }
@@ -738,9 +737,32 @@ void AsyncMessenger::learned_addr(const entity_addr_t &peer_addr_for_me)
     need_addr = false;
     entity_addr_t t = peer_addr_for_me;
     t.set_port(my_inst.addr.get_port());
-    my_inst.addr.addr = t.addr;
+    my_inst.addr.u = t.u;
     ldout(cct, 1) << __func__ << " learned my addr " << my_inst.addr << dendl;
     _init_local_connection();
   }
   lock.Unlock();
+}
+
+int AsyncMessenger::reap_dead()
+{
+  ldout(cct, 1) << __func__ << " start" << dendl;
+  int num = 0;
+
+  Mutex::Locker l1(lock);
+  Mutex::Locker l2(deleted_lock);
+
+  while (!deleted_conns.empty()) {
+    auto it = deleted_conns.begin();
+    AsyncConnectionRef p = *it;
+    ldout(cct, 5) << __func__ << " delete " << p << dendl;
+    auto conns_it = conns.find(p->peer_addr);
+    if (conns_it != conns.end() && conns_it->second == p)
+      conns.erase(conns_it);
+    accepting_conns.erase(p);
+    deleted_conns.erase(it);
+    ++num;
+  }
+
+  return num;
 }

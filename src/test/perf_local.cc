@@ -329,7 +329,7 @@ class CondPingPong {
   class Consumer : public Thread {
     CondPingPong *p;
    public:
-    Consumer(CondPingPong *p): p(p) {}
+    explicit Consumer(CondPingPong *p): p(p) {}
     void* entry() {
       p->consume();
       return 0;
@@ -340,7 +340,7 @@ class CondPingPong {
   CondPingPong(): mutex("CondPingPong::mutex"), prod(0), cons(0), count(10000), consumer(this) {}
 
   double run() {
-    consumer.create();
+    consumer.create("consumer");
     uint64_t start = Cycles::rdtsc();
     produce();
     uint64_t stop = Cycles::rdtsc();
@@ -381,6 +381,7 @@ double cond_ping_pong()
 // probably pick worse values.
 double div32()
 {
+#if defined(__i386__) || defined(__x86_64__)
   int count = 1000000;
   uint64_t start = Cycles::rdtsc();
   // NB: Expect an x86 processor exception is there's overflow.
@@ -397,6 +398,9 @@ double div32()
   }
   uint64_t stop = Cycles::rdtsc();
   return Cycles::to_seconds(stop - start)/count;
+#else
+  return -1;
+#endif
 }
 
 // Measure the cost of a 64-bit divide. Divides don't take a constant
@@ -447,7 +451,7 @@ double eventcenter_poll()
   int count = 1000000;
   EventCenter center(g_ceph_context);
   center.init(1000);
-  center.set_owner(pthread_self());
+  center.set_owner();
   uint64_t start = Cycles::rdtsc();
   for (int i = 0; i < count; i++) {
     center.process_events(0);
@@ -462,7 +466,7 @@ class CenterWorker : public Thread {
 
  public:
   EventCenter center;
-  CenterWorker(CephContext *c): cct(c), done(false), center(c) {
+  explicit CenterWorker(CephContext *c): cct(c), done(false), center(c) {
     center.init(100);
   }
   void stop() {
@@ -470,7 +474,7 @@ class CenterWorker : public Thread {
     center.wakeup();
   }
   void* entry() {
-    center.set_owner(pthread_self());
+    center.set_owner();
     bind_thread_to_cpu(2);
     while (!done)
       center.process_events(1000);
@@ -482,7 +486,7 @@ class CountEvent: public EventCallback {
   atomic_t *count;
 
  public:
-  CountEvent(atomic_t *atomic): count(atomic) {}
+  explicit CountEvent(atomic_t *atomic): count(atomic) {}
   void do_request(int id) {
     count->dec();
   }
@@ -494,7 +498,7 @@ double eventcenter_dispatch()
 
   CenterWorker worker(g_ceph_context);
   atomic_t flag(1);
-  worker.create();
+  worker.create("evt_center_disp");
   EventCallbackRef count_event(new CountEvent(&flag));
 
   worker.center.dispatch_event_external(count_event);
@@ -520,6 +524,9 @@ double memcpy_shared(size_t size)
 {
   int count = 1000000;
   char src[size], dst[size];
+
+  memset(src, 0, sizeof(src));
+
   uint64_t start = Cycles::rdtsc();
   for (int i = 0; i < count; i++) {
     memcpy(dst, src, size);
@@ -659,6 +666,7 @@ double perf_prefetch()
 #endif
 }
 
+#if defined(__x86_64__)
 /**
  * This function is used to seralize machine instructions so that no
  * instructions that appear after it in the current thread can run before any
@@ -674,9 +682,11 @@ static inline void serialize() {
         : "=a" (eax), "=b" (ebx), "=c" (ecx), "=d" (edx)
         : "a" (1U));
 }
+#endif
 
 // Measure the cost of cpuid
 double perf_serialize() {
+#if defined(__x86_64__)
   int count = 1000000;
   uint64_t start = Cycles::rdtsc();
   for (int i = 0; i < count; i++) {
@@ -684,6 +694,9 @@ double perf_serialize() {
   }
   uint64_t stop = Cycles::rdtsc();
   return Cycles::to_seconds(stop - start)/count;
+#else
+  return -1;
+#endif
 }
 
 // Measure the cost of an lfence instruction.
@@ -746,7 +759,7 @@ double spawn_thread()
   ThreadHelper thread;
   uint64_t start = Cycles::rdtsc();
   for (int i = 0; i < count; i++) {
-    thread.create();
+    thread.create("thread_helper");
     thread.join();
   }
   uint64_t stop = Cycles::rdtsc();
@@ -775,7 +788,7 @@ double perf_timer()
     timer.cancel_event(c[i]);
   }
   uint64_t stop = Cycles::rdtsc();
-  delete c;
+  delete[] c;
   return Cycles::to_seconds(stop - start)/count;
 }
 
@@ -1007,6 +1020,7 @@ int main(int argc, char *argv[])
 
   global_init(NULL, args, CEPH_ENTITY_TYPE_CLIENT, CODE_ENVIRONMENT_UTILITY, 0);
   common_init_finish(g_ceph_context);
+  Cycles::init();
 
   bind_thread_to_cpu(3);
   if (argc == 1) {

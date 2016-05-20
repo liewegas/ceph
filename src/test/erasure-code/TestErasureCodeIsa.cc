@@ -16,6 +16,7 @@
  */
 
 #include <errno.h>
+#include <stdlib.h>
 
 #include "crush/CrushWrapper.h"
 #include "include/stringify.h"
@@ -24,6 +25,7 @@
 #include "erasure-code/isa/xor_op.h"
 #include "common/ceph_argparse.h"
 #include "global/global_context.h"
+#include "common/config.h"
 #include "gtest/gtest.h"
 
 ErasureCodeIsaTableCache tcache;
@@ -407,8 +409,8 @@ TEST_F(IsaErasureCodeTest, isa_vandermonde_exhaustive)
   profile["m"] = "4";
   Isa.init(profile, &cerr);
 
-  int k = 12;
-  int m = 4;
+  const int k = 12;
+  const int m = 4;
 
 #define LARGE_ENOUGH 2048
   bufferptr in_ptr(buffer::create_page_aligned(LARGE_ENOUGH));
@@ -960,6 +962,10 @@ int main(int argc, char **argv)
 
   global_init(NULL, args, CEPH_ENTITY_TYPE_CLIENT, CODE_ENVIRONMENT_UTILITY, 0);
   common_init_finish(g_ceph_context);
+
+  const char* env = getenv("CEPH_LIB");
+  string directory(env ? env : ".libs");
+  g_conf->set_val("erasure_code_dir", directory, false, false);
 
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();

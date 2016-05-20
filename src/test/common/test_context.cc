@@ -30,6 +30,8 @@ TEST(CephContext, do_command)
 {
   CephContext *cct = (new CephContext(CEPH_ENTITY_TYPE_CLIENT))->get();
 
+  cct->_conf->cluster = "ceph";
+
   string key("key");
   string value("value");
   cct->_conf->set_val(key.c_str(), value.c_str(), false);
@@ -57,6 +59,8 @@ TEST(CephContext, experimental_features)
 {
   CephContext *cct = (new CephContext(CEPH_ENTITY_TYPE_CLIENT))->get();
 
+  cct->_conf->cluster = "ceph";
+
   ASSERT_FALSE(cct->check_experimental_feature_enabled("foo"));
   ASSERT_FALSE(cct->check_experimental_feature_enabled("bar"));
   ASSERT_FALSE(cct->check_experimental_feature_enabled("baz"));
@@ -80,6 +84,13 @@ TEST(CephContext, experimental_features)
   cct->_conf->apply_changes(&cout);
   ASSERT_TRUE(cct->check_experimental_feature_enabled("foo"));
   ASSERT_FALSE(cct->check_experimental_feature_enabled("bar"));
+  ASSERT_TRUE(cct->check_experimental_feature_enabled("baz"));
+
+  cct->_conf->set_val("enable_experimental_unrecoverable_data_corrupting_features",
+		      "*");
+  cct->_conf->apply_changes(&cout);
+  ASSERT_TRUE(cct->check_experimental_feature_enabled("foo"));
+  ASSERT_TRUE(cct->check_experimental_feature_enabled("bar"));
   ASSERT_TRUE(cct->check_experimental_feature_enabled("baz"));
 
   cct->_log->flush();

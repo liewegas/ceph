@@ -69,7 +69,7 @@ public:
     default_ctor++;
   }
 
-  ConstructorCounter(const T& data_)
+  explicit ConstructorCounter(const T& data_)
     : data(data_)
   {
     one_arg_ctor++;
@@ -188,12 +188,12 @@ TEST(EncodingRoundTrip, MultimapConstructorCounter) {
 
   EXPECT_EQ(my_key_t::get_default_ctor(), 5);
   EXPECT_EQ(my_key_t::get_one_arg_ctor(), 0);
-  EXPECT_EQ(my_key_t::get_copy_ctor(), 10);
+  EXPECT_EQ(my_key_t::get_copy_ctor(), 5);
   EXPECT_EQ(my_key_t::get_assigns(), 0);
 
   EXPECT_EQ(my_val_t::get_default_ctor(), 5);
   EXPECT_EQ(my_val_t::get_one_arg_ctor(), 0);
-  EXPECT_EQ(my_val_t::get_copy_ctor(), 10);
+  EXPECT_EQ(my_val_t::get_copy_ctor(), 5);
   EXPECT_EQ(my_val_t::get_assigns(), 0);
 }
 

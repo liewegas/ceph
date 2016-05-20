@@ -17,7 +17,7 @@
 
 #include "osdc/Objecter.h"
 #include "osdc/Filer.h"
-#include "mds/MDS.h"
+#include "mds/MDSRank.h"
 #include "mds/MDCache.h"
 #include "mds/MDLog.h"
 #include "mds/CDir.h"
@@ -30,31 +30,31 @@
 #define dout_subsys ceph_subsys_mds
 #undef dout_prefix
 #define dout_prefix _prefix(_dout, mds)
-static ostream& _prefix(std::ostream *_dout, MDS *mds) {
+static ostream& _prefix(std::ostream *_dout, MDSRank *mds) {
   return *_dout << "mds." << mds->get_nodeid() << ".cache.strays ";
 }
 
 class StrayManagerIOContext : public virtual MDSIOContextBase {
 protected:
   StrayManager *sm;
-  virtual MDS *get_mds()
+  virtual MDSRank *get_mds()
   {
     return sm->mds;
   }
 public:
-  StrayManagerIOContext(StrayManager *sm_) : sm(sm_) {}
+  explicit StrayManagerIOContext(StrayManager *sm_) : sm(sm_) {}
 };
 
 
 class StrayManagerContext : public virtual MDSInternalContextBase {
 protected:
   StrayManager *sm;
-  virtual MDS *get_mds()
+  virtual MDSRank *get_mds()
   {
     return sm->mds;
   }
 public:
-  StrayManagerContext(StrayManager *sm_) : sm(sm_) {}
+  explicit StrayManagerContext(StrayManager *sm_) : sm(sm_) {}
 };
 
 
@@ -94,7 +94,7 @@ void StrayManager::purge(CDentry *dn, uint32_t op_allowance)
   C_GatherBuilder gather(
     g_ceph_context,
     new C_OnFinisher(new C_IO_PurgeStrayPurged(
-        this, dn, false, op_allowance), &mds->finisher));
+        this, dn, false, op_allowance), mds->finisher));
 
   if (in->is_dir()) {
     object_locator_t oloc(mds->mdsmap->get_metadata_pool());
@@ -107,8 +107,9 @@ void StrayManager::purge(CDentry *dn, uint32_t op_allowance)
          ++p) {
       object_t oid = CInode::get_object_name(in->inode.ino, *p, "");
       dout(10) << __func__ << " remove dirfrag " << oid << dendl;
-      mds->objecter->remove(oid, oloc, nullsnapc, ceph_clock_now(g_ceph_context),
-                            0, NULL, gather.new_sub());
+      mds->objecter->remove(oid, oloc, nullsnapc,
+			    ceph::real_clock::now(g_ceph_context),
+			    0, NULL, gather.new_sub());
     }
     assert(gather.has_subs());
     gather.activate();
@@ -127,32 +128,31 @@ void StrayManager::purge(CDentry *dn, uint32_t op_allowance)
   }
 
   if (in->is_file()) {
-    uint64_t period = (uint64_t)in->inode.layout.fl_object_size *
-		      (uint64_t)in->inode.layout.fl_stripe_count;
     uint64_t to = in->inode.get_max_size();
     to = MAX(in->inode.size, to);
     // when truncating a file, the filer does not delete stripe objects that are
     // truncated to zero. so we need to purge stripe objects up to the max size
     // the file has ever been.
     to = MAX(in->inode.max_size_ever, to);
-    if (to && period) {
-      uint64_t num = (to + period - 1) / period;
+    if (to > 0) {
+      uint64_t num = Striper::get_num_objects(in->inode.layout, to);
       dout(10) << __func__ << " 0~" << to << " objects 0~" << num
 	       << " snapc " << snapc << " on " << *in << dendl;
       filer.purge_range(in->inode.ino, &in->inode.layout, *snapc,
-			      0, num, ceph_clock_now(g_ceph_context), 0,
-			      gather.new_sub());
+			0, num, ceph::real_clock::now(g_ceph_context), 0,
+			gather.new_sub());
     }
   }
 
   inode_t *pi = in->get_projected_inode();
   object_t oid = CInode::get_object_name(pi->ino, frag_t(), "");
   // remove the backtrace object if it was not purged
-  if (!gather.has_subs()) {
-    object_locator_t oloc(pi->layout.fl_pg_pool);
+  if (!gather.has_subs() || !pi->layout.pool_ns.empty()) {
+    object_locator_t oloc(pi->layout.pool_id);
     dout(10) << __func__ << " remove backtrace object " << oid
 	     << " pool " << oloc.pool << " snapc " << snapc << dendl;
-    mds->objecter->remove(oid, oloc, *snapc, ceph_clock_now(g_ceph_context), 0,
+    mds->objecter->remove(oid, oloc, *snapc,
+			  ceph::real_clock::now(g_ceph_context), 0,
 			  NULL, gather.new_sub());
   }
   // remove old backtrace objects
@@ -162,7 +162,8 @@ void StrayManager::purge(CDentry *dn, uint32_t op_allowance)
     object_locator_t oloc(*p);
     dout(10) << __func__ << " remove backtrace object " << oid
 	     << " old pool " << *p << " snapc " << snapc << dendl;
-    mds->objecter->remove(oid, oloc, *snapc, ceph_clock_now(g_ceph_context), 0,
+    mds->objecter->remove(oid, oloc, *snapc,
+			  ceph::real_clock::now(g_ceph_context), 0,
 			  NULL, gather.new_sub());
   }
   assert(gather.has_subs());
@@ -221,7 +222,7 @@ void StrayManager::_purge_stray_purged(
     if (in->get_num_ref() != (int)in->is_dirty() ||
         dn->get_num_ref() != (int)dn->is_dirty() + !!in->get_num_ref() + 1/*PIN_PURGING*/) {
       // Nobody should be taking new references to an inode when it
-      // is being purged (aside from it it were 
+      // is being purged (aside from it were 
 
       derr << "Rogue reference after purge to " << *dn << dendl;
       assert(0 == "rogue reference to purging inode");
@@ -286,7 +287,7 @@ void StrayManager::_purge_stray_logged(CDentry *dn, version_t pdv, LogSegment *l
   dn->dir->pop_and_dirty_projected_fnode(ls);
 
   in->state_clear(CInode::STATE_ORPHAN);
-  dn->state_clear(CDentry::STATE_PURGING);
+  dn->state_clear(CDentry::STATE_PURGING | CDentry::STATE_PURGINGPINNED);
   dn->put(CDentry::PIN_PURGING);
 
   // drop inode
@@ -314,14 +315,7 @@ void StrayManager::enqueue(CDentry *dn, bool trunc)
   /* We consider a stray to be purging as soon as it is enqueued, to avoid
    * enqueing it twice */
   dn->state_set(CDentry::STATE_PURGING);
-  dn->get(CDentry::PIN_PURGING);
   in->state_set(CInode::STATE_PURGING);
-
-  if (dn->item_stray.is_on_list()) {
-    dn->item_stray.remove_myself();
-    num_strays_delayed--;
-    logger->set(l_mdc_num_strays_delayed, num_strays_delayed);
-  }
 
   /* We must clear this as soon as enqueuing it, to prevent the journal
    * expiry code from seeing a dirty parent and trying to write a backtrace */
@@ -347,24 +341,63 @@ void StrayManager::enqueue(CDentry *dn, bool trunc)
   } else {
     dout(10) << __func__ << ": enqueuing this dentry for later purge: "
       << *dn << dendl;
+    if (!dn->state_test(CDentry::STATE_PURGINGPINNED) &&
+        ready_for_purge.size() < g_conf->mds_max_purge_files) {
+      dn->get(CDentry::PIN_PURGING);
+      dn->state_set(CDentry::STATE_PURGINGPINNED);
+    }
     ready_for_purge.push_back(QueuedStray(dn, trunc, ops_required));
   }
 }
 
+class C_StraysFetched : public StrayManagerContext {
+public:
+  C_StraysFetched(StrayManager *sm_) :
+    StrayManagerContext(sm_) { }
+  void finish(int r) {
+    sm->_advance();
+  }
+};
+
 void StrayManager::_advance()
 {
-  std::list<QueuedStray>::iterator i;
-  for (i = ready_for_purge.begin();
-       i != ready_for_purge.end(); ++i) {
-    const QueuedStray &qs = *i;
-    const bool consumed = _consume(qs.dn, qs.trunc, qs.ops_required);
+  std::map<CDir*, std::set<dentry_key_t> > to_fetch;
+
+  for (auto p = ready_for_purge.begin();
+       p != ready_for_purge.end();) {
+    const QueuedStray &qs = *p;
+    auto q = p++;
+    CDentry *dn = qs.dir->lookup_exact_snap(qs.name, CEPH_NOSNAP);
+    if (!dn) {
+      assert(trimmed_strays.count(qs.name) > 0);
+      if (fetching_strays.size() >= g_conf->mds_max_purge_files) {
+	break;
+      }
+      
+      dout(10) << __func__ << ": fetching stray dentry " << qs.name << dendl;
+
+      auto it = fetching_strays.insert(qs);
+      assert(it.second);
+      to_fetch[qs.dir].insert(dentry_key_t(CEPH_NOSNAP, (it.first)->name.c_str()));
+      ready_for_purge.erase(q);
+      continue;
+    }
+
+    const bool consumed = _consume(dn, qs.trunc, qs.ops_required);
     if (!consumed) {
       break;
     }
+    ready_for_purge.erase(q);
   }
 
-  // Erase all the ones that returned true from _consume
-  ready_for_purge.erase(ready_for_purge.begin(), i);
+  MDSGatherBuilder gather(g_ceph_context);
+  for (auto p = to_fetch.begin(); p != to_fetch.end(); ++p)
+    p->first->fetch(gather.new_sub(), p->second);
+
+  if (gather.has_subs()) {
+    gather.set_finisher(new C_StraysFetched(this));
+    gather.activate();
+  }
 }
 
 /*
@@ -414,18 +447,50 @@ bool StrayManager::_consume(CDentry *dn, bool trunc, uint32_t ops_required)
     return false;
   }
 
+  if (!dn->state_test(CDentry::STATE_PURGINGPINNED)) {
+    dn->get(CDentry::PIN_PURGING);
+    dn->state_set(CDentry::STATE_PURGINGPINNED);
+  }
+
   // Resources are available, acquire them and execute the purge
   files_purging += 1;
   dout(10) << __func__ << ": allocating allowance "
     << ops_required << " to " << ops_in_flight << " in flight" << dendl;
   ops_in_flight += ops_required;
   logger->set(l_mdc_num_purge_ops, ops_in_flight);
+
+  _process(dn, trunc, ops_required);
+  return true;
+}
+
+class C_OpenSnapParents : public StrayManagerContext {
+  CDentry *dn;
+  bool trunc;
+  uint32_t ops_required;
+  public:
+    C_OpenSnapParents(StrayManager *sm_, CDentry *dn_, bool t, uint32_t ops) :
+      StrayManagerContext(sm_), dn(dn_), trunc(t), ops_required(ops) { }
+    void finish(int r) {
+      sm->_process(dn, trunc, ops_required);
+    }
+};
+
+void StrayManager::_process(CDentry *dn, bool trunc, uint32_t ops_required)
+{
+  CInode *in = dn->get_linkage()->get_inode();
+  if (in->snaprealm &&
+      !in->snaprealm->have_past_parents_open() &&
+      !in->snaprealm->open_parents(new C_OpenSnapParents(this, dn, trunc,
+							 ops_required))) {
+    // this can happen if the dentry had been trimmed from cache.
+    return;
+  }
+
   if (trunc) {
     truncate(dn, ops_required);
   } else {
     purge(dn, ops_required);
   }
-  return true;
 }
 
 uint32_t StrayManager::_calculate_ops_required(CInode *in, bool trunc)
@@ -441,12 +506,10 @@ uint32_t StrayManager::_calculate_ops_required(CInode *in, bool trunc)
     ops_required = 1 + ls.size();
   } else {
     // File, work out concurrent Filer::purge deletes
-    const uint64_t period = (uint64_t)in->inode.layout.fl_object_size *
-		      (uint64_t)in->inode.layout.fl_stripe_count;
     const uint64_t to = MAX(in->inode.max_size_ever,
             MAX(in->inode.size, in->inode.get_max_size()));
 
-    const uint64_t num = MAX(1, (to + period - 1) / period);
+    const uint64_t num = (to > 0) ? Striper::get_num_objects(in->inode.layout, to) : 1;
     ops_required = MIN(num, g_conf->filer_max_purge_ops);
 
     // Account for removing (or zeroing) backtrace
@@ -546,12 +609,21 @@ bool StrayManager::__eval_stray(CDentry *dn, bool delay)
     return false;
   }
 
+  if (dn->item_stray.is_on_list()) {
+    if (delay)
+      return false;
+
+    dn->item_stray.remove_myself();
+    num_strays_delayed--;
+    logger->set(l_mdc_num_strays_delayed, num_strays_delayed);
+  }
+
   // purge?
   if (in->inode.nlink == 0) {
     // past snaprealm parents imply snapped dentry remote links.
     // only important for directories.  normal file data snaps are handled
     // by the object store.
-    if (in->snaprealm && in->snaprealm->has_past_parents()) {
+    if (in->snaprealm) {
       if (!in->snaprealm->have_past_parents_open() &&
           !in->snaprealm->open_parents(new C_MDC_EvalStray(this, dn))) {
         return false;
@@ -747,15 +819,15 @@ void StrayManager::migrate_stray(CDentry *dn, mds_rank_t to)
   mds->send_message_mds(req, to);
 }
 
-StrayManager::StrayManager(MDS *mds)
+StrayManager::StrayManager(MDSRank *mds)
   : delayed_eval_stray(member_offset(CDentry, item_stray)),
     mds(mds), logger(NULL),
     ops_in_flight(0), files_purging(0),
+    max_purge_ops(0), 
     num_strays(0), num_strays_purging(0), num_strays_delayed(0),
-    filer(mds->objecter, &mds->finisher)
+    filer(mds->objecter, mds->finisher)
 {
   assert(mds != NULL);
-  update_op_limit();
 }
 
 void StrayManager::abort_queue()
@@ -764,7 +836,10 @@ void StrayManager::abort_queue()
        i != ready_for_purge.end(); ++i)
   {
     const QueuedStray &qs = *i;
-    CDentry *dn = qs.dn;
+    CDentry *dn = qs.dir->lookup_exact_snap(qs.name, CEPH_NOSNAP);
+    if (!dn)
+      continue;
+
     dout(10) << __func__ << ": aborting enqueued purge " << *dn << dendl;
 
     CDentry::linkage_t *dnl = dn->get_projected_linkage();
@@ -773,11 +848,15 @@ void StrayManager::abort_queue()
     assert(in);
 
     // Clear flags set in enqueue
-    dn->state_clear(CDentry::STATE_PURGING);
-    dn->put(CDentry::PIN_PURGING);
+    if (dn->state_test(CDentry::STATE_PURGINGPINNED))
+      dn->put(CDentry::PIN_PURGING);
+    dn->state_clear(CDentry::STATE_PURGING | CDentry::STATE_PURGINGPINNED);
     in->state_clear(CInode::STATE_PURGING);
   }
   ready_for_purge.clear();
+
+  trimmed_strays.clear();
+  fetching_strays.clear();
 }
 
 void StrayManager::truncate(CDentry *dn, uint32_t op_allowance)
@@ -794,35 +873,34 @@ void StrayManager::truncate(CDentry *dn, uint32_t op_allowance)
   C_GatherBuilder gather(
     g_ceph_context,
     new C_OnFinisher(new C_IO_PurgeStrayPurged(this, dn, true, 0),
-		     &mds->finisher));
+		     mds->finisher));
 
   SnapRealm *realm = in->find_snaprealm();
   assert(realm);
   dout(10) << " realm " << *realm << dendl;
   const SnapContext *snapc = &realm->get_snap_context();
 
-  uint64_t period = (uint64_t)in->inode.layout.fl_object_size *
-		    (uint64_t)in->inode.layout.fl_stripe_count;
   uint64_t to = in->inode.get_max_size();
   to = MAX(in->inode.size, to);
   // when truncating a file, the filer does not delete stripe objects that are
   // truncated to zero. so we need to purge stripe objects up to the max size
   // the file has ever been.
   to = MAX(in->inode.max_size_ever, to);
-  if (period && to > period) {
-    uint64_t num = (to - 1) / period;
+  if (to > 0) {
+    uint64_t num = Striper::get_num_objects(in->inode.layout, to);
     dout(10) << __func__ << " 0~" << to << " objects 0~" << num
-      << " snapc " << snapc << " on " << *in << dendl;
-    filer.purge_range(in->ino(), &in->inode.layout, *snapc,
-			    1, num, ceph_clock_now(g_ceph_context),
-			    0, gather.new_sub());
-  }
+	     << " snapc " << snapc << " on " << *in << dendl;
 
-  // keep backtrace object
-  if (period && to > 0) {
+    // keep backtrace object
+    if (num > 1) {
+      filer.purge_range(in->ino(), &in->inode.layout, *snapc,
+			1, num - 1, ceph::real_clock::now(g_ceph_context),
+			0, gather.new_sub());
+    }
     filer.zero(in->ino(), &in->inode.layout, *snapc,
-		     0, period, ceph_clock_now(g_ceph_context),
-		     0, true, NULL, gather.new_sub());
+	       0, in->inode.layout.object_size,
+	       ceph::real_clock::now(g_ceph_context),
+	       0, true, NULL, gather.new_sub());
   }
 
   assert(gather.has_subs());
@@ -835,7 +913,7 @@ void StrayManager::_truncate_stray_logged(CDentry *dn, LogSegment *ls)
 
   dout(10) << __func__ << ": " << *dn << " " << *in << dendl;
 
-  dn->state_clear(CDentry::STATE_PURGING);
+  dn->state_clear(CDentry::STATE_PURGING | CDentry::STATE_PURGINGPINNED);
   dn->put(CDentry::PIN_PURGING);
 
   in->pop_and_dirty_projected_inode(ls);
@@ -844,45 +922,31 @@ void StrayManager::_truncate_stray_logged(CDentry *dn, LogSegment *ls)
 }
 
 
-const char** StrayManager::get_tracked_conf_keys() const
-{
-  static const char* KEYS[] = {
-    "mds_max_purge_ops",
-    "mds_max_purge_ops_per_pg",
-    NULL
-  };
-  return KEYS;
-}
-
-void StrayManager::handle_conf_change(const struct md_config_t *conf,
-			  const std::set <std::string> &changed)
-{
-  if (changed.count("mds_max_purge_ops")
-      || changed.count("mds_max_purge_ops_per_pg")) {
-    update_op_limit();
-  }
-}
-
-
 void StrayManager::update_op_limit()
 {
-  const OSDMap *osdmap = mds->objecter->get_osdmap_read();
-
-  // Number of PGs across all data pools
   uint64_t pg_count = 0;
-  const std::set<int64_t> &data_pools = mds->mdsmap->get_data_pools();
-  for (std::set<int64_t>::iterator i = data_pools.begin();
-       i != data_pools.end(); ++i) {
-    pg_count += osdmap->get_pg_num(*i);
-  }
-
-  mds->objecter->put_osdmap_read();
+  mds->objecter->with_osdmap([&](const OSDMap& o) {
+      // Number of PGs across all data pools
+      const std::set<int64_t> &data_pools = mds->mdsmap->get_data_pools();
+      for (const auto dp : data_pools) {
+	if (o.get_pg_pool(dp) == NULL) {
+	  // It is possible that we have an older OSDMap than MDSMap,
+	  // because we don't start watching every OSDMap until after
+	  // MDSRank is initialized
+	  dout(4) << __func__ << " data pool " << dp
+		  << " not found in OSDMap" << dendl;
+	  continue;
+	}
+	pg_count += o.get_pg_num(dp);
+      }
+    });
 
   uint64_t mds_count = mds->mdsmap->get_max_mds();
 
   // Work out a limit based on n_pgs / n_mdss, multiplied by the user's
   // preference for how many ops per PG
-  max_purge_ops = uint64_t(((double)pg_count / (double)mds_count) * g_conf->mds_max_purge_ops_per_pg);
+  max_purge_ops = uint64_t(((double)pg_count / (double)mds_count) *
+			   g_conf->mds_max_purge_ops_per_pg);
 
   // User may also specify a hard limit, apply this if so.
   if (g_conf->mds_max_purge_ops) {
@@ -890,3 +954,33 @@ void StrayManager::update_op_limit()
   }
 }
 
+void StrayManager::notify_stray_loaded(CDentry *dn)
+{
+  dout(10) << __func__ << ": " << *dn << dendl;
+
+  dn->state_set(CDentry::STATE_STRAY);
+  CInode *in = dn->get_linkage()->get_inode();
+  if (in->inode.nlink == 0)
+    in->state_set(CInode::STATE_ORPHAN);
+
+  auto p = trimmed_strays.find(dn->name);
+  if (p != trimmed_strays.end()) {
+    dn->state_set(CDentry::STATE_PURGING);
+    in->state_set(CInode::STATE_PURGING);
+    trimmed_strays.erase(p);
+
+    QueuedStray key(dn, false, 0);
+    auto q = fetching_strays.find(key);
+    if (q != fetching_strays.end()) {
+      ready_for_purge.push_front(*q);
+      fetching_strays.erase(q);
+    }
+  }
+}
+
+void StrayManager::notify_stray_trimmed(CDentry *dn)
+{
+  dout(10) << __func__ << ": " << *dn << dendl;
+
+  trimmed_strays.insert(dn->name);
+}

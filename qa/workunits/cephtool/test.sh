@@ -151,6 +151,13 @@ function ceph_watch_start()
     CEPH_WATCH_FILE=${TMPDIR}/CEPH_WATCH_$$
     ceph $whatch_opt > $CEPH_WATCH_FILE &
     CEPH_WATCH_PID=$!
+
+    # wait until the "ceph" client is connected and receiving
+    # log messages from monitor
+    for i in `seq 3`; do
+        grep -q "cluster" $CEPH_WATCH_FILE && break
+        sleep 1
+    done
 }
 
 function ceph_watch_wait()
@@ -163,8 +170,8 @@ function ceph_watch_wait()
     fi
 
     for i in `seq ${timeout}`; do
-	sleep 1
 	grep -q "$regexp" $CEPH_WATCH_FILE && break
+	sleep 1
     done
 
     kill $CEPH_WATCH_PID
@@ -178,19 +185,22 @@ function ceph_watch_wait()
 
 function test_mon_injectargs()
 {
-  CEPH_ARGS='--mon_debug_dump_location the.dump' ceph tell osd.0 injectargs --no-osd_debug_op_order >& $TMPFILE || return 1
-  check_response "osd_debug_op_order = 'false'"
+  CEPH_ARGS='--mon_debug_dump_location the.dump' ceph tell osd.0 injectargs --no-osd_enable_op_tracker >& $TMPFILE || return 1
+  check_response "osd_enable_op_tracker = 'false'"
   ! grep "the.dump" $TMPFILE || return 1
-  ceph tell osd.0 injectargs '--osd_debug_op_order --osd_failsafe_full_ratio .99' >& $TMPFILE || return 1
-  check_response "osd_debug_op_order = 'true' osd_failsafe_full_ratio = '0.99'"
-  ceph tell osd.0 injectargs --no-osd_debug_op_order >& $TMPFILE || return 1
-  check_response "osd_debug_op_order = 'false'"
-  ceph tell osd.0 injectargs -- --osd_debug_op_order >& $TMPFILE || return 1
-  check_response "osd_debug_op_order = 'true'"
-  ceph tell osd.0 injectargs -- '--osd_debug_op_order --osd_failsafe_full_ratio .98' >& $TMPFILE || return 1
-  check_response "osd_debug_op_order = 'true' osd_failsafe_full_ratio = '0.98'" 
-  ceph tell osd.0 injectargs -- '--osd_failsafe_full_ratio' >& $TMPFILE || return 1
-  check_response "Option --osd_failsafe_full_ratio requires an argument"
+  ceph tell osd.0 injectargs '--osd_enable_op_tracker --osd_op_history_duration 500' >& $TMPFILE || return 1
+  check_response "osd_enable_op_tracker = 'true' osd_op_history_duration = '500'"
+  ceph tell osd.0 injectargs --no-osd_enable_op_tracker >& $TMPFILE || return 1
+  check_response "osd_enable_op_tracker = 'false'"
+  ceph tell osd.0 injectargs -- --osd_enable_op_tracker >& $TMPFILE || return 1
+  check_response "osd_enable_op_tracker = 'true'"
+  ceph tell osd.0 injectargs -- '--osd_enable_op_tracker --osd_op_history_duration 600' >& $TMPFILE || return 1
+  check_response "osd_enable_op_tracker = 'true' osd_op_history_duration = '600'"
+  ceph tell osd.0 injectargs -- '--osd_op_history_duration' >& $TMPFILE || return 1
+  check_response "Option --osd_op_history_duration requires an argument"
+
+  ceph tell osd.0 injectargs -- '--mon-lease 6' >& $TMPFILE || return 1
+  check_response "mon_lease = '6' (unchangeable)"
 }
 
 function test_mon_injectargs_SI()
@@ -221,6 +231,49 @@ function test_mon_injectargs_SI()
   $SUDO ceph daemon mon.a config set mon_pg_warn_min_objects $initial_value
 }
 
+function test_tiering_agent()
+{
+  local slow=slow_eviction
+  local fast=fast_eviction
+  ceph osd pool create $slow  1 1
+  ceph osd pool create $fast  1 1
+  ceph osd tier add $slow $fast
+  ceph osd tier cache-mode $fast writeback
+  ceph osd tier set-overlay $slow $fast
+  ceph osd pool set $fast hit_set_type bloom
+  rados -p $slow put obj1 /etc/group
+  ceph osd pool set $fast target_max_objects  1
+  ceph osd pool set $fast hit_set_count 1
+  ceph osd pool set $fast hit_set_period 5
+  # wait for the object to be evicted from the cache
+  local evicted
+  evicted=false
+  for i in `seq 1 300` ; do
+      if ! rados -p $fast ls | grep obj1 ; then
+          evicted=true
+          break
+      fi
+      sleep 1
+  done
+  $evicted # assert
+  # the object is proxy read and promoted to the cache
+  rados -p $slow get obj1 - >/dev/null
+  # wait for the promoted object to be evicted again
+  evicted=false
+  for i in `seq 1 300` ; do
+      if ! rados -p $fast ls | grep obj1 ; then
+          evicted=true
+          break
+      fi
+      sleep 1
+  done
+  $evicted # assert
+  ceph osd tier remove-overlay $slow
+  ceph osd tier remove $slow $fast
+  ceph osd pool delete $fast $fast --yes-i-really-really-mean-it
+  ceph osd pool delete $slow $slow --yes-i-really-really-mean-it
+}
+
 function test_tiering()
 {
   # tiering
@@ -233,30 +286,35 @@ function test_tiering()
   expect_false ceph osd tier add slow2 cache
   # test some state transitions
   ceph osd tier cache-mode cache writeback
-  ceph osd tier cache-mode cache forward
-  ceph osd tier cache-mode cache readonly
-  ceph osd tier cache-mode cache forward
+  expect_false ceph osd tier cache-mode cache forward
+  ceph osd tier cache-mode cache forward --yes-i-really-mean-it
+  expect_false ceph osd tier cache-mode cache readonly
+  ceph osd tier cache-mode cache readonly --yes-i-really-mean-it
+  expect_false ceph osd tier cache-mode cache forward
+  ceph osd tier cache-mode cache forward --yes-i-really-mean-it
   ceph osd tier cache-mode cache none
   ceph osd tier cache-mode cache writeback
+  ceph osd tier cache-mode cache proxy
+  ceph osd tier cache-mode cache writeback
   expect_false ceph osd tier cache-mode cache none
-  expect_false ceph osd tier cache-mode cache readonly
+  expect_false ceph osd tier cache-mode cache readonly --yes-i-really-mean-it
   # test with dirty objects in the tier pool
   # tier pool currently set to 'writeback'
   rados -p cache put /etc/passwd /etc/passwd
-  ceph tell osd.* flush_pg_stats || true
+  ceph tell osd.\* flush_pg_stats || true
   # 1 dirty object in pool 'cache'
-  ceph osd tier cache-mode cache forward
+  ceph osd tier cache-mode cache proxy
   expect_false ceph osd tier cache-mode cache none
-  expect_false ceph osd tier cache-mode cache readonly
+  expect_false ceph osd tier cache-mode cache readonly --yes-i-really-mean-it
   ceph osd tier cache-mode cache writeback
   # remove object from tier pool
   rados -p cache rm /etc/passwd
   rados -p cache cache-flush-evict-all
-  ceph tell osd.* flush_pg_stats || true
+  ceph tell osd.\* flush_pg_stats || true
   # no dirty objects in pool 'cache'
-  ceph osd tier cache-mode cache forward
+  ceph osd tier cache-mode cache proxy
   ceph osd tier cache-mode cache none
-  ceph osd tier cache-mode cache readonly
+  ceph osd tier cache-mode cache readonly --yes-i-really-mean-it
   TRIES=0
   while ! ceph osd pool set cache pg_num 3 --yes-i-really-mean-it 2>$TMPFILE
   do
@@ -369,15 +427,8 @@ function test_tiering()
   rados -p cache4 put foo1 $tmpfile
   rados -p cache4 put foo2 $tmpfile
   rm -f $tmpfile
-  ceph tell osd.* flush_pg_stats || true
-  ceph df | grep cache4 | grep ' 2 '
-  local max_objects=1
-  ceph osd pool set cache4 target_max_objects $max_objects
-  local max_bytes=1024
-  ceph osd pool set cache4 target_max_bytes $max_bytes
-  ceph health | grep WARN | grep cache4
-  ceph health detail | grep cache4 | grep 'target max' | grep "${max_objects} objects"
-  ceph health detail | grep cache4 | grep 'target max' | grep "${max_bytes}B"
+  ceph tell osd.\* flush_pg_stats || true
+  ceph df | grep datapool | grep ' 2 '
   ceph osd tier remove-overlay datapool
   ceph osd tier remove datapool cache4
   ceph osd pool delete cache4 cache4 --yes-i-really-really-mean-it
@@ -538,6 +589,27 @@ function test_auth_profiles()
   rm -f client.xx.keyring client.xx.keyring.2
 }
 
+function test_mon_caps()
+{
+  ceph-authtool --create-keyring $TMPDIR/ceph.client.bug.keyring
+  chmod +r  $TMPDIR/ceph.client.bug.keyring
+  ceph-authtool  $TMPDIR/ceph.client.bug.keyring -n client.bug --gen-key
+  ceph auth add client.bug -i  $TMPDIR/ceph.client.bug.keyring
+
+  rados lspools --keyring $TMPDIR/ceph.client.bug.keyring -n client.bug >& $TMPFILE || true
+  check_response "Permission denied"
+
+  rm -rf $TMPDIR/ceph.client.bug.keyring
+  ceph auth del client.bug
+  ceph-authtool --create-keyring $TMPDIR/ceph.client.bug.keyring
+  chmod +r  $TMPDIR/ceph.client.bug.keyring
+  ceph-authtool  $TMPDIR/ceph.client.bug.keyring -n client.bug --gen-key
+  ceph-authtool -n client.bug --cap mon '' $TMPDIR/ceph.client.bug.keyring
+  ceph auth add client.bug -i  $TMPDIR/ceph.client.bug.keyring
+  rados lspools --keyring $TMPDIR/ceph.client.bug.keyring -n client.bug >& $TMPFILE || true
+  check_response "Permission denied"  
+}
+
 function test_mon_misc()
 {
   # with and without verbosity
@@ -582,37 +654,41 @@ function test_mon_misc()
 
 function check_mds_active()
 {
-    ceph mds dump | grep active
+    fs_name=$1
+    ceph fs get $fs_name | grep active
 }
 
 function wait_mds_active()
 {
+  fs_name=$1
   for i in $(seq 1 300) ; do
-      if ! check_mds_active ; then
+      if ! check_mds_active $fs_name ; then
           echo "waiting for an active MDS daemon"
           sleep 5
       else
           break
       fi
   done
-  check_mds_active
+  check_mds_active $fs_name
 }
 
 function get_mds_gids()
 {
-    ceph mds dump --format=json | python -c "import json; import sys; print ' '.join([m['gid'].__str__() for m in json.load(sys.stdin)['info'].values()])"
+    fs_name=$1
+    ceph fs get $fs_name --format=json | python -c "import json; import sys; print ' '.join([m['gid'].__str__() for m in json.load(sys.stdin)['mdsmap']['info'].values()])"
 }
 
 function fail_all_mds()
 {
-  ceph mds cluster_down
-  mds_gids=$(get_mds_gids)
+  fs_name=$1
+  ceph fs set $fs_name cluster_down true
+  mds_gids=$(get_mds_gids $fs_name)
   for mds_gid in $mds_gids ; do
       ceph mds fail $mds_gid
   done
-  if check_mds_active ; then
+  if check_mds_active $fs_name ; then
       echo "An active MDS remains, something went wrong"
-      ceph mds dump
+      ceph fs get $fs_name
       exit -1
   fi
 
@@ -621,12 +697,13 @@ function fail_all_mds()
 function remove_all_fs()
 {
   existing_fs=$(ceph fs ls --format=json | python -c "import json; import sys; print ' '.join([fs['name'] for fs in json.load(sys.stdin)])")
-  if [ -n "$existing_fs" ] ; then
-      fail_all_mds
-      echo "Removing existing filesystem '${existing_fs}'..."
-      ceph fs rm $existing_fs --yes-i-really-mean-it
-      echo "Removed '${existing_fs}'."
-  fi
+  for fs_name in $existing_fs ; do
+      echo "Removing fs ${fs_name}..."
+      fail_all_mds $fs_name
+      echo "Removing existing filesystem '${fs_name}'..."
+      ceph fs rm $fs_name --yes-i-really-mean-it
+      echo "Removed '${fs_name}'."
+  done
 }
 
 # So that tests requiring MDS can skip if one is not configured
@@ -638,6 +715,7 @@ function mds_exists()
 
 function test_mds_tell()
 {
+  FS_NAME=cephfs
   if ! mds_exists ; then
       echo "Skipping test, no MDS found"
       return
@@ -646,11 +724,11 @@ function test_mds_tell()
   remove_all_fs
   ceph osd pool create fs_data 10
   ceph osd pool create fs_metadata 10
-  ceph fs new cephfs fs_metadata fs_data
-  wait_mds_active
+  ceph fs new $FS_NAME fs_metadata fs_data
+  wait_mds_active $FS_NAME
 
   # Test injectargs by GID
-  old_mds_gids=$(get_mds_gids)
+  old_mds_gids=$(get_mds_gids $FS_NAME)
   echo Old GIDs: $old_mds_gids
 
   for mds_gid in $old_mds_gids ; do
@@ -662,7 +740,7 @@ function test_mds_tell()
   new_mds_gids=$old_mds_gids
   while [ $new_mds_gids -eq $old_mds_gids ] ; do
       sleep 5
-      new_mds_gids=$(get_mds_gids)
+      new_mds_gids=$(get_mds_gids $FS_NAME)
   done
   echo New GIDs: $new_mds_gids
 
@@ -671,7 +749,7 @@ function test_mds_tell()
   new_mds_gids=$old_mds_gids
   while [ $new_mds_gids -eq $old_mds_gids ] ; do
       sleep 5
-      new_mds_gids=$(get_mds_gids)
+      new_mds_gids=$(get_mds_gids $FS_NAME)
   done
   echo New GIDs: $new_mds_gids
 
@@ -682,12 +760,17 @@ function test_mds_tell()
 
 function test_mon_mds()
 {
+  FS_NAME=cephfs
   remove_all_fs
 
   ceph osd pool create fs_data 10
   ceph osd pool create fs_metadata 10
-  ceph fs new cephfs fs_metadata fs_data
+  ceph fs new $FS_NAME fs_metadata fs_data
 
+  ceph fs set $FS_NAME cluster_down true
+  ceph fs set $FS_NAME cluster_down false
+
+  # Legacy commands, act on default fs
   ceph mds cluster_down
   ceph mds cluster_up
 
@@ -696,30 +779,31 @@ function test_mon_mds()
 
   # We don't want any MDSs to be up, their activity can interfere with
   # the "current_epoch + 1" checking below if they're generating updates
-  fail_all_mds
+  fail_all_mds $FS_NAME
 
   # Check for default crash_replay_interval set automatically in 'fs new'
-  ceph osd dump | grep fs_data > $TMPFILE
-  check_response "crash_replay_interval 45 "
+  #This may vary based on ceph.conf (e.g., it's 5 in teuthology runs)
+  #ceph osd dump | grep fs_data > $TMPFILE
+  #check_response "crash_replay_interval 45 "
 
   ceph mds compat show
   expect_false ceph mds deactivate 2
   ceph mds dump
-  for mds_gid in $(get_mds_gids) ; do
+  ceph fs dump
+  ceph fs get $FS_NAME
+  for mds_gid in $(get_mds_gids $FS_NAME) ; do
       ceph mds metadata $mds_id
   done
   # XXX mds fail, but how do you undo it?
   mdsmapfile=$TMPDIR/mdsmap.$$
   current_epoch=$(ceph mds getmap -o $mdsmapfile --no-log-to-stderr 2>&1 | grep epoch | sed 's/.*epoch //')
   [ -s $mdsmapfile ]
-  ((epoch = current_epoch + 1))
-  ceph mds setmap -i $mdsmapfile $epoch
   rm $mdsmapfile
 
   ceph osd pool create data2 10
   ceph osd pool create data3 10
-  data2_pool=$(ceph osd dump | grep 'pool.*data2' | awk '{print $2;}')
-  data3_pool=$(ceph osd dump | grep 'pool.*data3' | awk '{print $2;}')
+  data2_pool=$(ceph osd dump | grep "pool.*'data2'" | awk '{print $2;}')
+  data3_pool=$(ceph osd dump | grep "pool.*'data3'" | awk '{print $2;}')
   ceph mds add_data_pool $data2_pool
   ceph mds add_data_pool $data3_pool
   ceph mds add_data_pool 100 >& $TMPFILE || true
@@ -730,9 +814,15 @@ function test_mon_mds()
   ceph mds remove_data_pool $data3_pool
   ceph osd pool delete data2 data2 --yes-i-really-really-mean-it
   ceph osd pool delete data3 data3 --yes-i-really-really-mean-it
+  expect_false ceph mds set_max_mds 4
+  ceph mds set allow_multimds true --yes-i-really-mean-it
   ceph mds set_max_mds 4
   ceph mds set_max_mds 3
+  ceph mds set_max_mds 256
+  expect_false ceph mds set_max_mds 257
   ceph mds set max_mds 4
+  ceph mds set max_mds 256
+  expect_false ceph mds set max_mds 257
   expect_false ceph mds set max_mds asdf
   expect_false ceph mds set inline_data true
   ceph mds set inline_data true --yes-i-really-mean-it
@@ -765,28 +855,48 @@ function test_mon_mds()
   data_poolnum=$(ceph osd dump | grep "pool.* 'fs_data" | awk '{print $2;}')
   metadata_poolnum=$(ceph osd dump | grep "pool.* 'fs_metadata" | awk '{print $2;}')
 
-  fail_all_mds
-
-  # Check that 'fs reset' runs
-  ceph fs reset cephfs --yes-i-really-mean-it
-
-  fail_all_mds
-
-  # Clean up to enable subsequent newfs tests
-  ceph fs rm cephfs --yes-i-really-mean-it
+  fail_all_mds $FS_NAME
 
   set +e
-  ceph mds newfs $metadata_poolnum $ec_poolnum --yes-i-really-mean-it 2>$TMPFILE
+  # Check that rmfailed requires confirmation
+  expect_false ceph mds rmfailed 0
+  ceph mds rmfailed 0 --yes-i-really-mean-it
+  set -e
+
+  # Check that `newfs` is no longer permitted
+  expect_false ceph mds newfs $metadata_poolnum $data_poolnum --yes-i-really-mean-it 2>$TMPFILE
+
+  # Check that 'fs reset' runs
+  ceph fs reset $FS_NAME --yes-i-really-mean-it
+
+  # Check that creating a second FS fails by default
+  ceph osd pool create fs_metadata2 10
+  ceph osd pool create fs_data2 10
+  set +e
+  expect_false ceph fs new cephfs2 fs_metadata2 fs_data2
+  set -e
+
+  # Check that setting enable_multiple enables creation of second fs
+  ceph fs flag set enable_multiple true --yes-i-really-mean-it
+  ceph fs new cephfs2 fs_metadata2 fs_data2
+
+  # Clean up multi-fs stuff
+  fail_all_mds cephfs2
+  ceph fs rm cephfs2 --yes-i-really-mean-it
+  ceph osd pool delete fs_metadata2 fs_metadata2 --yes-i-really-really-mean-it
+  ceph osd pool delete fs_data2 fs_data2 --yes-i-really-really-mean-it
+
+  fail_all_mds $FS_NAME
+
+  # Clean up to enable subsequent fs new tests
+  ceph fs rm $FS_NAME --yes-i-really-mean-it
+
+  set +e
+  ceph fs new $FS_NAME fs_metadata mds-ec-pool 2>$TMPFILE
   check_response 'erasure-code' $? 22
-  ceph mds newfs $ec_poolnum $data_poolnum --yes-i-really-mean-it 2>$TMPFILE
+  ceph fs new $FS_NAME mds-ec-pool fs_data 2>$TMPFILE
   check_response 'erasure-code' $? 22
-  ceph mds newfs $ec_poolnum $ec_poolnum --yes-i-really-mean-it 2>$TMPFILE
-  check_response 'erasure-code' $? 22
-  ceph fs new cephfs fs_metadata mds-ec-pool 2>$TMPFILE
-  check_response 'erasure-code' $? 22
-  ceph fs new cephfs mds-ec-pool fs_data 2>$TMPFILE
-  check_response 'erasure-code' $? 22
-  ceph fs new cephfs mds-ec-pool mds-ec-pool 2>$TMPFILE
+  ceph fs new $FS_NAME mds-ec-pool mds-ec-pool 2>$TMPFILE
   check_response 'erasure-code' $? 22
   set -e
 
@@ -797,15 +907,15 @@ function test_mon_mds()
   tier_poolnum=$(ceph osd dump | grep "pool.* 'mds-tier" | awk '{print $2;}')
 
   # Use of a readonly tier should be forbidden
-  ceph osd tier cache-mode mds-tier readonly
+  ceph osd tier cache-mode mds-tier readonly --yes-i-really-mean-it
   set +e
-  ceph fs new cephfs fs_metadata mds-ec-pool 2>$TMPFILE
+  ceph fs new $FS_NAME fs_metadata mds-ec-pool 2>$TMPFILE
   check_response 'has a write tier (mds-tier) that is configured to forward' $? 22
   set -e
 
   # Use of a writeback tier should enable FS creation
   ceph osd tier cache-mode mds-tier writeback
-  ceph fs new cephfs fs_metadata mds-ec-pool
+  ceph fs new $FS_NAME fs_metadata mds-ec-pool
 
   # While a FS exists using the tiered pools, I should not be allowed
   # to remove the tier
@@ -816,22 +926,16 @@ function test_mon_mds()
   check_response 'in use by CephFS' $? 16
   set -e
 
-  fail_all_mds
-  ceph fs rm cephfs --yes-i-really-mean-it
+  fail_all_mds $FS_NAME
+  ceph fs rm $FS_NAME --yes-i-really-mean-it
 
   # ... but we should be forbidden from using the cache pool in the FS directly.
   set +e
-  ceph mds newfs $metadata_poolnum $tier_poolnum --yes-i-really-mean-it 2>$TMPFILE
+  ceph fs new $FS_NAME fs_metadata mds-tier 2>$TMPFILE
   check_response 'in use as a cache tier' $? 22
-  ceph mds newfs $tier_poolnum $data_poolnum --yes-i-really-mean-it 2>$TMPFILE
+  ceph fs new $FS_NAME mds-tier fs_data 2>$TMPFILE
   check_response 'in use as a cache tier' $? 22
-  ceph mds newfs $tier_poolnum $tier_poolnum --yes-i-really-mean-it 2>$TMPFILE
-  check_response 'in use as a cache tier' $? 22
-  ceph fs new cephfs fs_metadata mds-tier 2>$TMPFILE
-  check_response 'in use as a cache tier' $? 22
-  ceph fs new cephfs mds-tier fs_data 2>$TMPFILE
-  check_response 'in use as a cache tier' $? 22
-  ceph fs new cephfs mds-tier mds-tier 2>$TMPFILE
+  ceph fs new $FS_NAME mds-tier mds-tier 2>$TMPFILE
   check_response 'in use as a cache tier' $? 22
   set -e
 
@@ -840,7 +944,7 @@ function test_mon_mds()
   ceph osd tier remove mds-ec-pool mds-tier
 
   # Create a FS using the 'cache' pool now that it's no longer a tier
-  ceph fs new cephfs fs_metadata mds-tier
+  ceph fs new $FS_NAME fs_metadata mds-tier
 
   # We should be forbidden from using this pool as a tier now that
   # it's in use for CephFS
@@ -849,12 +953,12 @@ function test_mon_mds()
   check_response 'in use by CephFS' $? 16
   set -e
 
-  fail_all_mds
-  ceph fs rm cephfs --yes-i-really-mean-it
+  fail_all_mds $FS_NAME
+  ceph fs rm $FS_NAME --yes-i-really-mean-it
   ceph osd pool delete mds-ec-pool mds-ec-pool --yes-i-really-really-mean-it
 
   # Create a FS and check that we can subsequently add a cache tier to it
-  ceph fs new cephfs fs_metadata fs_data
+  ceph fs new $FS_NAME fs_metadata fs_data
 
   # Adding overlay to FS pool should be permitted, RADOS clients handle this.
   ceph osd tier add fs_metadata mds-tier
@@ -863,14 +967,14 @@ function test_mon_mds()
 
   # Removing tier should be permitted because the underlying pool is
   # replicated (#11504 case)
-  ceph osd tier cache-mode mds-tier forward
+  ceph osd tier cache-mode mds-tier proxy
   ceph osd tier remove-overlay fs_metadata
   ceph osd tier remove fs_metadata mds-tier
   ceph osd pool delete mds-tier mds-tier --yes-i-really-really-mean-it
 
   # Clean up FS
-  fail_all_mds
-  ceph fs rm cephfs --yes-i-really-mean-it
+  fail_all_mds $FS_NAME
+  ceph fs rm $FS_NAME --yes-i-really-mean-it
 
   ceph mds stat
   # ceph mds tell mds.a getmap
@@ -905,7 +1009,7 @@ function test_mon_mds_metadata()
 function test_mon_mon()
 {
   # print help message
-  ceph mon
+  ceph --help mon
   # no mon add/remove
   ceph mon dump
   ceph mon getmap -o $TMPDIR/monmap.$$
@@ -939,6 +1043,15 @@ function test_mon_osd()
   expect_false "ceph osd blacklist $bl/-1"
   expect_false "ceph osd blacklist $bl/foo"
 
+  # test with wrong address
+  expect_false "ceph osd blacklist 1234.56.78.90/100"
+
+  # Test `clear`
+  ceph osd blacklist add $bl
+  ceph osd blacklist ls | grep $bl
+  ceph osd blacklist clear
+  expect_false "ceph osd blacklist ls | grep $bl"
+
   #
   # osd crush
   #
@@ -963,11 +1076,12 @@ function test_mon_osd()
   ceph osd deep-scrub 0
   ceph osd repair 0
 
-  for f in noup nodown noin noout noscrub nodeep-scrub nobackfill norebalance norecover notieragent full
+  for f in noup nodown noin noout noscrub nodeep-scrub nobackfill norebalance norecover notieragent full sortbitwise
   do
     ceph osd set $f
     ceph osd unset $f
   done
+  ceph osd set sortbitwise  # new backends cant handle nibblewise
   expect_false ceph osd set bogus
   expect_false ceph osd unset bogus
 
@@ -975,10 +1089,10 @@ function test_mon_osd()
   ceph osd down 0
   ceph osd dump | grep 'osd.0 down'
   ceph osd unset noup
-  for ((i=0; i < 100; i++)); do
+  for ((i=0; i < 1000; i++)); do
     if ! ceph osd dump | grep 'osd.0 up'; then
       echo "waiting for osd.0 to come back up"
-      sleep 10
+      sleep 1
     else
       break
     fi
@@ -988,7 +1102,12 @@ function test_mon_osd()
   ceph osd thrash 0
 
   ceph osd dump | grep 'osd.0 up'
+  # ceph osd find expects the OsdName, so both ints and osd.n should work.
   ceph osd find 1
+  ceph osd find osd.1
+  expect_false osd find osd.xyz
+  expect_false osd find xyz
+  expect_false osd find 0.1
   ceph --format plain osd find 1 # falls back to json-pretty
   ceph osd metadata 1 | grep 'distro'
   ceph --format plain osd metadata 1 | grep 'distro' # falls back to json-pretty
@@ -1036,7 +1155,7 @@ function test_mon_osd()
   [ "$id" = "$id2" ]
   ceph osd rm $id
 
-  ceph osd
+  ceph --help osd
 
   # reset max_osd.
   ceph osd setmaxosd $id
@@ -1123,6 +1242,7 @@ function test_mon_osd_pool()
   ceph osd pool mksnap data datasnap
   rados -p data lssnap | grep datasnap
   ceph osd pool rmsnap data datasnap
+  expect_false ceph osd pool rmsnap pool_fake snapshot
   ceph osd pool delete data data --yes-i-really-really-mean-it
 
   ceph osd pool create data2 10
@@ -1233,7 +1353,6 @@ function test_mon_pg()
   ceph pg repair 0.0
   ceph pg scrub 0.0
 
-  ceph pg send_pg_creates
   ceph pg set_full_ratio 0.90
   ceph pg dump --format=plain | grep '^full_ratio 0.9'
   ceph pg set_full_ratio 0.95
@@ -1262,14 +1381,15 @@ function test_mon_pg()
 
   ceph osd reweight 0 0.9
   expect_false ceph osd reweight 0 -1
-  ceph osd reweight 0 1
+  ceph osd reweight osd.0 1
 
   ceph osd primary-affinity osd.0 .9
   expect_false ceph osd primary-affinity osd.0 -2
+  expect_false ceph osd primary-affinity osd.9999 .5
   ceph osd primary-affinity osd.0 1
 
   ceph osd pg-temp 0.0 0 1 2
-  ceph osd pg-temp 0.0 1 0 2
+  ceph osd pg-temp 0.0 osd.1 osd.0 osd.2
   expect_false ceph osd pg-temp asdf qwer
   expect_false ceph osd pg-temp 0.0 asdf
   expect_false ceph osd pg-temp 0.0
@@ -1308,14 +1428,54 @@ function test_mon_osd_pool_set()
   ceph --format=xml osd pool get $TEST_POOL_GETSET auid | grep $auid
   ceph osd pool set $TEST_POOL_GETSET auid 0
 
-  for flag in hashpspool nodelete nopgchange nosizechange; do
+  for flag in hashpspool nodelete nopgchange nosizechange write_fadvise_dontneed noscrub nodeep-scrub; do
       ceph osd pool set $TEST_POOL_GETSET $flag false
+      ceph osd pool get $TEST_POOL_GETSET $flag | grep "$flag: false"
       ceph osd pool set $TEST_POOL_GETSET $flag true
+      ceph osd pool get $TEST_POOL_GETSET $flag | grep "$flag: true"
       ceph osd pool set $TEST_POOL_GETSET $flag 1
+      ceph osd pool get $TEST_POOL_GETSET $flag | grep "$flag: true"
       ceph osd pool set $TEST_POOL_GETSET $flag 0
+      ceph osd pool get $TEST_POOL_GETSET $flag | grep "$flag: false"
       expect_false ceph osd pool set $TEST_POOL_GETSET $flag asdf
       expect_false ceph osd pool set $TEST_POOL_GETSET $flag 2
   done
+
+  expect_false "ceph osd pool get $TEST_POOL_GETSET scrub_min_interval | grep '.'"
+  ceph osd pool set $TEST_POOL_GETSET scrub_min_interval 123456
+  ceph osd pool get $TEST_POOL_GETSET scrub_min_interval | grep 'scrub_min_interval: 123456'
+  ceph osd pool set $TEST_POOL_GETSET scrub_min_interval 0
+  expect_false "ceph osd pool get $TEST_POOL_GETSET scrub_min_interval | grep '.'"
+
+  expect_false "ceph osd pool get $TEST_POOL_GETSET scrub_max_interval | grep '.'"
+  ceph osd pool set $TEST_POOL_GETSET scrub_max_interval 123456
+  ceph osd pool get $TEST_POOL_GETSET scrub_max_interval | grep 'scrub_max_interval: 123456'
+  ceph osd pool set $TEST_POOL_GETSET scrub_max_interval 0
+  expect_false "ceph osd pool get $TEST_POOL_GETSET scrub_max_interval | grep '.'"
+
+  expect_false "ceph osd pool get $TEST_POOL_GETSET deep_scrub_interval | grep '.'"
+  ceph osd pool set $TEST_POOL_GETSET deep_scrub_interval 123456
+  ceph osd pool get $TEST_POOL_GETSET deep_scrub_interval | grep 'deep_scrub_interval: 123456'
+  ceph osd pool set $TEST_POOL_GETSET deep_scrub_interval 0
+  expect_false "ceph osd pool get $TEST_POOL_GETSET deep_scrub_interval | grep '.'"
+
+  expect_false "ceph osd pool get $TEST_POOL_GETSET recovery_priority | grep '.'"
+  ceph osd pool set $TEST_POOL_GETSET recovery_priority 5 
+  ceph osd pool get $TEST_POOL_GETSET recovery_priority | grep 'recovery_priority: 5'
+  ceph osd pool set $TEST_POOL_GETSET recovery_priority 0
+  expect_false "ceph osd pool get $TEST_POOL_GETSET recovery_priority | grep '.'"
+
+  expect_false "ceph osd pool get $TEST_POOL_GETSET recovery_op_priority | grep '.'"
+  ceph osd pool set $TEST_POOL_GETSET recovery_op_priority 5 
+  ceph osd pool get $TEST_POOL_GETSET recovery_op_priority | grep 'recovery_op_priority: 5'
+  ceph osd pool set $TEST_POOL_GETSET recovery_op_priority 0
+  expect_false "ceph osd pool get $TEST_POOL_GETSET recovery_op_priority | grep '.'"
+
+  expect_false "ceph osd pool get $TEST_POOL_GETSET scrub_priority | grep '.'"
+  ceph osd pool set $TEST_POOL_GETSET scrub_priority 5 
+  ceph osd pool get $TEST_POOL_GETSET scrub_priority | grep 'scrub_priority: 5'
+  ceph osd pool set $TEST_POOL_GETSET scrub_priority 0
+  expect_false "ceph osd pool get $TEST_POOL_GETSET scrub_priority | grep '.'"
 
   ceph osd pool set $TEST_POOL_GETSET nopgchange 1
   expect_false ceph osd pool set $TEST_POOL_GETSET pg_num 10
@@ -1464,13 +1624,22 @@ function test_mon_osd_misc()
   ceph pg set_full_ratio 95 2>$TMPFILE; check_response 'not in range' $? 22
 
   # expect "not in range" for invalid overload percentage
-  ceph osd reweight-by-utilization 80 2>$TMPFILE; check_response 'not in range' $? 22
+  ceph osd reweight-by-utilization 80 2>$TMPFILE; check_response 'higher than 100' $? 22
 
   set -e
 
   ceph osd reweight-by-utilization 110
+  ceph osd reweight-by-utilization 110 .5
+  expect_false ceph osd reweight-by-utilization 110 0
+  expect_false ceph osd reweight-by-utilization 110 -0.1
+  ceph osd test-reweight-by-utilization 110 .5 --no-increasing
+  ceph osd test-reweight-by-utilization 110 .5 4 --no-increasing
+  expect_false ceph osd test-reweight-by-utilization 110 .5 0 --no-increasing
+  expect_false ceph osd test-reweight-by-utilization 110 .5 -10 --no-increasing
   ceph osd reweight-by-pg 110
+  ceph osd test-reweight-by-pg 110 .5
   ceph osd reweight-by-pg 110 rbd
+  ceph osd reweight-by-pg 110 .5 rbd
   expect_false ceph osd reweight-by-pg 110 boguspoolasdfasdfasdf
 }
 
@@ -1535,6 +1704,12 @@ function test_osd_bench()
   ceph tell osd.0 bench 104857600 2097152
 }
 
+function test_osd_negative_filestore_merge_threshold()
+{
+  $SUDO ceph daemon osd.0 config set filestore_merge_threshold -1
+  expect_config_value "osd.0" "filestore_merge_threshold" -1
+}
+
 function test_mon_tell()
 {
   ceph tell mon.a version
@@ -1561,7 +1736,7 @@ function test_mon_crushmap_validation()
   touch "${crushtool_path}"
   chmod +x "${crushtool_path}"
   local crushtool_path_old=`ceph-conf --show-config-value crushtool`
-  ceph tell mon.* injectargs --crushtool "${crushtool_path}"
+  ceph tell mon.\* injectargs --crushtool "${crushtool_path}"
 
   printf "%s\n" \
       "#!/bin/sh
@@ -1584,7 +1759,7 @@ function test_mon_crushmap_validation()
        exit 1" > "${crushtool_path}"
 
   expect_false ceph osd setcrushmap -i $map 2> $TMPFILE
-  check_response "Error EINVAL: Failed to parse crushmap: TEST FAIL"
+  check_response "Error EINVAL: Failed crushmap test: TEST FAIL"
 
   local mon_lease=`ceph-conf --show-config-value mon_lease`
 
@@ -1603,9 +1778,9 @@ function test_mon_crushmap_validation()
        sleep $((mon_lease + 1))" > "${crushtool_path}"
 
   expect_false ceph osd setcrushmap -i $map 2> $TMPFILE
-  check_response "Error EINVAL: Failed to parse crushmap: ${crushtool_path}: timed out (${mon_lease} sec)"
+  check_response "Error EINVAL: Failed crushmap test: ${crushtool_path}: timed out (${mon_lease} sec)"
 
-  ceph tell mon.* injectargs --crushtool "${crushtool_path_old}"
+  ceph tell mon.\* injectargs --crushtool "${crushtool_path_old}"
 
   rm -f "${crushtool_path}"
 }
@@ -1616,7 +1791,7 @@ function test_mon_ping()
   ceph ping mon.b
   expect_false ceph ping mon.foo
 
-  ceph ping mon.*
+  ceph ping mon.\*
 }
 
 function test_mon_deprecated_commands()
@@ -1641,6 +1816,33 @@ function test_mon_deprecated_commands()
   check_response "\(EOPNOTSUPP\|ENOTSUP\): command is obsolete"
 
   ceph tell mon.a injectargs '--no-mon-debug-deprecated-as-obsolete'
+}
+
+function test_mon_cephdf_commands()
+{
+  # ceph df detail:
+  # pool section:
+  # RAW USED The near raw used per pool in raw total
+
+  ceph osd pool create cephdf_for_test 32 32 replicated
+  ceph osd pool set cephdf_for_test size 2
+
+  dd if=/dev/zero of=./cephdf_for_test bs=4k count=1
+  rados put cephdf_for_test cephdf_for_test -p cephdf_for_test
+
+  #wait for update
+  for i in `seq 1 10`; do
+    rados -p cephdf_for_test ls - | grep -q cephdf_for_test && break
+    sleep 1
+  done
+
+  cal_raw_used_size=`ceph df detail | grep cephdf_for_test | awk -F ' ' '{printf "%d\n", 2 * $4}'`
+  raw_used_size=`ceph df detail | grep cephdf_for_test | awk -F ' '  '{print $11}'`
+
+  ceph osd pool delete cephdf_for_test cephdf_for_test --yes-i-really-really-mean-it
+  rm ./cephdf_for_test
+
+  expect_false test $cal_raw_used_size != $raw_used_size
 }
 
 #
@@ -1680,12 +1882,15 @@ MON_TESTS+=" mon_tell"
 MON_TESTS+=" mon_crushmap_validation"
 MON_TESTS+=" mon_ping"
 MON_TESTS+=" mon_deprecated_commands"
-
+MON_TESTS+=" mon_caps"
 OSD_TESTS+=" osd_bench"
+OSD_TESTS+=" osd_negative_filestore_merge_threshold"
+OSD_TESTS+=" tiering_agent"
 
 MDS_TESTS+=" mds_tell"
 MDS_TESTS+=" mon_mds"
 MDS_TESTS+=" mon_mds_metadata"
+MDS_TESTS+=" mon_cephdf_commands"
 
 TESTS+=$MON_TESTS
 TESTS+=$OSD_TESTS

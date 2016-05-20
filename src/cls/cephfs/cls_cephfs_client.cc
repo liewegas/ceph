@@ -54,6 +54,7 @@ int ClsCephFSClient::fetch_inode_accumulate_result(
   librados::IoCtx &ctx,
   const std::string &oid,
   inode_backtrace_t *backtrace,
+  file_layout_t *layout,
   AccumulateResult *result)
 {
   assert(backtrace != NULL);
@@ -76,12 +77,16 @@ int ClsCephFSClient::fetch_inode_accumulate_result(
   int parent_r = 0;
   bufferlist parent_bl;
   op.getxattr("parent", &parent_bl, &parent_r);
+  op.set_op_flags2(librados::OP_FAILOK);
+
+  int layout_r = 0;
+  bufferlist layout_bl;
+  op.getxattr("layout", &layout_bl, &layout_r);
+  op.set_op_flags2(librados::OP_FAILOK);
 
   bufferlist op_bl;
   int r = ctx.operate(oid, &op, &op_bl);
-  if (r < 0 && r != -ENODATA) {
-    // ENODATA acceptable from parent getxattr (just means there happens
-    // not to be a backtrace)
+  if (r < 0) {
     return r;
   }
 
@@ -126,6 +131,31 @@ int ClsCephFSClient::fetch_inode_accumulate_result(
     }
   }
 
+  // Deserialize layout
+  if (layout_bl.length()) {
+    try {
+      bufferlist::iterator q = layout_bl.begin();
+      ::decode(*layout, q);
+    } catch (buffer::error &e) {
+      return -EINVAL;
+    }
+  }
+
   return 0;
+}
+
+void ClsCephFSClient::build_tag_filter(
+          const std::string &scrub_tag,
+          bufferlist *out_bl)
+{
+  assert(out_bl != NULL);
+
+  // Leading part of bl is un-versioned string naming the filter
+  ::encode(std::string("cephfs.inode_tag"), *out_bl);
+
+  // Filter-specific part of the bl: in our case this is a versioned structure
+  InodeTagFilterArgs args;
+  args.scrub_tag = scrub_tag;
+  args.encode(*out_bl);
 }
 

@@ -15,14 +15,14 @@
 #ifndef CEPH_AUTHNONESERVICEHANDLER_H
 #define CEPH_AUTHNONESERVICEHANDLER_H
 
-#include "../AuthServiceHandler.h"
-#include "../Auth.h"
+#include "auth/AuthServiceHandler.h"
+#include "auth/Auth.h"
 
 class CephContext;
 
 class AuthNoneServiceHandler  : public AuthServiceHandler {
 public:
-  AuthNoneServiceHandler(CephContext *cct_) 
+  explicit AuthNoneServiceHandler(CephContext *cct_)
     : AuthServiceHandler(cct_) {}
   ~AuthNoneServiceHandler() {}
   

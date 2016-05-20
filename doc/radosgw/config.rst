@@ -40,30 +40,10 @@ the node containing the gateway instance.
 
 See `User Management`_ for additional details on Ceph authentication.
 
-#. Create a keyring for the gateway::
-
-	sudo ceph-authtool --create-keyring /etc/ceph/ceph.client.radosgw.keyring
-	sudo chmod +r /etc/ceph/ceph.client.radosgw.keyring
-	
-
 #. Generate a Ceph Object Gateway user name and key for each instance. For
    exemplary purposes, we will use the name ``gateway`` after ``client.radosgw``:: 
 
-	sudo ceph-authtool /etc/ceph/ceph.client.radosgw.keyring -n client.radosgw.gateway --gen-key
-
-
-#. Add capabilities to the key. See `Configuration Reference - Pools`_ for details
-   on the effect of write permissions for the monitor and creating pools. ::
-
-	sudo ceph-authtool -n client.radosgw.gateway --cap osd 'allow rwx' --cap mon 'allow rwx' /etc/ceph/ceph.client.radosgw.keyring
-
-
-#. Once you have created a keyring and key to enable the Ceph Object Gateway 
-   with access to the Ceph Storage Cluster, add the key to your 
-   Ceph Storage Cluster. For example::
-
-	sudo ceph -k /etc/ceph/ceph.client.admin.keyring auth add client.radosgw.gateway -i /etc/ceph/ceph.client.radosgw.keyring
-
+        sudo ceph auth get-or-create client.radosgw.gateway osd 'allow rwx' mon 'allow rwx' -o /etc/ceph/ceph.client.radosgw.keyring
 
 #. Distribute the keyring to the node with the gateway instance. ::
 
@@ -72,7 +52,7 @@ See `User Management`_ for additional details on Ceph authentication.
 	sudo mv ceph.client.radosgw.keyring /etc/ceph/ceph.client.radosgw.keyring
 
 
-   .. note:: The 5th step is optional if ``admin node`` is the ``gateway host``.
+   .. note:: The 2nd step is optional if ``admin node`` is the ``gateway host``.
 
 Create Pools
 ============
@@ -170,7 +150,7 @@ following configuration to ``/etc/ceph/ceph.conf`` in your ``admin node``::
    See: `Backport support for UDS in Ubuntu Trusty`_
 
 Here, ``{hostname}`` is the short hostname (output of command ``hostname -s``)
-of the node that is going to provide the gateway service i.e, the
+of the node that is going to provide the gateway service i.e., the
 ``gateway host``.
 
 The ``[client.radosgw.gateway]`` portion of the gateway instance identifies this
@@ -178,7 +158,7 @@ portion of the Ceph configuration file as configuring a Ceph Storage Cluster
 client where the client type is a Ceph Object Gateway (i.e., ``radosgw``).
 
 
-.. note:: The last line in the configuration i.e, ``rgw print continue = false``
+.. note:: The last line in the configuration i.e., ``rgw print continue = false``
    is added to avoid issues with ``PUT`` operations.
 
 Once you finish the setup procedure, if you encounter issues with your
@@ -290,7 +270,7 @@ On RPM-based distros::
 Create a Gateway Configuration file
 ===================================
 
-On the host where you installed the Ceph Object Gateway i.e, ``gateway host``,
+On the host where you installed the Ceph Object Gateway i.e., ``gateway host``,
 create an ``rgw.conf`` file. Place the file in ``/etc/apache2/conf-available``
 directory for ``Debian-based`` distros and in ``/etc/httpd/conf.d`` directory
 for ``RPM-based`` distros. It is a Apache configuration file which is needed
@@ -433,11 +413,10 @@ Execute the following steps on the ``gateway host``:
 
 Create the Swift user::
 
-	sudo radosgw-admin subuser create --uid=testuser --subuser=testuser:swift
+	sudo radosgw-admin subuser create --uid=testuser --subuser=testuser:swift --access=full
 
 The output will be something like the following::
 
-	--access=full
 	{ "user_id": "testuser",
 	"display_name": "First User",
 	"email": "",
@@ -555,7 +534,7 @@ Execute the following steps:
 	)
 
    Replace ``{hostname}`` with the hostname of the host where you have
-   configured the gateway service i.e, the ``gateway host``.
+   configured the gateway service i.e., the ``gateway host``.
 
 #. Run the script::
 

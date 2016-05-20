@@ -153,6 +153,8 @@ int MonMap::build_from_host_list(std::string hostlist, std::string prefix)
 {
   vector<entity_addr_t> addrs;
   if (parse_ip_port_vec(hostlist.c_str(), addrs)) {
+    if (addrs.empty())
+      return -ENOENT;
     for (unsigned i=0; i<addrs.size(); i++) {
       char n[2];
       n[0] = 'a' + i;
@@ -164,8 +166,6 @@ int MonMap::build_from_host_list(std::string hostlist, std::string prefix)
       if (!contains(addrs[i]))
 	add(name, addrs[i]);
     }
-    if (addrs.empty())
-      return -ENOENT;
     return 0;
   }
 
@@ -274,6 +274,8 @@ int MonMap::build_initial(CephContext *cct, ostream& errout)
              << std::endl;
       return r;
     }
+    created = ceph_clock_now(cct);
+    last_changed = created;
     return 0;
   }
 
@@ -333,5 +335,7 @@ int MonMap::build_initial(CephContext *cct, ostream& errout)
     errout << "no monitors specified to connect to." << std::endl;
     return -ENOENT;
   }
+  created = ceph_clock_now(cct);
+  last_changed = created;
   return 0;
 }

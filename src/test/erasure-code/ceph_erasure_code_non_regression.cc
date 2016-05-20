@@ -15,6 +15,7 @@
  */
 
 #include <errno.h>
+#include <stdlib.h>
 #include <boost/scoped_ptr.hpp>
 #include <boost/lexical_cast.hpp>
 #include <boost/program_options/option.hpp>
@@ -99,6 +100,9 @@ int ErasureCodeNonRegression::setup(int argc, char** argv) {
     CINIT_FLAG_NO_DEFAULT_CONFIG_FILE);
   common_init_finish(g_ceph_context);
   g_ceph_context->_conf->apply_changes(NULL);
+  const char* env = getenv("CEPH_LIB");
+  std::string libs_dir(env ? env : ".libs");
+  g_conf->set_val("erasure_code_dir", libs_dir, false, false);
 
   if (vm.count("help")) {
     cout << desc << std::endl;
@@ -135,16 +139,12 @@ int ErasureCodeNonRegression::setup(int argc, char** argv) {
       } else {
 	profile[strs[0]] = strs[1];
       }
-      if (strs[0] != "directory")
-	directory += " " + *i;
+      directory += " " + *i;
     }
   }
 
   if (vm.count("path"))
     directory = vm["path"].as<string>();
-
-  if (profile.count("directory") == 0)
-    profile["directory"] = ".libs";
 
   return 0;
 }
@@ -172,7 +172,9 @@ int ErasureCodeNonRegression::run_create()
   ErasureCodePluginRegistry &instance = ErasureCodePluginRegistry::instance();
   ErasureCodeInterfaceRef erasure_code;
   stringstream messages;
-  int code = instance.factory(plugin, profile, &erasure_code, &messages);
+  int code = instance.factory(plugin,
+			      g_conf->erasure_code_dir,
+			      profile, &erasure_code, &messages);
   if (code) {
     cerr << messages.str() << endl;
     return code;
@@ -242,7 +244,9 @@ int ErasureCodeNonRegression::run_check()
   ErasureCodePluginRegistry &instance = ErasureCodePluginRegistry::instance();
   ErasureCodeInterfaceRef erasure_code;
   stringstream messages;
-  int code = instance.factory(plugin, profile, &erasure_code, &messages);
+  int code = instance.factory(plugin,
+			      g_conf->erasure_code_dir,
+			      profile, &erasure_code, &messages);
   if (code) {
     cerr << messages.str() << endl;
     return code;
@@ -329,7 +333,6 @@ int main(int argc, char** argv) {
  *   libtool --mode=execute valgrind --tool=memcheck --leak-check=full \
  *      ./ceph_erasure_code_non_regression \
  *      --plugin jerasure \
- *      --parameter directory=.libs \
  *      --parameter technique=reed_sol_van \
  *      --parameter k=2 \
  *      --parameter m=2 \

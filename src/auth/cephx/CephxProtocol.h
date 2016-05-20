@@ -83,10 +83,7 @@
 #define CEPHX_REQUEST_TYPE_MASK            0x0F00
 #define CEPHX_CRYPT_ERR			1
 
-#include "../Auth.h"
-#include "../RotatingKeyRing.h"
-#include "common/debug.h"
-
+#include "auth/Auth.h"
 #include <errno.h>
 #include <sstream>
 
@@ -277,7 +274,7 @@ private:
 public:
   uint64_t nonce;
 
-  CephXAuthorizer(CephContext *cct_)
+  explicit CephXAuthorizer(CephContext *cct_)
     : AuthAuthorizer(CEPH_AUTH_CEPHX), cct(cct_), nonce(0) {}
 
   bool build_authorizer();
@@ -320,7 +317,7 @@ struct CephXTicketManager {
   tickets_map_t tickets_map;
   uint64_t global_id;
 
-  CephXTicketManager(CephContext *cct_) : global_id(0), cct(cct_) {}
+  explicit CephXTicketManager(CephContext *cct_) : global_id(0), cct(cct_) {}
 
   bool verify_service_ticket_reply(CryptoKey& principal_secret,
 				 bufferlist::iterator& indata);

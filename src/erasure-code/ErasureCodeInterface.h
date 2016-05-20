@@ -145,7 +145,7 @@
 #include <vector>
 #include <iostream>
 #include "include/memory.h"
-#include "include/buffer.h"
+#include "include/buffer_fwd.h"
 
 class CrushWrapper;
 
@@ -437,7 +437,7 @@ namespace ceph {
 
     /**
      * Decode the first **get_data_chunk_count()** **chunks** and
-     * concatenate them them into **decoded**.
+     * concatenate them into **decoded**.
      *
      * Returns 0 on success.
      *

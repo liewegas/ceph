@@ -8,14 +8,16 @@ AC_PREREQ(2.59)
 # VERSION define is not used by the code.  It gets a version string
 # from 'git describe'; see src/ceph_ver.[ch]
 
-AC_INIT([ceph], [9.0.2], [ceph-devel@vger.kernel.org])
+AC_INIT([ceph], [10.2.0], [ceph-devel@vger.kernel.org])
+
+AX_CXX_COMPILE_STDCXX_11(, mandatory)
 
 # Create release string.  Used with VERSION for RPMs.
 RPM_RELEASE=0
 AC_SUBST(RPM_RELEASE)
 if test -d ".git" ; then
   AC_CHECK_PROG(GIT_CHECK, git, yes)
-  if test x"$GIT_CHECK" = x"yes"; then
+  if test x"$GIT_CHECK" = x"yes" -a x"$freebsd" != x"yes"; then
     RPM_RELEASE=`if expr index $(git describe --always) '-' > /dev/null ; then git describe --always | cut -d- -f2- | tr '-' '.' ; else echo "0"; fi`
   fi
 fi
@@ -44,13 +46,12 @@ AC_CANONICAL_TARGET
 m4_ifdef([AM_PROG_AR], [AM_PROG_AR])
 
 # Automake
-AM_INIT_AUTOMAKE
 AM_PROG_CC_C_O
 AM_PROG_LIBTOOL
 AM_PROG_AS
 
 
-AM_INIT_AUTOMAKE([foreign parallel-tests])
+AM_INIT_AUTOMAKE([foreign parallel-tests tar-ustar])
 # enable make V=0 (if automake >1.11)
 m4_ifdef([AM_SILENT_RULES], [AM_SILENT_RULES([yes])])
 
@@ -62,14 +63,23 @@ darwin*)
 	;;
 linux*)
 	linux="yes"
+	CFLAGS="-D_LARGEFILE64_SOURCE ${CFLAGS}"
 	;;
 freebsd*)
 	freebsd="yes"
+	;;
+solaris*)
+	solaris="yes"
+	;;
+aix*)
+	aix="yes"
 	;;
 esac
 AM_CONDITIONAL(LINUX, test x"$linux" = x"yes")
 AM_CONDITIONAL(FREEBSD, test x"$freebsd" = x"yes")
 AM_CONDITIONAL(DARWIN, test x"$darwin" = x"yes")
+AM_CONDITIONAL(SOLARIS, test x"$solaris" = x"yes")
+AM_CONDITIONAL(AIX, test x"$aix" = x"yes")
 
 # Checks for programs.
 AC_PROG_CXX
@@ -97,9 +107,7 @@ AC_PROG_LIBTOOL
 AC_SUBST(AM_CXXFLAGS)
 AM_CXXFLAGS="${AM_CXXFLAGS}"
 
-
-###### PATCH STARTS HERE ######
-# Find out what to build (default is all of these)
+# Find out what to build (default is most of these)
 
 # rados?
 AC_ARG_WITH([rados],
@@ -118,6 +126,12 @@ AC_ARG_WITH([rbd],
 AM_CONDITIONAL(WITH_RBD, test "$with_rbd" = "yes")
 #AS_IF([test "$with_rbd" = "yes"], [AC_DEFINE([WITH_RADOS, WITH_RBD])])
 
+AC_ARG_WITH([cython],
+	[AS_HELP_STRING([--with-cython], [build python bindings for libraries])],
+	[],
+	[with_cython=yes])
+AM_CONDITIONAL(WITH_CYTHON, test "$with_cython" = "yes")
+
 # cephfs?
 # cephfs requires rados
 AC_ARG_WITH([cephfs],
@@ -130,11 +144,21 @@ AM_CONDITIONAL(WITH_CEPHFS, test "$with_cephfs" = "yes")
 # radosgw?
 # radosgw requires rados
 AC_ARG_WITH([radosgw],
-            [AS_HELP_STRING([--with-radosgw], [build RADOS gateway])],
-            [],
-            [with_radosgw=check])
+	[AS_HELP_STRING([--with-radosgw], [build RADOS gateway])],
+	[],
+	[with_radosgw=check])
 # AM_CONDITIONAL is defined later -- we need to check whether we can enable radosgw if no option is present
 #AS_IF([test "$with_radosgw" = "yes"], [AC_DEFINE([WITH_RADOS, WITH_RADOSGW])])
+
+AC_ARG_WITH([selinux],
+	[AS_HELP_STRING([--with-selinux], [build SELinux policy])],
+	[],
+	[with_selinux=no])
+AM_CONDITIONAL(WITH_SELINUX, test "$with_selinux" = "yes")
+if test "x$with_selinux" = x"yes"; then
+	AC_CHECK_FILE([/usr/share/selinux/devel/policyhelp], [true], [AC_MSG_FAILURE([No SELinux found])])
+	AC_CHECK_FILE([/usr/share/selinux/devel/include/Makefile], [true],  [AC_MSG_FAILURE([No SELinux Makefile found])])
+fi
 
 # radosstriper?
 AC_ARG_WITH([radosstriper],
@@ -184,6 +208,29 @@ AC_ARG_ENABLE([server],
 AM_CONDITIONAL(ENABLE_SERVER, test "$enable_server" = "yes")
 #AS_IF([test "$enable_server" = "yes"], [AC_DEFINE([WITH_MON, WITH_OSD, WITH_MDS, ENABLE_SERVER])])
 
+# subscription manager?
+AC_ARG_ENABLE([subman],
+	[AS_HELP_STRING([--enable-subman], [enable subman])],
+	[],
+	[enable_subman=no])
+AM_CONDITIONAL([ENABLE_SUBMAN], test "x$enable_subman" != "xno")
+
+# cython is required to build python bindings for libraries
+if test x"$with_cython" = xyes; then
+    AC_CHECK_PROG(CYTHON_CHECK, cython, yes)
+    if test x"$CYTHON_CHECK" != xyes; then
+        AC_MSG_FAILURE([cython not found])
+    fi
+    AC_CHECK_PROG(PYTHON_CONFIG_CHECK, python-config, yes)
+    if test x"$PYTHON_CONFIG_CHECK" != xyes; then
+        AC_MSG_FAILURE([python-config not found])
+    fi
+    PYTHON_CFLAGS=`python-config --cflags`
+    AC_SUBST(PYTHON_CFLAGS)
+    PYTHON_LDFLAGS=`python-config --ldflags`
+    AC_SUBST(PYTHON_LDFLAGS)
+fi
+
 # cond-check if snappy-devel is installed, needed by leveldb that is need by server parts of the project
 AS_IF([test "$enable_server" = "yes" -a \( "$with_osd" = "yes" -o "$with_mon" = "yes" \)],
 	[AC_CHECK_LIB([snappy], [snappy_compress], [true], [AC_MSG_FAILURE([libsnappy not found])])])
@@ -191,15 +238,20 @@ AS_IF([test "$enable_server" = "yes" -a \( "$with_osd" = "yes" -o "$with_mon" = 
 # cond-check leveldb, necessary if server, osd or mon enabled
 AS_IF([test "$enable_server" = "yes" -a \( "$with_osd" = "yes" -o "$with_mon" = "yes" \)],
 	[AC_CHECK_LIB([leveldb], [leveldb_open], [true], [AC_MSG_FAILURE([libleveldb not found])], [-lsnappy -lpthread])])
-###### PATCH ENDS HERE ######
-
 
 # Check for yasm
 AC_CHECK_PROG(YASM_CHECK, yasm, yes)
 if test x"$YASM_CHECK" = x"yes"; then
   if yasm -f elf64 src/common/crc32c_intel_fast_asm.S -o /dev/null; then
      echo 'we have a modern and working yasm'
-     if test `arch` = "x86_64" ; then
+     # FreeBSD has uname -p not arch(1), so do not exec arch
+     arch_x86_64=0
+     if test x`uname -p`x = x"amd64"x ; then
+	arch_x86_64=1
+     elif which arch 2>&1 > /dev/null; then 
+	test x`arch`x = x"x86_64"x  && arch_x86_64=1
+     fi
+     if test $arch_x86_64 -eq 1 ; then
         echo 'we are x86_64'
         arch_x32=0
         AC_COMPILE_IFELSE([AC_LANG_PROGRAM([], [[
@@ -211,7 +263,7 @@ if test x"$YASM_CHECK" = x"yes"; then
            AC_DEFINE([HAVE_GOOD_YASM_ELF64], [1], [we have a recent yasm and are x86_64])
            with_good_yasm=yes
   
-           if yasm -f elf64 -i src/ceph/src/ceph/src/erasure-code/isa/isa-l/include/ src/erasure-code/isa/isa-l/erasure_code/gf_vect_dot_prod_avx2.asm.s -o /dev/null 2> /dev/null ; then
+           if yasm -f elf64 -i src/erasure-code/isa/isa-l/include/ src/erasure-code/isa/isa-l/erasure_code/gf_vect_dot_prod_avx2.asm.s -o /dev/null 2> /dev/null ; then
               echo 'yasm can also build the isa-l stuff'
               AC_DEFINE([HAVE_BETTER_YASM_ELF64], [1], [yasm can also build the isa-l])
   	    with_better_yasm=yes
@@ -255,6 +307,8 @@ AC_CHECK_CC_FLAG([-Wtype-limits], [WARN_TYPE_LIMITS])
 AC_CHECK_CC_FLAG([-Wignored-qualifiers], [WARN_IGNORED_QUALIFIERS])
 AC_CHECK_CC_FLAG([-Werror=format-security], [WARN_ERROR_FORMAT_SECURITY])
 
+AC_CHECK_CC_FLAG([-rdynamic], [RDYNAMIC_FLAG])
+
 # Check for compiler VTA support
 AX_CHECK_COMPILE_FLAG([-fvar-tracking-assignments], [HAS_VTA_SUPPORT=1], [HAS_VTA_SUPPORT=0])
 AM_CONDITIONAL(COMPILER_HAS_VTA, [test "$HAS_VTA_SUPPORT" = 1])
@@ -266,23 +320,22 @@ AX_C_PRETTY_FUNC
 # Checks for libraries.
 ACX_PTHREAD
 
-AC_CHECK_LIB([uuid], [uuid_parse], [true], AC_MSG_FAILURE([libuuid not found]))
 
 #Linux only dependencies
 if test x"$linux" = x"yes"; then
-  # libblkid
-  AC_CHECK_HEADER([blkid/blkid.h], [],
-    AC_MSG_ERROR([blkid/blkid.h not found (libblkid-dev, libblkid-devel)]))
-  AC_CHECK_LIB([blkid], [blkid_get_cache], [true],
-    AC_MSG_FAILURE([libblkid not found]))
-  AC_CHECK_LIB([blkid], [blkid_find_dev_with_tag], [true],
-    AC_MSG_FAILURE([libblkid not found]))
-  AC_CHECK_LIB([blkid], [blkid_dev_devname], [true],
-    AC_MSG_FAILURE([libblkid not found]))
 
   # rbd {map,unmap,showmapped} dependencies, Linux only
   if test x"$with_rbd" = x"yes"; then
+
     # libblkid
+    AC_CHECK_HEADER([blkid/blkid.h], [],
+      AC_MSG_ERROR([blkid/blkid.h not found (libblkid-dev, libblkid-devel)]))
+    AC_CHECK_LIB([blkid], [blkid_get_cache], [true],
+      AC_MSG_FAILURE([libblkid not found]))
+    AC_CHECK_LIB([blkid], [blkid_find_dev_with_tag], [true],
+      AC_MSG_FAILURE([libblkid not found]))
+    AC_CHECK_LIB([blkid], [blkid_dev_devname], [true],
+      AC_MSG_FAILURE([libblkid not found]))
     AC_CHECK_LIB([blkid], [blkid_devno_to_wholedisk], [true],
       AC_MSG_FAILURE([libblkid not found]))
 
@@ -332,6 +385,7 @@ if test x"$resolv_libs" != "xok"; then
   fi
 fi
 AC_SUBST([RESOLV_LIBS])
+AC_DEFINE(HAVE_RES_NQUERY, 1, [Define if you have res_nquery])
 
 dnl check for libkeyutils on linux
 KEYUTILS_LIB=""
@@ -411,12 +465,6 @@ AC_ARG_ENABLE(gitversion,
 
 AM_CONDITIONAL(NO_GIT_VERSION, [test "x$enable_gitversion" = "xno"])
 
-AC_ARG_ENABLE([root-make-check],
-            [AS_HELP_STRING([--enable-root-make-check], [enable make check tests that require root privileges])],
-            [],
-            [enable_root_make_check=no])
-AM_CONDITIONAL(ENABLE_ROOT_MAKE_CHECK, test "x$enable_root_make_check" != xno)
-
 # profiler?
 AC_ARG_WITH([profiler],
             [AS_HELP_STRING([--with-profiler], [build extra profiler binaries])],
@@ -429,11 +477,6 @@ AC_ARG_WITH([profiler],
 AS_IF([test "x$with_profiler" = xyes],
 	    [AC_CHECK_LIB([profiler], [ProfilerFlush], [],
 	        	  [AC_MSG_FAILURE([--with-profiler was given but libprofiler (libgoogle-perftools-dev on debian) not found])])
-             AC_LANG_PUSH([C++])
-             AC_CHECK_HEADERS([gperftools/heap-profiler.h \
-               gperftools/malloc_extension.h \
-               gperftools/profiler.h])
-             AC_LANG_POP([C++])
             ],
 	    [])
 AM_CONDITIONAL(WITH_PROFILER, test "$with_profiler" = "yes")
@@ -501,20 +544,12 @@ AC_ARG_WITH([fuse],
             [],
             [with_fuse=yes])
 LIBFUSE=
-AS_IF([test "x$with_fuse" != xno],
-	    [AC_CHECK_LIB([fuse], [fuse_main],
-             [AC_SUBST([LIBFUSE], ["-lfuse"])
-               AC_DEFINE([HAVE_LIBFUSE], [1],
-                         [Define if you have fuse])
-               HAVE_LIBFUSE=1
-	       # look for fuse_getgroups and define FUSE_GETGROUPS if found
-           LIBS_saved="$LIBS"
-           LIBS="$LIBS -lfuse"
-	       AC_CHECK_FUNCS([fuse_getgroups])
-           LIBS="$LIBS_saved"
-              ],
-             [AC_MSG_FAILURE(
-                   [no FUSE found (use --without-fuse to disable)])])])
+AS_IF([test "x$with_fuse" != xno], [
+  PKG_CHECK_MODULES([LIBFUSE], [fuse],
+    [HAVE_LIBFUSE=1
+     AC_DEFINE([HAVE_LIBFUSE], [1], [Define if you have fuse])],
+    [AC_MSG_FAILURE([no FUSE found (use --without-fuse to disable)])])
+])
 AM_CONDITIONAL(WITH_FUSE, [test "$HAVE_LIBFUSE" = "1"])
 
 # jemalloc?
@@ -574,6 +609,15 @@ AS_IF([test "x$with_tcmalloc" != xno],
 	    [AC_MSG_FAILURE(
 		  [no tcmalloc found (use --without-tcmalloc to disable)])])])
 AM_CONDITIONAL(WITH_TCMALLOC, [test "$HAVE_LIBTCMALLOC" = "1"])
+
+AS_IF([test "$with_profiler" = yes -o \
+            "$HAVE_LIBTCMALLOC" = "1" -o \
+            "$HAVE_LIBTCMALLOC_MINIMAL" = "1"],
+      [AC_LANG_PUSH([C++])
+       AC_CHECK_HEADERS([gperftools/heap-profiler.h \
+                         gperftools/malloc_extension.h \
+                         gperftools/profiler.h])
+       AC_LANG_POP([C++])])
 
 # error out if --with-jemalloc and ! --without-tcmalloc
 if test "x$with_jemalloc" = "xyes"; then
@@ -687,8 +731,6 @@ AM_CONDITIONAL(ENABLE_XIO, [test "x$enable_xio" = "xyes"])
 if test "x$enable_xio" = x"yes"; then
    AC_CHECK_HEADER([libxio.h], [], AC_MSG_ERROR([Cannot find header 'libxio.h'.]))
    AC_CHECK_LIB([xio], [xio_init], [], AC_MSG_FAILURE([Accelio libxio not found]))
-   AC_CHECK_LIB([ibverbs], [ibv_query_device], [], AC_MSG_FAILURE([libibverbs not found]))
-   AC_CHECK_LIB([rdmacm], [rdma_connect], [], AC_MSG_FAILURE([librdmacm not found]))
 
    # Also require boost-regex, used in address_helper
    AC_CHECK_LIB(boost_regex, main, [],
@@ -696,18 +738,29 @@ if test "x$enable_xio" = x"yes"; then
 
    AC_DEFINE([HAVE_XIO], [1], [Accelio conditional compilation])
 
-   XIO_LIBS="-lxio -libverbs -lrdmacm"
+   XIO_LIBS="-lxio"
    AC_SUBST(XIO_LIBS)
 fi
 
 #
-# FreeBSD has it in base.
+# SPDK
 #
-if test x"$freebsd" != x"yes" -a x"$with_radosgw" = x"yes"; then
-PKG_CHECK_MODULES([LIBEDIT], [libedit >= 2.11],
-                [], AC_MSG_FAILURE([No usable version of libedit found.]))
-else
-	LIBEDIT_LIBS="-ledit"
+AC_ARG_WITH(spdk,
+    [AC_HELP_STRING([--with-spdk], [build Ceph SPDK Support])], [], [with_spdk=no])
+
+AM_CONDITIONAL(WITH_SPDK, [test "x$with_spdk" != "xno"])
+
+if test "x$with_spdk" != x"no"; then
+   PKG_CHECK_MODULES([LIBPCIACCESS], [pciaccess])
+   AC_CHECK_HEADER([dpdk/rte_config.h], [],
+     AC_MSG_ERROR([dpdk/rte_config.h not found (libdpdk-dev, libdpdk-devel)]))
+   AC_CHECK_LIB([rte_eal], [rte_eal_init], [true],
+     AC_MSG_FAILURE([DPDK rte_eal_init not found]),
+                [-lrte_mempool -lrte_ring -lpthread -ldl])
+   AC_SUBST([LIBDPDK_CFLAGS], [-I/usr/include/dpdk])
+   AC_SUBST([LIBDPDK_LIBS], ['-lrte_eal -lrte_mempool -lrte_ring -lpthread'])
+   AC_SUBST([LIBPCIACCESS_LIBS])
+   AC_DEFINE([HAVE_SPDK], [1], [SPDK conditional compilation])
 fi
 
 #libatomic-ops? You want it!
@@ -795,41 +848,20 @@ AM_CONDITIONAL(WITH_DLIBROCKSDB, [ test "$with_librocksdb" = "yes" ])
 AC_ARG_WITH([librocksdb-static],
             [AS_HELP_STRING([--with-librocksdb-static], [build rocksdb support])],
             [],
-            [with_librocksdb_static=no])
+            [with_librocksdb_static=check])
 AS_IF([test "x$with_librocksdb_static" = "xcheck" -a "x$HAVE_CXX11" = "x1" ],
             [with_librocksdb_static="yes"])
-AS_IF([test "x$with_librocksdb_static" = "xyes"],
-            [AC_CONFIG_SUBDIRS([src/rocksdb])])
 AS_IF([test "x$with_librocksdb_static" = "xyes"],
             [AC_DEFINE([HAVE_LIBROCKSDB], [1], [Defined if you have librocksdb enabled])])
 AM_CONDITIONAL(WITH_SLIBROCKSDB, [ test "x$with_librocksdb_static" = "xyes" ])
 AM_CONDITIONAL(WITH_LIBROCKSDB, [ test "x$with_librocksdb_static" = "xyes" -o "x$with_librocksdb" = "xyes" ])
 
-# error out if --with-jemalloc and --with-librocksdb_static as rocksdb uses tcmalloc
-if test "x$with_jemalloc" = "xyes"; then
-	if test "x$with_librocksdb_static" != "xno"; then
-		AC_MSG_FAILURE([--with-jemalloc called with --with-librocksdb_static, turn off
-			        --with-librocksdb-static or --with-jemalloc])
-	fi
-fi
-
-# use system libs3?
-AC_ARG_WITH([system-libs3],
-	[AS_HELP_STRING([--with-system-libs3], [use system libs3])],
-	,
-	[with_system_libs3=no])
-AS_IF([test "x$with_system_libs3" = xyes],
-            [AC_CHECK_LIB([s3], [S3_initialize], [true], [AC_MSG_FAILURE([libs3 not found])], [-lpthread])])
-AS_IF([test "x$with_system_libs3" = xcheck],
-            [AC_SEARCH_LIBS([S3_initialize], [s3], [with_system_libs3=yes], [true], [-lpthread])])
-AM_CONDITIONAL(WITH_SYSTEM_LIBS3, [ test "$with_system_libs3" = "yes" ])
-
-# rest-bench?
-AC_ARG_WITH([rest-bench],
-	    [AS_HELP_STRING([--with-rest-bench], [enables rest-bench])],
-	    [],
-	    [with_rest_bench=no])
-AM_CONDITIONAL(WITH_REST_BENCH, [ test "$with_rest_bench" = "yes" ])
+# rocksdb detects bzlib and lz4 in its Makefile, which forces us to do the same.
+AS_IF([test "x$with_librocksdb_static" = "xyes"], [
+  AC_CHECK_HEADER([bzlib.h], [have_bzlib=yes])
+  AC_CHECK_HEADER([lz4.h], [have_lz4=yes])])
+AM_CONDITIONAL(HAVE_BZLIB, [test "x$have_bzlib" = "xyes"])
+AM_CONDITIONAL(HAVE_LZ4, [test "x$have_lz4" = "xyes"])
 
 # needs libcurl and libxml2
 if test "x$with_rest_bench" = xyes && test "x$with_system_libs3" = xno; then
@@ -904,8 +936,13 @@ AC_CHECK_HEADER([boost/random/discrete_distribution.hpp],
 	[AC_DEFINE([HAVE_BOOST_RANDOM_DISCRETE_DISTRIBUTION], [], [have boost::random::discrete_distribution])],
 	[])
 
+AC_CHECK_HEADER([boost/asio/coroutine.hpp],
+	[AC_DEFINE([HAVE_BOOST_ASIO_COROUTINE], [], [have boost::asio::coroutine])],
+	[])
 AC_CHECK_HEADER([boost/statechart/state.hpp], [],
     AC_MSG_FAILURE(["Can't find boost statechart headers; need 1.34 or later"]))
+AC_CHECK_HEADER([boost/regex.hpp], [],
+    AC_MSG_FAILURE(["Can't find boost regex headers"]))
 AC_CHECK_HEADER([boost/program_options/option.hpp], [],
     AC_MSG_FAILURE(["Can't find boost program_options headers"]))
 
@@ -914,6 +951,10 @@ AC_CHECK_HEADER([boost/program_options/option.hpp], [],
 AC_CHECK_LIB(boost_system-mt, main, [],
     [AC_CHECK_LIB(boost_system, main, [],
         AC_MSG_NOTICE(["Boost system library not found."]))])
+
+AC_CHECK_LIB(boost_iostreams-mt, main, [],
+    [AC_CHECK_LIB(boost_iostreams, main, [],
+        AC_MSG_FAILURE(["Boost iostreams library not found."]))])
 
 # Find the right boost_thread library.
 BOOST_THREAD_LIBS=""
@@ -925,6 +966,28 @@ AC_CHECK_LIB(boost_thread-mt, main, [],
 BOOST_THREAD_LIBS="${LIBS}"
 LIBS="${saved_LIBS}"
 AC_SUBST(BOOST_THREAD_LIBS)
+
+# boost-random
+BOOST_RANDOM_LIBS=""
+saved_LIBS="${LIBS}"
+LIBS=""
+AC_CHECK_LIB(boost_random-mt, main, [],
+    [AC_CHECK_LIB(boost_random, main, [],
+        AC_MSG_FAILURE(["Boost random library not found."]))])
+BOOST_RANDOM_LIBS="${LIBS}"
+LIBS="${saved_LIBS}"
+AC_SUBST(BOOST_RANDOM_LIBS)
+
+# boost-regex
+BOOST_REGEX_LIBS=""
+saved_LIBS="${LIBS}"
+LIBS=""
+AC_CHECK_LIB(boost_regex-mt, main, [],
+    [AC_CHECK_LIB(boost_regex, main, [],
+        AC_MSG_FAILURE(["Boost regex library not found."]))])
+BOOST_REGEX_LIBS="${LIBS}"
+LIBS="${saved_LIBS}"
+AC_SUBST(BOOST_REGEX_LIBS)
 
 #
 # Check for boost_program_options library (defines BOOST_PROGRAM_OPTIONS_LIBS).
@@ -961,9 +1024,16 @@ AC_CHECK_HEADERS([ \
 	sys/time.h \
 	sys/vfs.h \
 	sys/xattr.h \
+	sys/cdefs.h \
 	syslog.h \
 	utime.h \
+	execinfo.h
 ])
+
+# name_to_handle_at
+AC_CHECK_FUNC([name_to_handle_at],
+	[AC_DEFINE([HAVE_NAME_TO_HANDLE_AT], [], [name_to_handle_at exists])],
+	[])
 
 # sync_file_range
 AC_CHECK_FUNC([sync_file_range],
@@ -974,6 +1044,13 @@ AC_CHECK_FUNC([sync_file_range],
 AC_CHECK_FUNC([fallocate],
 	[AC_DEFINE([CEPH_HAVE_FALLOCATE], [], [fallocate(2) is supported])],
 	[])
+
+# mallinfo
+AC_CHECK_FUNC([mallinfo],
+  [AC_DEFINE(HAVE_MALLINFO, 1, [Define if you have mallinfo])])
+
+# getgrouplist
+AC_CHECK_FUNCS([getgrouplist])
 
 #
 # Test for time-related `struct stat` members.
@@ -988,9 +1065,16 @@ AC_CHECK_MEMBER([struct stat.st_mtimespec.tv_nsec],
     [Define if you have struct stat.st_mtimespec.tv_nsec])])
 
 # splice/tee
-AC_CHECK_FUNC([splice],
-	[AC_DEFINE([CEPH_HAVE_SPLICE], [], [splice(2) is supported])],
-	[])
+case "${target_os}" in
+aix*)
+	# AIX splice() is something else
+	;;
+*)
+	AC_CHECK_FUNC([splice],
+		[AC_DEFINE([CEPH_HAVE_SPLICE], [], [splice(2) is supported])],
+		[])
+	;;
+esac
 
 # F_SETPIPE_SZ in fcntl.h
 AC_MSG_CHECKING([for F_SETPIPE_SZ in fcntl.h])
@@ -1013,6 +1097,7 @@ AC_CHECK_HEADERS([sys/prctl.h])
 AC_CHECK_FUNCS([prctl])
 AC_CHECK_FUNCS([pipe2])
 AC_CHECK_FUNCS([posix_fadvise])
+AC_CHECK_FUNCS([pwritev], AC_DEFINE([HAVE_PWRITEV], [1], [we have pwritev]))
 
 AC_MSG_CHECKING([for fdatasync])
 AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[
@@ -1174,46 +1259,51 @@ if test "x$enable_valgrind" = "xyes"; then
   AC_CHECK_HEADERS([valgrind/helgrind.h])
 fi
 
-dnl systemd-libexec-dir
-AC_SUBST(systemd_libexec_dir)
+AC_SUBST(systemd_unit_dir)
 AC_ARG_WITH(
-    systemd-libexec-dir,
+    systemd-unit-dir,
     AS_HELP_STRING(
-	    [--with-systemd-libexec-dir=DIR],
-	    [systemd libexec directory @<:@SYSTEMD_LIBEXEC_DIR@:>@
-        defaults to --libexecdir=DIR]
+	    [--with-systemdsystemunitdir=DIR],
+	    [systemd unit directory @<:@SYSTEMD_UNIT_DIR@:>@
+        Defaults to the correct value for debian /etc/systemd/system/]
     ),
     [
-	    systemd_libexec_dir="$withval"
+	    systemd_unit_dir="$withval"
     ],
     [
-        if test "x$SYSTEMD_LIBEXEC_DIR" = "x"; then
-            dnl store old values
-
-            prefix_save=$prefix
-            exec_prefix_save=$exec_prefix
-
-            dnl if no prefix given, then use /usr/local, the default prefix
-            if test "x$prefix" = "xNONE"; then
-                prefix="$ac_default_prefix"
-            fi
-            dnl if no exec_prefix given, then use prefix
-            if test "x$exec_prefix" = "xNONE"; then
-                exec_prefix=$prefix
-            fi
-
-            dnl now get the expanded default
-            systemd_libexec_dir="`eval exec_prefix=$exec_prefix prefix=$prefix echo $libexecdir`"
-
-            dnl now cleanup prefix and exec_prefix
-
-            prefix=$prefix_save
-            exec_prefix=$exec_prefix_save
+        # default to the systemd admin unit directory
+        which pkg-config
+        pkg_config_exists=$?
+        if test x"$pkg_config_exists" = x"0"; then
+            systemd_unit_dir=`pkg-config systemd --variable=systemdsystemunitdir`
         else
-            systemd_libexec_dir="$SYSTEMD_LIBEXEC_DIR"
+            systemd_unit_dir="/etc/systemd/system/"
         fi
     ]
 )
+
+# Force not to use eventfd
+AC_ARG_WITH([eventfd],
+            [AS_HELP_STRING([--without-eventfd], [disable eventfd [default=no]])],
+            ,
+            [with_eventfd=yes])
+AS_IF([test "x$with_eventfd" != xno],
+    [AC_CHECK_HEADERS(sys/eventfd.h,
+                     [AC_DEFINE(HAVE_EVENTFD, 1, [Have eventfd extension.])])])
+AM_CONDITIONAL(WITH_EVENTFD, [ test "$with_eventfd" = "yes" ])
+
+# disable OpenLDAP support
+AC_ARG_WITH([openldap],
+            [AS_HELP_STRING([--without-openldap], [Disable OpenLDAP support (RGW)])])
+if test "x$with_openldap" != "xno"; then
+   AC_CHECK_HEADER([ldap.h], [],
+      AC_MSG_ERROR([ldap.h not found (openldap-dev, openldap-devel)]))
+    AC_CHECK_LIB([ldap], [ldap_initialize], [true],
+      AC_MSG_FAILURE([libldap not found]))
+   AC_DEFINE([HAVE_OPENLDAP], [1], [Defined if OpenLDAP enabled])
+   have_openldap="yes"
+fi
+AM_CONDITIONAL(WITH_OPENLDAP, [ test "$have_openldap" = "yes" ])
 
 # Checks for typedefs, structures, and compiler characteristics.
 #AC_HEADER_STDBOOL
@@ -1274,9 +1364,9 @@ AC_CONFIG_FILES([Makefile
 	src/ocf/ceph
 	src/ocf/rbd
 	src/java/Makefile
-	src/tracing/Makefile
+	systemd/Makefile
 	man/Makefile
 	doc/Makefile
-	systemd/ceph-osd@.service
+	selinux/Makefile
 	ceph.spec])
 AC_OUTPUT

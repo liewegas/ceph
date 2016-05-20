@@ -1,42 +1,83 @@
 #!/bin/sh
 
-if [ -z "$CEPH_BUILD_ROOT" ]; then
+# abort on failure
+set -e
+
+if [ -n "$VSTART_DEST" ]; then
+  SRC_PATH=`dirname $0`
+  SRC_PATH=`(cd $SRC_PATH; pwd)`
+
+  CEPH_DIR=$SRC_PATH
+  CEPH_BIN=$SRC_PATH
+  CEPH_LIB=$SRC_PATH/.libs
+
+  if [ -e CMakeCache.txt ]; then
+      CEPH_BIN=$VSTART_DEST/../../bin
+      CEPH_LIB=$VSTART_DEST/../../lib
+  fi
+
+  CEPH_CONF_PATH=$VSTART_DEST
+  CEPH_DEV_DIR=$VSTART_DEST/dev
+  CEPH_OUT_DIR=$VSTART_DEST/out
+fi
+
+# for running out of the CMake build directory
+if [ -e CMakeCache.txt ]; then
+  # Out of tree build, learn source location from CMakeCache.txt
+  CEPH_ROOT=`grep Ceph_SOURCE_DIR CMakeCache.txt | cut -d "=" -f 2`
+  CEPH_BUILD_DIR=`pwd`
+fi
+
+# use CEPH_BUILD_ROOT to vstart from a 'make install' 
+if [ -n "$CEPH_BUILD_ROOT" ]; then
+        [ -z "$CEPH_BIN" ] && CEPH_BIN=$CEPH_BUILD_ROOT/bin
+        [ -z "$CEPH_LIB" ] && CEPH_LIB=$CEPH_BUILD_ROOT/lib
+        [ -z "$EC_PATH" ] && EC_PATH=$CEPH_LIB/erasure-code
+        [ -z "$CS_PATH" ] && CS_PATH=$CEPH_LIB/compressor
+        [ -z "$OBJCLASS_PATH" ] && OBJCLASS_PATH=$CEPH_LIB/rados-classes
+elif [ -n "$CEPH_ROOT" ]; then
+        [ -z "$PYBIND" ] && PYBIND=$CEPH_ROOT/src/pybind
+        [ -z "$CEPH_BIN" ] && CEPH_BIN=$CEPH_BUILD_DIR/bin
+        [ -z "$CEPH_ADM" ] && CEPH_ADM=$CEPH_BIN/ceph
+        [ -z "$INIT_CEPH" ] && INIT_CEPH=$CEPH_BIN/init-ceph
+        [ -z "$CEPH_LIB" ] && CEPH_LIB=$CEPH_BUILD_DIR/lib
+        [ -z "$OBJCLASS_PATH" ] && OBJCLASS_PATH=$CEPH_LIB
+        [ -z "$EC_PATH" ] && EC_PATH=$CEPH_LIB
+else
         [ -z "$CEPH_BIN" ] && CEPH_BIN=.
         [ -z "$CEPH_LIB" ] && CEPH_LIB=.libs
-        [ -z $EC_PATH ] && EC_PATH=$CEPH_LIB
-        [ -z $OBJCLASS_PATH ] && OBJCLASS_PATH=$CEPH_LIB
-else
-        [ -z $CEPH_BIN ] && CEPH_BIN=$CEPH_BUILD_ROOT/bin
-        [ -z $CEPH_LIB ] && CEPH_LIB=$CEPH_BUILD_ROOT/lib
-        [ -z $EC_PATH ] && EC_PATH=$CEPH_LIB/erasure-code
-        [ -z $OBJCLASS_PATH ] && OBJCLASS_PATH=$CEPH_LIB/rados-classes
+        [ -z "$EC_PATH" ] && EC_PATH=$CEPH_LIB
+        [ -z "$CS_PATH" ] && CS_PATH=$CEPH_LIB
+        [ -z "$OBJCLASS_PATH" ] && OBJCLASS_PATH=$CEPH_LIB
 fi
 
 if [ -z "${CEPH_VSTART_WRAPPER}" ]; then
     PATH=$(pwd):$PATH
 fi
 
-export PYTHONPATH=./pybind
-export LD_LIBRARY_PATH=$CEPH_LIB
-export DYLD_LIBRARY_PATH=$LD_LIBRARY_PATH
+[ -z "$PYBIND" ] && PYBIND=./pybind
 
-# abort on failure
-set -e
+export PYTHONPATH=$PYBIND:$PYTHONPATH
+export LD_LIBRARY_PATH=$CEPH_LIB:$LD_LIBRARY_PATH
+export DYLD_LIBRARY_PATH=$CEPH_LIB:$DYLD_LIBRARY_PATH
 
 [ -z "$CEPH_NUM_MON" ] && CEPH_NUM_MON="$MON"
 [ -z "$CEPH_NUM_OSD" ] && CEPH_NUM_OSD="$OSD"
 [ -z "$CEPH_NUM_MDS" ] && CEPH_NUM_MDS="$MDS"
+[ -z "$CEPH_NUM_FS"  ] && CEPH_NUM_FS="$FS"
 [ -z "$CEPH_NUM_RGW" ] && CEPH_NUM_RGW="$RGW"
 
 [ -z "$CEPH_NUM_MON" ] && CEPH_NUM_MON=3
 [ -z "$CEPH_NUM_OSD" ] && CEPH_NUM_OSD=3
 [ -z "$CEPH_NUM_MDS" ] && CEPH_NUM_MDS=3
+[ -z "$CEPH_NUM_FS"  ] && CEPH_NUM_FS=1
 [ -z "$CEPH_NUM_RGW" ] && CEPH_NUM_RGW=1
 
 [ -z "$CEPH_DIR" ] && CEPH_DIR="$PWD"
 [ -z "$CEPH_DEV_DIR" ] && CEPH_DEV_DIR="$CEPH_DIR/dev"
 [ -z "$CEPH_OUT_DIR" ] && CEPH_OUT_DIR="$CEPH_DIR/out"
 [ -z "$CEPH_RGW_PORT" ] && CEPH_RGW_PORT=8000
+[ -z "$CEPH_CONF_PATH" ] && CEPH_CONF_PATH=$CEPH_DIR
 
 extra_conf=""
 new=0
@@ -50,28 +91,31 @@ start_rgw=0
 ip=""
 nodaemon=0
 smallmds=0
+short=0
 ec=0
 hitset=""
 overwrite_conf=1
 cephx=1 #turn cephx on by default
 cache=""
 memstore=0
-journal=1
+bluestore=0
+
+VSTART_SEC="client.vstart.sh"
 
 MON_ADDR=""
 
-conf_fn="$CEPH_DIR/ceph.conf"
-keyring_fn="$CEPH_DIR/keyring"
+conf_fn="$CEPH_CONF_PATH/ceph.conf"
+keyring_fn="$CEPH_CONF_PATH/keyring"
 osdmap_fn="/tmp/ceph_osdmap.$$"
 monmap_fn="/tmp/ceph_monmap.$$"
 
-usage="usage: $0 [option]... [mon] [mds] [osd]\n"
+usage="usage: $0 [option]... [\"mon\"] [\"mds\"] [\"osd\"]\n"
 usage=$usage"options:\n"
 usage=$usage"\t-d, --debug\n"
 usage=$usage"\t-s, --standby_mds: Generate standby-replay MDS for each active\n"
 usage=$usage"\t-l, --localhost: use localhost instead of hostname\n"
 usage=$usage"\t-i <ip>: bind to specific ip\n"
-usage=$usage"\t-r start radosgw (needs ceph compiled with --radosgw and apache2 with mod_fastcgi)\n"
+usage=$usage"\t-r start radosgw (needs ceph compiled with --radosgw)\n"
 usage=$usage"\t-n, --new\n"
 usage=$usage"\t--valgrind[_{osd,mds,mon}] 'toolname args...'\n"
 usage=$usage"\t--nodaemon: use ceph-run as wrapper for mon/osd/mds\n"
@@ -83,8 +127,14 @@ usage=$usage"\t-X disable cephx\n"
 usage=$usage"\t--hitset <pool> <hit_set_type>: enable hitset tracking\n"
 usage=$usage"\t-e : create an erasure pool\n";
 usage=$usage"\t-o config\t\t add extra config parameters to all sections\n"
-usage=$usage"\t-J no journal\t\tdisable filestore journal\n"
-
+usage=$usage"\t--mon_num specify ceph monitor count\n"
+usage=$usage"\t--osd_num specify ceph osd count\n"
+usage=$usage"\t--mds_num specify ceph mds count\n"
+usage=$usage"\t--rgw_port specify ceph rgw http listen port\n"
+usage=$usage"\t--bluestore use bluestore as the osd objectstore backend\n"
+usage=$usage"\t--memstore use memstore as the osd objectstore backend\n"
+usage=$usage"\t--cache <pool>: enable cache tiering on pool\n"
+usage=$usage"\t--short: short object names only; necessary for ext4 dev\n"
 
 usage_exit() {
 	printf "$usage"
@@ -116,6 +166,9 @@ case $1 in
     --new | -n )
 	    new=1
 	    ;;
+    --short )
+	    short=1
+	    ;;
     --valgrind )
 	    [ -z "$2" ] && usage_exit
 	    valgrind=$2
@@ -142,6 +195,23 @@ case $1 in
     --smallmds )
 	    smallmds=1
 	    ;;
+    --mon_num )
+            echo "mon_num:$2"
+            CEPH_NUM_MON="$2"
+            shift
+            ;;
+    --osd_num )
+            CEPH_NUM_OSD=$2
+            shift
+            ;;
+    --mds_num )
+            CEPH_NUM_MDS=$2
+            shift
+            ;;
+    --rgw_port )
+            CEPH_RGW_PORT=$2
+            shift
+            ;;
     mon )
 	    start_mon=1
 	    start_all=0
@@ -165,14 +235,18 @@ case $1 in
     -X )
 	    cephx=0
 	    ;;
-    -J )
-	    journal=0
-	    ;;
     -k )
+	    if [ ! -r $conf_fn ]; then
+	        echo "cannot use old configuration: $conf_fn not readable." >&2
+	        exit
+	    fi
 	    overwrite_conf=0
 	    ;;
     --memstore )
 	    memstore=1
+	    ;;
+    --bluestore )
+	    bluestore=1
 	    ;;
     --hitset )
 	    hitset="$hitset $2 $3"
@@ -197,6 +271,17 @@ case $1 in
 esac
 shift
 done
+
+if [ "$overwrite_conf" -eq 0 ]; then
+    MON=`$CEPH_BIN/ceph-conf -c $conf_fn --name $VSTART_SEC num_mon 2>/dev/null` && \
+        CEPH_NUM_MON="$MON"
+    OSD=`$CEPH_BIN/ceph-conf -c $conf_fn --name $VSTART_SEC num_osd 2>/dev/null` && \
+        CEPH_NUM_OSD="$OSD"
+    MDS=`$CEPH_BIN/ceph-conf -c $conf_fn --name $VSTART_SEC num_mds 2>/dev/null` && \
+        CEPH_NUM_MDS="$MDS"
+    RGW=`$CEPH_BIN/ceph-conf -c $conf_fn --name $VSTART_SEC num_rgw 2>/dev/null` && \
+        CEPH_NUM_RGW="$RGW"
+fi
 
 if [ "$start_all" -eq 1 ]; then
 	start_mon=1
@@ -249,6 +334,10 @@ else
         debug monc = 20
         debug journal = 20
         debug filestore = 20
+        debug bluestore = 30
+        debug bluefs = 20
+        debug rocksdb = 10
+        debug bdev = 20
         debug rgw = 20
         debug objclass = 20'
     CMDSDEBUG='
@@ -270,6 +359,10 @@ fi
 if [ "$memstore" -eq 1 ]; then
     COSDMEMSTORE='
 	osd objectstore = memstore'
+fi
+if [ "$bluestore" -eq 1 ]; then
+    COSDMEMSTORE='
+	osd objectstore = bluestore'
 fi
 
 # lockdep everywhere?
@@ -304,22 +397,21 @@ if [ -n "$ip" ]; then
     IP="$ip"
 else
     echo hostname $HOSTNAME
-    RAW_IP=`hostname -I`
     # filter out IPv6 and localhost addresses
-    IP="$(echo "$RAW_IP"|tr ' ' '\012'|grep -v :|grep -v '^127\.'|head -n1)"
-    # if that left nothing, then try to use the raw thing, it might work
-    if [ -z "$IP" ]; then IP="$RAW_IP"; fi
-    echo ip $IP
+    IP="$(ifconfig | sed -En 's/127.0.0.1//;s/.*inet (addr:)?(([0-9]*\.){3}[0-9]*).*/\2/p' | head -n1)"
+    # if nothing left, try using localhost address, it might work
+    if [ -z "$IP" ]; then IP="127.0.0.1"; fi
 fi
 echo "ip $IP"
-echo "port $PORT"
+echo "port $CEPH_PORT"
 
 
+[ -z $CEPH_ADM ] && CEPH_ADM=$CEPH_BIN/ceph
 
 if [ "$cephx" -eq 1 ]; then
-    CEPH_ADM="$CEPH_BIN/ceph -c $conf_fn -k $keyring_fn"
+    CEPH_ADM="$CEPH_ADM -c $conf_fn -k $keyring_fn"
 else
-    CEPH_ADM="$CEPH_BIN/ceph -c $conf_fn"
+    CEPH_ADM="$CEPH_ADM -c $conf_fn"
 fi
 
 MONS=""
@@ -351,6 +443,12 @@ if [ "$start_mon" -eq 1 ]; then
 		if [ $overwrite_conf -eq 1 ]; then
 		        cat <<EOF > $conf_fn
 ; generated by vstart.sh on `date`
+[$VSTART_SEC]
+        num mon = $CEPH_NUM_MON
+        num osd = $CEPH_NUM_OSD
+        num mds = $CEPH_NUM_MDS
+        num rgw = $CEPH_NUM_RGW
+
 [global]
         fsid = $(uuidgen)
         osd pg bits = 3
@@ -358,15 +456,19 @@ if [ "$start_mon" -eq 1 ]; then
         osd crush chooseleaf type = 0
         osd pool default min size = 1
         osd failsafe full ratio = .99
+        mon osd reporter subtree level = osd
         mon osd full ratio = .99
         mon data avail warn = 10
         mon data avail crit = 1
-        osd pool default erasure code directory = $EC_PATH
+        erasure code dir = $EC_PATH
+        plugin dir = $CS_PATH
         osd pool default erasure code profile = plugin=jerasure technique=reed_sol_van k=2 m=1 ruleset-failure-domain=osd
         rgw frontends = fastcgi, civetweb port=$CEPH_RGW_PORT
         rgw dns name = localhost
         filestore fd cache size = 32
         run dir = $CEPH_OUT_DIR
+        enable experimental unrecoverable data corrupting features = *
+        lockdep = true
 EOF
 if [ "$cephx" -eq 1 ] ; then
 cat <<EOF >> $conf_fn
@@ -379,11 +481,10 @@ cat <<EOF >> $conf_fn
 	auth client required = none
 EOF
 fi
-                        if [ $journal -eq 1 ]; then
-			    journal_path="$CEPH_DEV_DIR/osd\$id.journal"
-			else
-			    journal_path=""
-			fi
+if [ "$short" -eq 1 ]; then
+    COSDSHORT="        osd max object name len = 460
+        osd max object namespace len = 64"
+fi
 			cat <<EOF >> $conf_fn
 
 [client]
@@ -398,15 +499,17 @@ $CMDSDEBUG
         mds debug auth pins = true
         mds debug subtrees = true
         mds data = $CEPH_DEV_DIR/mds.\$id
+        mds root ino uid = `id -u`
+        mds root ino gid = `id -g`
 $extra_conf
 [osd]
 $DAEMONOPTS
         osd data = $CEPH_DEV_DIR/osd\$id
-        osd journal = $journal_path
+        osd journal = $CEPH_DEV_DIR/osd\$id/journal
         osd journal size = 100
         osd class tmp = out
         osd class dir = $OBJCLASS_PATH
-        osd scrub load threshold = 5.0
+        osd scrub load threshold = 2000.0
         osd debug op order = true
         filestore wbthrottle xfs ios start flusher = 10
         filestore wbthrottle xfs ios hard limit = 20
@@ -414,14 +517,22 @@ $DAEMONOPTS
         filestore wbthrottle btrfs ios start flusher = 10
         filestore wbthrottle btrfs ios hard limit = 20
         filestore wbthrottle btrfs inodes hard limit = 30
+	bluestore fsck on mount = true
+	bluestore block create = true
+	bluestore block db size = 67108864
+	bluestore block db create = true
+	bluestore block wal size = 134217728
+	bluestore block wal create = true
 $COSDDEBUG
 $COSDMEMSTORE
+$COSDSHORT
 $extra_conf
 [mon]
         mon pg warn min per osd = 3
         mon osd allow primary affinity = true
         mon reweight min pgs per osd = 4
         mon osd prime pg temp = true
+        crushtool = $CEPH_BIN/crushtool
 $DAEMONOPTS
 $CMONDEBUG
 $extra_conf
@@ -503,10 +614,11 @@ if [ "$start_osd" -eq 1 ]; then
 [osd.$osd]
         host = $HOSTNAME
 EOF
-		    rm -rf $CEPH_DEV_DIR/osd$osd || true
-		    for f in $CEPH_DEV_DIR/osd$osd/* ; do btrfs sub delete $f || true ; done || true
-		    mkdir -p $CEPH_DEV_DIR/osd$osd
 	    fi
+
+	    rm -rf $CEPH_DEV_DIR/osd$osd || true
+	    for f in $CEPH_DEV_DIR/osd$osd/*; do btrfs sub delete $f &> /dev/null || true; done
+	    mkdir -p $CEPH_DEV_DIR/osd$osd
 
 	    uuid=`uuidgen`
 	    echo "add osd$osd $uuid"
@@ -533,6 +645,25 @@ EOF
 fi
 
 if [ "$start_mds" -eq 1 -a "$CEPH_NUM_MDS" -gt 0 ]; then
+    if [ "$CEPH_NUM_FS" -gt "1" ] ; then
+        $CEPH_ADM fs flag set enable_multiple true --yes-i-really-mean-it
+    fi
+
+    fs=0
+    for name in a b c d e f g h i j k l m n o p
+    do
+        cmd="$CEPH_ADM osd pool create cephfs_data_${name} 8"
+        $cmd
+
+        cmd="$CEPH_ADM osd pool create cephfs_metadata_${name} 8"
+        $cmd
+
+        cmd="$CEPH_ADM fs new cephfs_${name} cephfs_metadata_${name} cephfs_data_${name}"
+        $cmd
+        fs=$(($fs + 1))
+        [ $fs -eq $CEPH_NUM_FS ] && break
+    done
+
     mds=0
     for name in a b c d e f g h i j k l m n o p
     do
@@ -563,17 +694,6 @@ EOF
 			mon 'allow *' osd 'allow *' mds 'allow'
 	    fi
 
-        cmd="$CEPH_ADM osd pool create cephfs_data 8"
-        echo $cmd
-        $cmd
-
-        cmd="$CEPH_ADM osd pool create cephfs_metadata 8"
-        echo $cmd
-        $cmd
-
-        cmd="$CEPH_ADM fs new cephfs cephfs_metadata cephfs_data"
-        echo $cmd
-        $cmd
 	fi
 	
 	run 'mds' $CEPH_BIN/ceph-mds -i $name $ARGS $CMDS_ARGS
@@ -588,16 +708,12 @@ EOF
 #$CEPH_BIN/ceph-mds -d $ARGS --mds_thrash_fragments 0 --mds_thrash_exports 0 #--debug_ms 20
 #$CEPH_ADM mds set max_mds 2
     done
-    cmd="$CEPH_ADM mds set max_mds $CEPH_NUM_MDS"
-    echo $cmd
-    $cmd
 fi
 
 if [ "$ec" -eq 1 ]; then
     $SUDO $CEPH_ADM <<EOF
-osd erasure-code-profile set ec-profile m=2 k=1
+osd erasure-code-profile set ec-profile m=2 k=2
 osd pool create ec 8 8 erasure ec-profile
-quit
 EOF
 fi
 
@@ -611,7 +727,6 @@ osd pool create ${p}-cache 8
 osd tier add $p ${p}-cache
 osd tier cache-mode ${p}-cache writeback
 osd tier set-overlay $p ${p}-cache
-quit
 EOF
     done
 }
@@ -628,7 +743,6 @@ do_hitsets() {
 osd pool set $pool hit_set_type $type
 osd pool set $pool hit_set_count 8
 osd pool set $pool hit_set_period 30
-quit
 EOF
     done
 }
@@ -636,17 +750,6 @@ do_hitsets $hitset
 
 do_rgw()
 {
-    # Start server
-    echo start rgw on http://localhost:$CEPH_RGW_PORT
-    RGWDEBUG=""
-    if [ "$debug" -ne 0 ]; then
-        RGWDEBUG="--debug-rgw=20"
-    fi
-
-    RGWSUDO=
-    [ $CEPH_RGW_PORT -lt 1024 ] && RGWSUDO=sudo
-    $RGWSUDO $CEPH_BIN/radosgw --log-file=${CEPH_OUT_DIR}/rgw.log ${RGWDEBUG} --debug-ms=1
-
     # Create S3 user
     local akey='0555b35654ad1656d804'
     local skey='h7GhxuBLTrlhVUyxSPUKUV8r/2EI4ngqJxD7iBdBYLhwluN30JaT3Q=='
@@ -671,7 +774,7 @@ do_rgw()
 
     # Create Swift user
     echo "setting up user tester"
-    $CEPH_BIN/radosgw-admin user create --subuser=test:tester --display-name=Tester-Subuser --key-type=swift --secret=testing > /dev/null
+    $CEPH_BIN/radosgw-admin user create -c $conf_fn --subuser=test:tester --display-name=Tester-Subuser --key-type=swift --secret=testing --access=full > /dev/null
 
     echo ""
     echo "S3 User Info:"
@@ -683,6 +786,17 @@ do_rgw()
     echo "  user      : tester"
     echo "  password  : testing"
     echo ""
+
+    # Start server
+    echo start rgw on http://localhost:$CEPH_RGW_PORT
+    RGWDEBUG=""
+    if [ "$debug" -ne 0 ]; then
+        RGWDEBUG="--debug-rgw=20"
+    fi
+
+    RGWSUDO=
+    [ $CEPH_RGW_PORT -lt 1024 ] && RGWSUDO=sudo
+    $RGWSUDO $CEPH_BIN/radosgw -c $conf_fn --log-file=${CEPH_OUT_DIR}/rgw.log ${RGWDEBUG} --debug-ms=1
 }
 if [ "$start_rgw" -eq 1 ]; then
     do_rgw
@@ -691,7 +805,7 @@ fi
 echo "started.  stop.sh to stop.  see out/* (e.g. 'tail -f out/????') for debug output."
 
 echo ""
-echo "export PYTHONPATH=./pybind"
+echo "export PYTHONPATH=./pybind:$PYTHONPATH"
 echo "export LD_LIBRARY_PATH=$CEPH_LIB"
 
 if [ "$CEPH_DIR" != "$PWD" ]; then

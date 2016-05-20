@@ -13,9 +13,9 @@ Device`.
 
 .. ditaa:: 
            /------------------\         /----------------\
-           |    Admin Node    |         |   ceph–client  |
+           |    Admin Node    |         |   ceph-client  |
            |                  +-------->+ cCCC           |
-           |    ceph–deploy   |         |      ceph      |
+           |    ceph-deploy   |         |      ceph      |
            \------------------/         \----------------/
 
 
@@ -57,7 +57,7 @@ Configure a Block Device
 
 #. On the ``ceph-client`` node, map the image to a block device. :: 
 
-	sudo rbd map foo --pool rbd --name client.admin [-m {mon-IP}] [-k /path/to/ceph.client.admin.keyring]
+	sudo rbd map foo --name client.admin [-m {mon-IP}] [-k /path/to/ceph.client.admin.keyring]
 	
 #. Use the block device by creating a file system on the ``ceph-client`` 
    node. :: 

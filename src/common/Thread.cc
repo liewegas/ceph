@@ -54,7 +54,8 @@ Thread::Thread()
     pid(0),
     ioprio_class(-1),
     ioprio_priority(-1),
-    cpuid(-1)
+    cpuid(-1),
+    thread_name(NULL)
 {
 }
 
@@ -81,6 +82,8 @@ void *Thread::entry_wrapper()
   }
   if (pid && cpuid >= 0)
     _set_affinity(cpuid);
+
+  pthread_setname_np(pthread_self(), thread_name);
   return entry();
 }
 
@@ -110,11 +113,11 @@ int Thread::kill(int signal)
 int Thread::try_create(size_t stacksize)
 {
   pthread_attr_t *thread_attr = NULL;
+  pthread_attr_t thread_attr_loc;
+  
   stacksize &= CEPH_PAGE_MASK;  // must be multiple of page
   if (stacksize) {
-    thread_attr = (pthread_attr_t*) malloc(sizeof(pthread_attr_t));
-    if (!thread_attr)
-      return -ENOMEM;
+    thread_attr = &thread_attr_loc;
     pthread_attr_init(thread_attr);
     pthread_attr_setstacksize(thread_attr, stacksize);
   }
@@ -136,13 +139,18 @@ int Thread::try_create(size_t stacksize)
   r = pthread_create(&thread_id, thread_attr, _entry_func, (void*)this);
   restore_sigset(&old_sigset);
 
-  if (thread_attr)
-    free(thread_attr);
+  if (thread_attr) {
+    pthread_attr_destroy(thread_attr);	
+  }
+
   return r;
 }
 
-void Thread::create(size_t stacksize)
+void Thread::create(const char *name, size_t stacksize)
 {
+  assert(strlen(name) < 16);
+  thread_name = name;
+
   int ret = try_create(stacksize);
   if (ret != 0) {
     char buf[256];
@@ -192,8 +200,9 @@ int Thread::set_ioprio(int cls, int prio)
 
 int Thread::set_affinity(int id)
 {
+  int r = 0;
   cpuid = id;
   if (pid && ceph_gettid() == pid)
-    _set_affinity(id);
-  return 0;
+    r = _set_affinity(id);
+  return r;
 }

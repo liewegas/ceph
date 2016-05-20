@@ -28,7 +28,17 @@ extern "C" {
 #include "common/Mutex.h"
 #include "include/Spinlock.h"
 
-class XioMessenger : public SimplePolicyMessenger
+class XioInit {
+  /* safe to be called multiple times */
+  void package_init(CephContext *cct);
+
+protected:
+  XioInit(CephContext *cct) {
+    this->package_init(cct);
+  }
+};
+
+class XioMessenger : public SimplePolicyMessenger, XioInit
 {
 private:
   static atomic_t nInstances;
@@ -58,7 +68,7 @@ public:
 
   virtual ~XioMessenger();
 
-  XioPortal* default_portal() { return portals.get_portal0(); }
+  XioPortal* get_portal() { return portals.get_next_portal(); }
 
   virtual void set_myaddr(const entity_addr_t& a) {
     Messenger::set_myaddr(a);
@@ -69,8 +79,6 @@ public:
   int _send_message(Message *m, Connection *con);
   int _send_message_impl(Message *m, XioConnection *xcon);
 
-  uint32_t get_magic() { return magic; }
-  void set_magic(int _magic) { magic = _magic; }
   uint32_t get_special_handling() { return special_handling; }
   void set_special_handling(int n) { special_handling = n; }
   int pool_hint(uint32_t size);
@@ -145,6 +153,9 @@ public:
    */
   void learned_addr(const entity_addr_t& peer_addr_for_me);
 
+private:
+  int get_nconns_per_portal();
+  int get_nportals();
 
 protected:
   virtual void ready()

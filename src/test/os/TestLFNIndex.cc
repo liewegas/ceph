@@ -21,8 +21,8 @@
 
 #include <stdio.h>
 #include <signal.h>
-#include "os/LFNIndex.h"
-#include "os/chain_xattr.h"
+#include "os/filestore/LFNIndex.h"
+#include "os/filestore/chain_xattr.h"
 #include "common/ceph_argparse.h"
 #include "global/global_init.h"
 #include <gtest/gtest.h>
@@ -49,7 +49,7 @@ public:
     const std::string mangled_name = lfn_generate_object_name(hoid);
     EXPECT_EQ(mangled_expected, mangled_name);
     ghobject_t hoid_parsed;
-    EXPECT_TRUE(lfn_parse_object_name(mangled_name, &hoid_parsed));
+    EXPECT_EQ(0, lfn_parse_object_name(mangled_name, &hoid_parsed));
     EXPECT_EQ(hoid, hoid_parsed);
   }
 
@@ -75,15 +75,11 @@ protected:
 		      int *exists		 
 		      ) { return 0; }
 
-  virtual int _collection_list(
-			       vector<ghobject_t> *ls
-			       ) { return 0; }
-
   virtual int _collection_list_partial(
 				       const ghobject_t &start,
-				       int min_count,
+				       const ghobject_t &end,
+				       bool sort_bitwise,
 				       int max_count,
-				       snapid_t seq,
 				       vector<ghobject_t> *ls,
 				       ghobject_t *next
 				       ) { return 0; }
@@ -312,7 +308,7 @@ TEST_F(TestLFNIndex, remove_object) {
     std::string mangled_name_1 = mangled_name;
     mangled_name_1.replace(mangled_name_1.find("0_long"), 6, "1_long");
     const std::string pathname_1("PATH_1/" + mangled_name_1);
-    const std::string cmd("cp --preserve=xattr " + pathname + " " + pathname_1);
+    const std::string cmd("cp -a " + pathname + " " + pathname_1);
     EXPECT_EQ(0, ::system(cmd.c_str()));
     const string ATTR = "user.MARK";
     EXPECT_EQ((unsigned)1, (unsigned)chain_setxattr(pathname_1.c_str(), ATTR.c_str(), "Y", 1));

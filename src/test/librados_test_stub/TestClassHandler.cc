@@ -2,10 +2,14 @@
 // vim: ts=8 sw=2 smarttab
 
 #include "test/librados_test_stub/TestClassHandler.h"
+#include "test/librados_test_stub/TestIoCtxImpl.h"
 #include <boost/algorithm/string/predicate.hpp>
 #include <dlfcn.h>
 #include <errno.h>
+#include <stdlib.h>
+#include <string.h>
 #include "common/debug.h"
+#include "include/assert.h"
 
 #define dout_subsys ceph_subsys_rados
 
@@ -41,7 +45,9 @@ void TestClassHandler::open_class(const std::string& name,
 void TestClassHandler::open_all_classes() {
   assert(m_class_handles.empty());
 
-  DIR *dir = ::opendir(".libs");
+  const char* env = getenv("CEPH_LIB");
+  std::string CEPH_LIB(env ? env : ".libs");
+  DIR *dir = ::opendir(CEPH_LIB.c_str());
   if (dir == NULL) {
     assert(false);;
   }
@@ -56,7 +62,7 @@ void TestClassHandler::open_all_classes() {
       continue;
     }
     std::string class_name = name.substr(7, name.size() - 10);
-    open_class(class_name, ".libs/" + name);
+    open_class(class_name, CEPH_LIB + "/" + name);
   }
   closedir(dir);
 }
@@ -106,10 +112,16 @@ TestClassHandler::SharedMethodContext TestClassHandler::get_method_context(
     TestIoCtxImpl *io_ctx_impl, const std::string &oid,
     const SnapContext &snapc) {
   SharedMethodContext ctx(new MethodContext());
-  ctx->io_ctx_impl = io_ctx_impl;
+
+  // clone to ioctx to provide a firewall for gmock expectations
+  ctx->io_ctx_impl = io_ctx_impl->clone();
   ctx->oid = oid;
   ctx->snapc = snapc;
   return ctx;
+}
+
+TestClassHandler::MethodContext::~MethodContext() {
+  io_ctx_impl->put();
 }
 
 } // namespace librados

@@ -353,7 +353,8 @@ void WorkloadGenerator::do_destroy_collection(ObjectStore::Transaction *t,
   m_nr_runs.set(0);
   entry->m_osr.flush();
   vector<ghobject_t> ls;
-  m_store->collection_list(entry->m_coll, ls);
+  m_store->collection_list(entry->m_coll, ghobject_t(), ghobject_t::get_max(),
+			   true, INT_MAX, &ls, NULL);
   dout(2) << __func__ << " coll " << entry->m_coll
       << " (" << ls.size() << " objects)" << dendl;
 
@@ -378,7 +379,7 @@ TestObjectStoreState::coll_entry_t
   m_collections.insert(make_pair(entry->m_id, entry));
 
   dout(2) << __func__ << " id " << entry->m_id << " coll " << entry->m_coll << dendl;
-  t->create_collection(entry->m_coll);
+  t->create_collection(entry->m_coll, 32);
   dout(2) << __func__ << " meta " << coll_t::meta() << "/" << entry->m_meta_obj << dendl;
   t->touch(coll_t::meta(), entry->m_meta_obj);
   return entry;
@@ -458,7 +459,7 @@ void WorkloadGenerator::run()
         break;
       }
 
-      c = new C_OnReadable(this, t);
+      c = new C_OnReadable(this);
       goto queue_tx;
     }
 
@@ -468,7 +469,7 @@ void WorkloadGenerator::run()
 
     if (destroy_collection) {
       do_destroy_collection(t, entry, stat_state);
-      c = new C_OnDestroyed(this, t, entry);
+      c = new C_OnDestroyed(this, entry);
       if (!m_num_ops)
         create_coll = true;
     } else {
@@ -479,7 +480,7 @@ void WorkloadGenerator::run()
       do_pgmeta_omap_set(t, entry->m_pgid, entry->m_coll, stat_state);
       do_append_log(t, entry, stat_state);
 
-      c = new C_OnReadable(this, t);
+      c = new C_OnReadable(this);
     }
 
 queue_tx:
@@ -489,7 +490,8 @@ queue_tx:
       c = new C_StatWrapper(stat_state, tmp);
     }
 
-    m_store->queue_transaction(&(entry->m_osr), t, c);
+    m_store->queue_transaction(&(entry->m_osr), std::move(*t), c);
+    delete t;
 
     inc_in_flight();
 

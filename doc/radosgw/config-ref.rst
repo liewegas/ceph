@@ -131,6 +131,18 @@ Ceph configuration file, the default value will be set automatically.
 :Default: 100 threads.
 
 
+``rgw num rados handles``
+
+:Description: The numer of the `RADOS cluster handles`_ for Ceph Object Gateway.
+              Having a configurable number of RADOS handles is resulting in
+              significant performance boost for all types of workloads. Each RGW
+              worker thread would now get to pick a RADOS handle for its lifetime,
+              from the available bunch.
+
+:Type: Integer
+:Default: ``1``
+
+
 ``rgw num control oids``
 
 :Description: The number of notification objects used for cache synchronization
@@ -219,14 +231,15 @@ Ceph configuration file, the default value will be set automatically.
 
 ``rgw extended http attrs``
 
-:Description: Add new set of attributes that could be set on an object. These 
-              extra attributes can be set through HTTP header fields when 
-              putting the objects. If set, these attributes will return as HTTP 
-              fields when doing GET/HEAD on the object.
+:Description: Add new set of attributes that could be set on an entity
+              (user, bucket or object). These extra attributes can be set
+              through HTTP header fields when putting the entity or modifying
+              it using POST method. If set, these attributes will return as
+              HTTP  fields when doing GET/HEAD on the entity.
 
 :Type: String
 :Default: None
-:Example: "content_foo, content_bar"
+:Example: "content_foo, content_bar, x-foo-bar"
 
 
 ``rgw exit timeout secs``
@@ -268,6 +281,17 @@ Ceph configuration file, the default value will be set automatically.
 
 :Type: Integer
 :Default: ``1000``
+
+
+``rgw override bucket index max shards``
+
+:Description: Represents the number of shards for the bucket index object,
+              a value of zero indicates there is no sharding. It is not
+              recommended to set a value too large (e.g. thousand) as it
+              increases the cost for bucket listing.
+
+:Type: Integer
+:Default: ``0``
 
 
 ``rgw num zone opstate shards``
@@ -341,7 +365,7 @@ List Regions
 
 A Ceph cluster contains a list of regions. To list the regions, execute:: 
 
-	sudo radosgw-admin regions list
+	sudo radosgw-admin region list
 
 The ``radosgw-admin`` returns a JSON formatted list of regions. 
 
@@ -685,9 +709,17 @@ configuration.
 ``rgw region root pool``
 
 :Description: The pool for storing all region-specific information.
+              Not used in Ceph version ``Jewel``.
 :Type: String
 :Default: ``.rgw.root``
 
+.. versionadded:: Jewel
+
+``rgw zonegroup root pool``
+
+:Description: The pool for storing all zonegroup-specific information.
+:Type: String
+:Default: ``.rgw.root``
 
 
 .. versionadded:: v.67
@@ -930,6 +962,28 @@ Keystone Settings
 :Default: None
 
 
+``rgw keystone admin tenant``
+
+:Description: The name of OpenStack tenant with admin privilege (Service Tenant) when
+              using OpenStack Identity API v2
+:Type: String
+:Default: None
+
+
+``rgw keystone admin user``
+:Description: The name of OpenStack user with admin privilege for Keystone
+              authentication (Service User) when OpenStack Identity API v2
+:Type: String
+:Default: None
+
+
+``rgw keystone admin password``
+:Description: The password for OpenStack admin user when using OpenStack
+              Identity API v2
+:Type: String
+:Default: None
+
+
 ``rgw keystone accepted roles``
 
 :Description: The roles requires to serve requests.
@@ -951,7 +1005,13 @@ Keystone Settings
 :Default: ``15 * 60``
 
 
+``rgw keystone verify ssl``
+
+:Description: Verify SSL certificates while making token requests to keystone.
+:Type: Boolean
+:Default: ``true``
 
 .. _Architecture: ../../architecture#data-striping
 .. _Pool Configuration: ../../rados/configuration/pool-pg-config-ref/
 .. _Cluster Pools: ../../rados/operations/pools
+.. _Rados cluster handles: ../../rados/api/librados-intro/#step-2-configuring-a-cluster-handle

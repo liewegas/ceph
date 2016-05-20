@@ -20,6 +20,7 @@
 #include "include/stringify.h"
 #include "include/utime.h"
 #include "common/Clock.h"
+#include "common/valgrind.h"
 
 Mutex::Mutex(const std::string &n, bool r, bool ld,
 	     bool bt,
@@ -27,6 +28,9 @@ Mutex::Mutex(const std::string &n, bool r, bool ld,
   name(n), id(-1), recursive(r), lockdep(ld), backtrace(bt), nlock(0),
   locked_by(0), cct(cct), logger(0)
 {
+  ANNOTATE_BENIGN_RACE_SIZED(&id, sizeof(id), "Mutex lockdep id");
+  ANNOTATE_BENIGN_RACE_SIZED(&nlock, sizeof(nlock), "Mutex nlock");
+  ANNOTATE_BENIGN_RACE_SIZED(&locked_by, sizeof(locked_by), "Mutex locked_by");
   if (cct) {
     PerfCountersBuilder b(cct, string("mutex-") + name,
 			  l_mutex_first, l_mutex_last);
@@ -71,7 +75,11 @@ Mutex::Mutex(const std::string &n, bool r, bool ld,
 
 Mutex::~Mutex() {
   assert(nlock == 0);
+
+  // helgrind gets confused by condition wakeups leading to mutex destruction
+  ANNOTATE_BENIGN_RACE_SIZED(&_m, sizeof(_m), "Mutex primitive");
   pthread_mutex_destroy(&_m);
+
   if (cct && logger) {
     cct->get_perfcounters_collection()->remove(logger);
     delete logger;
@@ -82,21 +90,26 @@ Mutex::~Mutex() {
 }
 
 void Mutex::Lock(bool no_lockdep) {
-  utime_t start;
   int r;
 
   if (lockdep && g_lockdep && !no_lockdep) _will_lock();
 
-  if (TryLock()) {
-    goto out;
-  }
-
-  if (logger && cct && cct->_conf->mutex_perf_counter)
+  if (logger && cct && cct->_conf->mutex_perf_counter) {
+    utime_t start;
+    // instrumented mutex enabled
     start = ceph_clock_now(cct);
-  r = pthread_mutex_lock(&_m);
-  if (logger && cct && cct->_conf->mutex_perf_counter)
+    if (TryLock()) {
+      goto out;
+    }
+
+    r = pthread_mutex_lock(&_m);
+
     logger->tinc(l_mutex_wait,
 		 ceph_clock_now(cct) - start);
+  } else {
+    r = pthread_mutex_lock(&_m);
+  }
+
   assert(r == 0);
   if (lockdep && g_lockdep) _locked();
   _post_lock();

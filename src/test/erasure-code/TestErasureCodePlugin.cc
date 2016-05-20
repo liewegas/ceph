@@ -17,11 +17,13 @@
 
 #include <errno.h>
 #include <signal.h>
+#include <stdlib.h>
 #include "common/Thread.h"
 #include "global/global_init.h"
 #include "erasure-code/ErasureCodePlugin.h"
 #include "common/ceph_argparse.h"
 #include "global/global_context.h"
+#include "common/config.h"
 #include "gtest/gtest.h"
 
 class ErasureCodePluginRegistryTest : public ::testing::Test {
@@ -29,12 +31,21 @@ protected:
 
   class Thread_factory : public Thread {
   public:
+    static void cleanup(void *arg) {
+      ErasureCodePluginRegistry &instance = ErasureCodePluginRegistry::instance();
+      if (instance.lock.is_locked())
+        instance.lock.Unlock();
+    }
+
     virtual void *entry() {
       ErasureCodeProfile profile;
-      profile["directory"] = ".libs";
       ErasureCodePluginRegistry &instance = ErasureCodePluginRegistry::instance();
       ErasureCodeInterfaceRef erasure_code;
-      instance.factory("hangs", profile, &erasure_code, &cerr);
+      pthread_cleanup_push(cleanup, NULL);
+      instance.factory("hangs",
+		       g_conf->erasure_code_dir,
+		       profile, &erasure_code, &cerr);
+      pthread_cleanup_pop(0);
       return NULL;
     }
   };
@@ -53,7 +64,7 @@ TEST_F(ErasureCodePluginRegistryTest, factory_mutex) {
   useconds_t delay = 0;
   const useconds_t DELAY_MAX = 20 * 1000 * 1000;
   Thread_factory sleep_forever;
-  sleep_forever.create();
+  sleep_forever.create("sleep_forever");
   do {
     cout << "Trying (1) with delay " << delay << "us\n";
     if (delay > 0)
@@ -72,27 +83,39 @@ TEST_F(ErasureCodePluginRegistryTest, factory_mutex) {
 TEST_F(ErasureCodePluginRegistryTest, all)
 {
   ErasureCodeProfile profile;
-  string directory(".libs");
-  profile["directory"] = directory;
+  const char* env = getenv("CEPH_LIB");
+  string directory(env ? env : ".libs");
   ErasureCodeInterfaceRef erasure_code;
   ErasureCodePluginRegistry &instance = ErasureCodePluginRegistry::instance();
   EXPECT_FALSE(erasure_code);
-  EXPECT_EQ(-EIO, instance.factory("invalid", profile, &erasure_code, &cerr));
+  EXPECT_EQ(-EIO, instance.factory("invalid",
+				   g_conf->erasure_code_dir,
+				   profile, &erasure_code, &cerr));
   EXPECT_FALSE(erasure_code);
-  EXPECT_EQ(-EXDEV, instance.factory("missing_version", profile,
+  EXPECT_EQ(-EXDEV, instance.factory("missing_version",
+				     g_conf->erasure_code_dir,
+				     profile,
 				     &erasure_code, &cerr));
   EXPECT_FALSE(erasure_code);
-  EXPECT_EQ(-ENOENT, instance.factory("missing_entry_point", profile,
+  EXPECT_EQ(-ENOENT, instance.factory("missing_entry_point",
+				      g_conf->erasure_code_dir,
+				      profile,
 				      &erasure_code, &cerr));
   EXPECT_FALSE(erasure_code);
-  EXPECT_EQ(-ESRCH, instance.factory("fail_to_initialize", profile,
+  EXPECT_EQ(-ESRCH, instance.factory("fail_to_initialize",
+				     g_conf->erasure_code_dir,
+				     profile,
 				     &erasure_code, &cerr));
   EXPECT_FALSE(erasure_code);
-  EXPECT_EQ(-EBADF, instance.factory("fail_to_register", profile,
+  EXPECT_EQ(-EBADF, instance.factory("fail_to_register",
+				     g_conf->erasure_code_dir,
+				     profile,
 				     &erasure_code, &cerr));
   EXPECT_FALSE(erasure_code);
-  EXPECT_EQ(0, instance.factory("example", profile, &erasure_code, &cerr));
-  EXPECT_TRUE(erasure_code);
+  EXPECT_EQ(0, instance.factory("example",
+				g_conf->erasure_code_dir,
+				profile, &erasure_code, &cerr));
+  EXPECT_TRUE(erasure_code.get());
   ErasureCodePlugin *plugin = 0;
   {
     Mutex::Locker l(instance.lock);
@@ -109,6 +132,10 @@ int main(int argc, char **argv) {
 
   global_init(NULL, args, CEPH_ENTITY_TYPE_CLIENT, CODE_ENVIRONMENT_UTILITY, 0);
   common_init_finish(g_ceph_context);
+
+  const char* env = getenv("CEPH_LIB");
+  string directory(env ? env : ".libs");
+  g_conf->set_val("erasure_code_dir", directory, false, false);
 
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();

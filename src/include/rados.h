@@ -143,6 +143,8 @@ extern const char *ceph_osd_state_name(int s);
 #define CEPH_OSDMAP_NODEEP_SCRUB (1<<12) /* block periodic deep-scrub */
 #define CEPH_OSDMAP_NOTIERAGENT (1<<13) /* disable tiering agent */
 #define CEPH_OSDMAP_NOREBALANCE (1<<14) /* block osd backfill unless pg is degraded */
+#define CEPH_OSDMAP_SORTBITWISE (1<<15) /* use bitwise hobject_t sort */
+#define CEPH_OSDMAP_REQUIRE_JEWEL (1<<16) /* require jewel for booting osds */
 
 /*
  * The error code to return when an OSD can't handle a write
@@ -165,7 +167,6 @@ extern const char *ceph_osd_state_name(int s);
 #define CEPH_OSD_OP_MODE_CACHE 0x8000
 
 #define CEPH_OSD_OP_TYPE       0x0f00
-#define CEPH_OSD_OP_TYPE_LOCK  0x0100
 #define CEPH_OSD_OP_TYPE_DATA  0x0200
 #define CEPH_OSD_OP_TYPE_ATTR  0x0300
 #define CEPH_OSD_OP_TYPE_EXEC  0x0400
@@ -250,6 +251,13 @@ extern const char *ceph_osd_state_name(int s);
 									    \
 	/* hints */							    \
 	f(SETALLOCHINT,	__CEPH_OSD_OP(WR, DATA, 35),	"set-alloc-hint")   \
+                                                                            \
+	/* cache pin/unpin */						    \
+	f(CACHE_PIN,	__CEPH_OSD_OP(WR, DATA, 36),	"cache-pin")        \
+	f(CACHE_UNPIN,	__CEPH_OSD_OP(WR, DATA, 37),	"cache-unpin")      \
+									    \
+	/* ESX/SCSI */							    \
+	f(WRITESAME,	__CEPH_OSD_OP(WR, DATA, 38),	"write-same")	    \
 									    \
 	/** multi **/							    \
 	f(CLONERANGE,	__CEPH_OSD_OP(WR, MULTI, 1),	"clonerange")	    \
@@ -276,16 +284,8 @@ extern const char *ceph_osd_state_name(int s);
 	f(SCRUB,	__CEPH_OSD_OP1(SUB, 5),		"scrub")	    \
 	f(SCRUB_RESERVE, __CEPH_OSD_OP1(SUB, 6),	"scrub-reserve")    \
 	f(SCRUB_UNRESERVE, __CEPH_OSD_OP1(SUB, 7),	"scrub-unreserve")  \
-	f(SCRUB_STOP,	__CEPH_OSD_OP1(SUB, 8),		"scrub-stop")	    \
+	/* 8 used to be scrub-stop */					\
 	f(SCRUB_MAP,	__CEPH_OSD_OP1(SUB, 9),		"scrub-map")	    \
-									    \
-	/** lock **/							    \
-	f(WRLOCK,	__CEPH_OSD_OP(WR, LOCK, 1),	"wrlock")	    \
-	f(WRUNLOCK,	__CEPH_OSD_OP(WR, LOCK, 2),	"wrunlock")	    \
-	f(RDLOCK,	__CEPH_OSD_OP(WR, LOCK, 3),	"rdlock")	    \
-	f(RDUNLOCK,	__CEPH_OSD_OP(WR, LOCK, 4),	"rdunlock")	    \
-	f(UPLOCK,	__CEPH_OSD_OP(WR, LOCK, 5),	"uplock")	    \
-	f(DNLOCK,	__CEPH_OSD_OP(WR, LOCK, 6),	"dnlock")	    \
 									    \
 	/** exec **/							    \
 	/* note: the RD bit here is wrong; see special-case below in helper */ \
@@ -297,7 +297,8 @@ extern const char *ceph_osd_state_name(int s);
 	f(PG_HITSET_LS,	__CEPH_OSD_OP(RD, PG, 3),	"pg-hitset-ls")	    \
 	f(PG_HITSET_GET, __CEPH_OSD_OP(RD, PG, 4),	"pg-hitset-get")    \
 	f(PGNLS,	__CEPH_OSD_OP(RD, PG, 5),	"pgnls")	    \
-	f(PGNLS_FILTER,	__CEPH_OSD_OP(RD, PG, 6),	"pgnls-filter")
+	f(PGNLS_FILTER,	__CEPH_OSD_OP(RD, PG, 6),	"pgnls-filter")     \
+	f(SCRUBLS, __CEPH_OSD_OP(RD, PG, 7), "scrubls")
 
 enum {
 #define GENERATE_ENUM_ENTRY(op, opcode, str)	CEPH_OSD_OP_##op = (opcode),
@@ -305,10 +306,6 @@ __CEPH_FORALL_OSD_OPS(GENERATE_ENUM_ENTRY)
 #undef GENERATE_ENUM_ENTRY
 };
 
-static inline int ceph_osd_op_type_lock(int op)
-{
-	return (op & CEPH_OSD_OP_TYPE) == CEPH_OSD_OP_TYPE_LOCK;
-}
 static inline int ceph_osd_op_type_data(int op)
 {
 	return (op & CEPH_OSD_OP_TYPE) == CEPH_OSD_OP_TYPE_DATA;
@@ -410,6 +407,8 @@ enum {
 						      pool uses pool snaps */
 	CEPH_OSD_FLAG_REDIRECTED   = 0x200000,  /* op has been redirected */
 	CEPH_OSD_FLAG_KNOWN_REDIR = 0x400000,  /* redirect bit is authoritative */
+	CEPH_OSD_FLAG_FULL_TRY =    0x800000,  /* try op despite full flag */
+	CEPH_OSD_FLAG_FULL_FORCE = 0x1000000,  /* force op despite full flag */
 };
 
 enum {
@@ -446,10 +445,7 @@ enum {
 	CEPH_OSD_COPY_FROM_FLAG_IGNORE_CACHE = 4, /* ignore osd cache logic */
 	CEPH_OSD_COPY_FROM_FLAG_MAP_SNAP_CLONE = 8, /* map snap direct to
 						     * cloneid */
-};
-
-enum {
-	CEPH_OSD_COPY_GET_FLAG_NOTSUPP_OMAP = 1, /* mean dest pool don't support omap*/
+	CEPH_OSD_COPY_FROM_FLAG_RWORDERED = 16, /* order with write */
 };
 
 enum {
@@ -519,7 +515,6 @@ struct ceph_osd_op {
 		} __attribute__ ((packed)) clonerange;
 		struct {
 			__le64 max;     /* max data in reply */
-			__le32 flags;
 		} __attribute__ ((packed)) copy_get;
 		struct {
 			__le64 snapid;
@@ -541,6 +536,11 @@ struct ceph_osd_op {
 			__le64 expected_object_size;
 			__le64 expected_write_size;
 		} __attribute__ ((packed)) alloc_hint;
+		struct {
+			__le64 offset;
+			__le64 length;
+			__le64 data_length;
+		} __attribute__ ((packed)) writesame;
 	};
 	__le32 payload_len;
 } __attribute__ ((packed));

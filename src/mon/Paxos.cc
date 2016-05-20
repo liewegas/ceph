@@ -15,14 +15,13 @@
 #include <sstream>
 #include "Paxos.h"
 #include "Monitor.h"
-#include "MonitorDBStore.h"
-
 #include "messages/MMonPaxos.h"
 
 #include "common/config.h"
 #include "include/assert.h"
 #include "include/stringify.h"
-#include "common/Formatter.h"
+#include "common/Timer.h"
+#include "messages/PaxosServiceMessage.h"
 
 #define dout_subsys ceph_subsys_paxos
 #undef dout_prefix
@@ -187,7 +186,9 @@ void Paxos::collect(version_t oldpn)
 
   // set timeout event
   collect_timeout_event = new C_CollectTimeout(this);
-  mon->timer.add_event_after(g_conf->mon_accept_timeout, collect_timeout_event);
+  mon->timer.add_event_after(g_conf->mon_accept_timeout_factor *
+			     g_conf->mon_lease,
+			     collect_timeout_event);
 }
 
 
@@ -205,7 +206,7 @@ void Paxos::handle_collect(MonOpRequestRef op)
   state = STATE_RECOVERING;
 
   if (collect->first_committed > last_committed+1) {
-    dout(5) << __func__
+    dout(2) << __func__
             << " leader's lowest version is too high for our last committed"
             << " (theirs: " << collect->first_committed
             << "; ours: " << last_committed << ") -- bootstrap!" << dendl;
@@ -355,7 +356,7 @@ bool Paxos::store_state(MMonPaxos *m)
     // ignore everything if values start in the future.
     dout(10) << "store_state ignoring all values, they start at " << start->first
 	     << " > last_committed+1" << dendl;
-    start = m->values.end();
+    return false;
   }
 
   // push forward the start position on the message's values iterator, up until
@@ -423,24 +424,7 @@ bool Paxos::store_state(MMonPaxos *m)
     changed = true;
   }
 
-  remove_legacy_versions();
-
   return changed;
-}
-
-void Paxos::remove_legacy_versions()
-{
-  if (get_store()->exists(get_name(), "conversion_first")) {
-    MonitorDBStore::TransactionRef t(new MonitorDBStore::Transaction);
-    version_t v = get_store()->get(get_name(), "conversion_first");
-    dout(10) << __func__ << " removing pre-conversion paxos states from " << v
-	     << " until " << first_committed << dendl;
-    for (; v < first_committed; ++v) {
-      t->erase(get_name(), v);
-    }
-    t->erase(get_name(), "conversion_first");
-    get_store()->apply_transaction(t);
-  }
 }
 
 void Paxos::_sanity_check_store()
@@ -686,7 +670,9 @@ void Paxos::begin(bufferlist& v)
 
   // set timeout event
   accept_timeout_event = new C_AcceptTimeout(this);
-  mon->timer.add_event_after(g_conf->mon_accept_timeout, accept_timeout_event);
+  mon->timer.add_event_after(g_conf->mon_accept_timeout_factor *
+			     g_conf->mon_lease,
+			     accept_timeout_event);
 }
 
 // peon
@@ -805,7 +791,7 @@ void Paxos::accept_timeout()
 
 struct C_Committed : public Context {
   Paxos *paxos;
-  C_Committed(Paxos *p) : paxos(p) {}
+  explicit C_Committed(Paxos *p) : paxos(p) {}
   void finish(int r) {
     assert(r >= 0);
     Mutex::Locker l(paxos->mon->lock);
@@ -897,8 +883,6 @@ void Paxos::commit_finish()
   // get ready for a new round.
   new_value.clear();
 
-  remove_legacy_versions();
-
   // WRITING -> REFRESH
   // among other things, this lets do_refresh() -> mon->bootstrap() know
   // it doesn't need to flush the store queue
@@ -972,7 +956,8 @@ void Paxos::extend_lease()
   //  if old timeout is still in place, leave it.
   if (!lease_ack_timeout_event) {
     lease_ack_timeout_event = new C_LeaseAckTimeout(this);
-    mon->timer.add_event_after(g_conf->mon_lease_ack_timeout, 
+    mon->timer.add_event_after(g_conf->mon_lease_ack_timeout_factor *
+			       g_conf->mon_lease,
 			       lease_ack_timeout_event);
   }
 
@@ -980,7 +965,7 @@ void Paxos::extend_lease()
   lease_renew_event = new C_LeaseRenew(this);
   utime_t at = lease_expire;
   at -= g_conf->mon_lease;
-  at += g_conf->mon_lease_renew_interval;
+  at += g_conf->mon_lease_renew_interval_factor * g_conf->mon_lease;
   mon->timer.add_event_at(at, lease_renew_event);
 }
 
@@ -1163,7 +1148,9 @@ void Paxos::reset_lease_timeout()
   if (lease_timeout_event)
     mon->timer.cancel_event(lease_timeout_event);
   lease_timeout_event = new C_LeaseTimeout(this);
-  mon->timer.add_event_after(g_conf->mon_lease_ack_timeout, lease_timeout_event);
+  mon->timer.add_event_after(g_conf->mon_lease_ack_timeout_factor *
+			     g_conf->mon_lease,
+			     lease_timeout_event);
 }
 
 void Paxos::lease_timeout()

@@ -12,7 +12,7 @@
  * 
  */
 
-#include "MDS.h"
+#include "MDSRank.h"
 #include "MDCache.h"
 #include "CInode.h"
 #include "CDir.h"
@@ -86,11 +86,11 @@
 class MigratorContext : public MDSInternalContextBase {
 protected:
   Migrator *mig;
-  MDS *get_mds() {
+  MDSRank *get_mds() {
     return mig->mds;
   }
 public:
-  MigratorContext(Migrator *mig_) : mig(mig_) {
+  explicit MigratorContext(Migrator *mig_) : mig(mig_) {
     assert(mig != NULL);
   }
 };
@@ -1019,7 +1019,8 @@ void Migrator::export_frozen(CDir *dir, uint64_t tid)
       bufferlist bl;
       cache->replicate_dentry(cur->inode->parent, it->second.peer, bl);
       dout(7) << "  added " << *cur->inode->parent << dendl;
-      cache->replicate_inode(cur->inode, it->second.peer, bl);
+      cache->replicate_inode(cur->inode, it->second.peer, bl,
+			     mds->mdsmap->get_up_features());
       dout(7) << "  added " << *cur->inode << dendl;
       bl.claim_append(tracebl);
       tracebl.claim(bl);
@@ -2566,7 +2567,7 @@ void Migrator::import_logged_start(dirfrag_t df, CDir *dir, mds_rank_t from,
   dout(7) << "sending ack for " << *dir << " to old auth mds." << from << dendl;
 
   // test surviving observer of a failed migration that did not complete
-  //assert(dir->replica_map.size() < 2 || mds->whoami != 0);
+  //assert(dir->replica_map.size() < 2 || mds->get_nodeid() != 0);
 
   MExportDirAck *ack = new MExportDirAck(dir->dirfrag(), it->second.tid);
   ::encode(imported_caps, ack->imported_caps);
@@ -2696,7 +2697,7 @@ void Migrator::import_finish(CDir *dir, bool notify, bool last)
   mds->mdcache->maybe_send_pending_resolves();
 
   // did i just import mydir?
-  if (dir->ino() == MDS_INO_MDSDIR(mds->whoami))
+  if (dir->ino() == MDS_INO_MDSDIR(mds->get_nodeid()))
     cache->populate_mydir();
 
   // is it empty?
@@ -2932,7 +2933,8 @@ int Migrator::decode_import_dir(bufferlist::iterator& blp,
     else if (icode == 'I') {
       // inode
       assert(le);
-      decode_import_inode(dn, blp, oldauth, ls, le->get_start_off(), peer_exports, updated_scatterlocks);
+      decode_import_inode(dn, blp, oldauth, ls, le->get_metablob()->event_seq,
+          peer_exports, updated_scatterlocks);
     }
     
     // add dentry to journal entry
