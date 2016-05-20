@@ -72,6 +72,8 @@ class BlockDevice {
   std::mutex ioc_reap_lock;
   vector<IOContext*> ioc_reap_queue;
   std::atomic_int ioc_reap_count = {0};
+protected:
+  bool rotational;
 
 public:
   BlockDevice() = default;
@@ -81,6 +83,7 @@ public:
   static BlockDevice *create(
       const string& path, aio_callback_t cb, void *cbpriv);
   virtual bool supported_bdev_label() { return true; }
+  virtual bool is_rotational() { return rotational; }
 
   virtual void aio_submit(IOContext *ioc) = 0;
 
