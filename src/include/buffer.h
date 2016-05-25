@@ -589,6 +589,7 @@ namespace buffer CEPH_BUFFER_API {
     int write_fd(int fd, uint64_t offset) const;
     int write_fd_zero_copy(int fd) const;
     void prepare_iov(std::vector<iovec> *piov) const;
+    uint32_t crc32c(unsigned off, size_t len, uint32_t crc) const;
     uint32_t crc32c(uint32_t crc) const;
 	void invalidate_crc();
   };

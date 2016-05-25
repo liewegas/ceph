@@ -24,9 +24,9 @@ public:
       size_t len,
       bufferlist::const_iterator& p
       ) {
-      bufferlist t;
-      p.copy(len, t);
-      return t.crc32c(-1);
+      auto v = p.get_bl().crc32c(p.get_off(), len, -1);
+      p.advance(len);
+      return v;
     }
   };
 
