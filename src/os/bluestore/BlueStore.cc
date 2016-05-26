@@ -5499,7 +5499,7 @@ void BlueStore::_do_write_small(
 	int r = _do_read(c.get(), o, offset + length + tail_pad, tail_read,
 			 tail_bl, 0);
 	assert(r >= 0 && r <= (int)tail_read);
-	b_len += r;
+	b_len += tail_read;
 	padded.claim_append(tail_bl);
 	size_t zlen = tail_read - r;
 	if (zlen) {
