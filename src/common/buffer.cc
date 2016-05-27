@@ -2278,13 +2278,11 @@ int buffer::list::write_fd_zero_copy(int fd) const
   return 0;
 }
 
-__u32 buffer::list::crc32c(unsigned off, size_t len, __u32 crc) const
+__u32 buffer::list::crc32c(buffer::list::const_iterator& it, size_t len, __u32 crc)
 {
-  if (off == 0 && len == length()) {
-    return crc32c(crc); //fall back to full implementation that supports caching.
+  if (it.get_off() == 0 && len == it.get_remaining()) {
+    return it.get_bl().crc32c(crc); //fall back to full implementation that supports caching.
   }
-  buffer::list::const_iterator it = begin();
-  it.advance(MIN(off, length()));
   len = MIN(len, it.get_remaining());
   while (len > 0) {
 

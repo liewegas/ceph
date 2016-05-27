@@ -24,8 +24,7 @@ public:
       size_t len,
       bufferlist::const_iterator& p
       ) {
-      auto v = p.get_bl().crc32c(p.get_off(), len, -1);
-      p.advance(len);
+      auto v = bufferlist::crc32c(p, len, -1);
       return v;
     }
   };
