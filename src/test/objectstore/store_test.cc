@@ -666,6 +666,129 @@ TEST_P(StoreTest, BufferCacheReadTest) {
   }
 }
 
+TEST_P(StoreTest, CompressionTest) {
+  ObjectStore::Sequencer osr("test");
+  int r;
+  coll_t cid;
+
+  g_conf->set_val("bluestore_compression", "force");
+  g_ceph_context->_conf->apply_changes(NULL);
+
+  ghobject_t hoid(hobject_t(sobject_t("Object 1", CEPH_NOSNAP)));
+  {
+    bufferlist in;
+    r = store->read(cid, hoid, 0, 5, in);
+    ASSERT_EQ(-ENOENT, r);
+  }
+  {
+    ObjectStore::Transaction t;
+    t.create_collection(cid, 0);
+    cerr << "Creating collection " << cid << std::endl;
+    r = apply_transaction(store, &osr, std::move(t));
+    ASSERT_EQ(r, 0);
+  }
+  {
+    bool exists = store->exists(cid, hoid);
+    ASSERT_TRUE(!exists);
+
+    ObjectStore::Transaction t;
+    t.touch(cid, hoid);
+    cerr << "Creating object " << hoid << std::endl;
+    r = apply_transaction(store, &osr, std::move(t));
+    ASSERT_EQ(r, 0);
+
+    exists = store->exists(cid, hoid);
+    ASSERT_EQ(true, exists);
+  }
+  std::string data;
+  data.resize(0x10000 * 2);
+  for(size_t i = 0;i < data.size(); i++)
+    data[i] = i / 256;
+  {
+    ObjectStore::Transaction t;
+    bufferlist bl, newdata;
+    bl.append(data);
+    t.write(cid, hoid, 0, bl.length(), bl);
+    cerr << "CompressibleData (2xAU) Write" << std::endl;
+    r = apply_transaction(store, &osr, std::move(t));
+    ASSERT_EQ(r, 0);
+
+    r = store->read(cid, hoid, 0, data.size() , newdata);
+    ASSERT_EQ(r, (int)data.size());
+    {
+      bufferlist expected;
+      expected.append(data);
+      ASSERT_TRUE(newdata.contents_equal(expected));
+    }
+    newdata.clear();
+    r = store->read(cid, hoid, 0, 711 , newdata);
+    ASSERT_EQ(r, 711);
+    {
+      bufferlist expected;
+      expected.append(data.substr(0,711));
+      ASSERT_TRUE(newdata.contents_equal(expected));
+    }
+    newdata.clear();
+    r = store->read(cid, hoid, 0xf00f, data.size(), newdata);
+    ASSERT_EQ(r, int(data.size() - 0xf00f) );
+    {
+      bufferlist expected;
+      expected.append(data.substr(0xf00f));
+      ASSERT_TRUE(newdata.contents_equal(expected));
+    }
+  }
+  std::string data2;
+  data2.resize(0x10000 * 2 - 0x9000);
+  for(size_t i = 0;i < data2.size(); i++)
+    data2[i] = i / 256;
+  {
+    ObjectStore::Transaction t;
+    bufferlist bl, newdata;
+    bl.append(data2);
+    t.write(cid, hoid, 0x8000, bl.length(), bl);
+    cerr << "CompressibleData (2xAU) Partial Overwrite" << std::endl;
+    r = apply_transaction(store, &osr, std::move(t));
+    ASSERT_EQ(r, 0);
+
+    r = store->read(cid, hoid, 0, 0x10000, newdata);
+    ASSERT_EQ(r, (int)0x10000);
+    {
+      bufferlist expected;
+      expected.append(data.substr(0, 0x8000));
+      expected.append(data2.substr(0, 0x8000));
+      ASSERT_TRUE(newdata.contents_equal(expected));
+    }
+    newdata.clear();
+    r = store->read(cid, hoid, 0x9000, 711 , newdata);
+    ASSERT_EQ(r, 711);
+    {
+      bufferlist expected;
+      expected.append(data2.substr(0x1000,711));
+      ASSERT_TRUE(newdata.contents_equal(expected));
+    }
+    newdata.clear();
+    r = store->read(cid, hoid, 0x0, 0x20000, newdata);
+    ASSERT_EQ(r, int(0x20000) );
+    {
+      bufferlist expected;
+      expected.append(data.substr(0, 0x8000));
+      expected.append(data2.substr(0, 0x17000));
+      expected.append(data.substr(0x1f000, 0x1000));
+      ASSERT_TRUE(newdata.contents_equal(expected));
+    }
+  }
+  {
+    ObjectStore::Transaction t;
+    t.remove(cid, hoid);
+    t.remove_collection(cid);
+    cerr << "Cleaning" << std::endl;
+    r = apply_transaction(store, &osr, std::move(t));
+    ASSERT_EQ(r, 0);
+  }
+  g_conf->set_val("bluestore_compression", "none");
+  g_ceph_context->_conf->apply_changes(NULL);
+}
+
 TEST_P(StoreTest, SimpleObjectTest) {
   ObjectStore::Sequencer osr("test");
   int r;
@@ -4056,6 +4179,24 @@ int main(int argc, char **argv) {
 
   global_init(NULL, args, CEPH_ENTITY_TYPE_CLIENT, CODE_ENVIRONMENT_UTILITY, 0);
   common_init_finish(g_ceph_context);
+
+  const char* env = getenv("CEPH_LIB");
+  std::string directory(env ? env : ".libs");
+  string mkdir_compressor = "mkdir -p " + directory + "/compressor";
+  int r = system(mkdir_compressor.c_str());
+  (void)r;
+
+  string cp_libceph_snappy = "cp " + directory + "/libceph_snappy.so* " + directory + "/compressor/";
+  r = system(cp_libceph_snappy.c_str());
+  (void)r;
+
+  string cp_libceph_zlib = "cp " + directory + "/libceph_zlib.so* " + directory + "/compressor/";
+  r = system(cp_libceph_zlib.c_str());
+  (void)r;
+
+  g_ceph_context->_conf->set_val("plugin_dir", directory, false, false);
+
+
   g_ceph_context->_conf->set_val("osd_journal_size", "400");
   g_ceph_context->_conf->set_val("filestore_index_retry_probability", "0.5");
   g_ceph_context->_conf->set_val("filestore_op_thread_timeout", "1000");
@@ -4072,7 +4213,7 @@ int main(int argc, char **argv) {
   g_ceph_context->_conf->apply_changes(NULL);
 
   ::testing::InitGoogleTest(&argc, argv);
-  int r = RUN_ALL_TESTS();
+  r = RUN_ALL_TESTS();
   g_ceph_context->put();
   return r;
 }
