@@ -670,6 +670,8 @@ TEST_P(StoreTest, CompressionTest) {
   ObjectStore::Sequencer osr("test");
   int r;
   coll_t cid;
+  if(string(GetParam()) != "bluestore")
+    return;
 
   g_conf->set_val("bluestore_compression", "force");
   g_ceph_context->_conf->apply_changes(NULL);
@@ -701,7 +703,7 @@ TEST_P(StoreTest, CompressionTest) {
     ASSERT_EQ(true, exists);
   }
   std::string data;
-  data.resize(0x10000 * 2);
+  data.resize(0x10000 * 4);
   for(size_t i = 0;i < data.size(); i++)
     data[i] = i / 256;
   {
@@ -709,7 +711,7 @@ TEST_P(StoreTest, CompressionTest) {
     bufferlist bl, newdata;
     bl.append(data);
     t.write(cid, hoid, 0, bl.length(), bl);
-    cerr << "CompressibleData (2xAU) Write" << std::endl;
+    cerr << "CompressibleData (4xAU) Write" << std::endl;
     r = apply_transaction(store, &osr, std::move(t));
     ASSERT_EQ(r, 0);
 
@@ -738,15 +740,15 @@ TEST_P(StoreTest, CompressionTest) {
     }
   }
   std::string data2;
-  data2.resize(0x10000 * 2 - 0x9000);
+  data2.resize(0x10000 * 4 - 0x9000);
   for(size_t i = 0;i < data2.size(); i++)
-    data2[i] = i / 256;
+    data2[i] = (i+1) / 256;
   {
     ObjectStore::Transaction t;
     bufferlist bl, newdata;
     bl.append(data2);
     t.write(cid, hoid, 0x8000, bl.length(), bl);
-    cerr << "CompressibleData (2xAU) Partial Overwrite" << std::endl;
+    cerr << "CompressibleData partial overwrite" << std::endl;
     r = apply_transaction(store, &osr, std::move(t));
     ASSERT_EQ(r, 0);
 
@@ -767,13 +769,72 @@ TEST_P(StoreTest, CompressionTest) {
       ASSERT_TRUE(newdata.contents_equal(expected));
     }
     newdata.clear();
-    r = store->read(cid, hoid, 0x0, 0x20000, newdata);
-    ASSERT_EQ(r, int(0x20000) );
+    r = store->read(cid, hoid, 0x0, 0x40000, newdata);
+    ASSERT_EQ(r, int(0x40000) );
     {
       bufferlist expected;
       expected.append(data.substr(0, 0x8000));
-      expected.append(data2.substr(0, 0x17000));
-      expected.append(data.substr(0x1f000, 0x1000));
+      expected.append(data2.substr(0, 0x37000));
+      expected.append(data.substr(0x3f000, 0x1000));
+      ASSERT_TRUE(newdata.contents_equal(expected));
+    }
+  }
+  data2.resize(0x3f000);
+  for(size_t i = 0;i < data2.size(); i++)
+    data2[i] = (i+2) / 256;
+  {
+    ObjectStore::Transaction t;
+    bufferlist bl, newdata;
+    bl.append(data2);
+    t.write(cid, hoid, 0, bl.length(), bl);
+    cerr << "CompressibleData partial overwrite, two extents overlapped, single one to be removed" << std::endl;
+    r = apply_transaction(store, &osr, std::move(t));
+    ASSERT_EQ(r, 0);
+
+    r = store->read(cid, hoid, 0, 0x3e000 - 1, newdata);
+    ASSERT_EQ(r, (int)0x3e000 - 1);
+    {
+      bufferlist expected;
+      expected.append(data2.substr(0, 0x3e000 - 1));
+      ASSERT_TRUE(newdata.contents_equal(expected));
+    }
+    newdata.clear();
+    r = store->read(cid, hoid, 0x3e000-1, 0x2001, newdata);
+    ASSERT_EQ(r, 0x2001);
+    {
+      bufferlist expected;
+      expected.append(data2.substr(0x3e000-1, 0x1001));
+      expected.append(data.substr(0x3f000, 0x1000));
+      ASSERT_TRUE(newdata.contents_equal(expected));
+    }
+    newdata.clear();
+    r = store->read(cid, hoid, 0x0, 0x40000, newdata);
+    ASSERT_EQ(r, int(0x40000) );
+    {
+      bufferlist expected;
+      expected.append(data2.substr(0, 0x3f000));
+      expected.append(data.substr(0x3f000, 0x1000));
+      ASSERT_TRUE(newdata.contents_equal(expected));
+    }
+  }
+  data.resize(0x1001);
+  for(size_t i = 0;i < data.size(); i++)
+    data[i] = (i+3) / 256;
+  {
+    ObjectStore::Transaction t;
+    bufferlist bl, newdata;
+    bl.append(data);
+    t.write(cid, hoid, 0x3f000-1, bl.length(), bl);
+    cerr << "Small chunk partial overwrite, two extents overlapped, single one to be removed" << std::endl;
+    r = apply_transaction(store, &osr, std::move(t));
+    ASSERT_EQ(r, 0);
+
+    r = store->read(cid, hoid, 0x3e000, 0x2000, newdata);
+    ASSERT_EQ(r, (int)0x2000);
+    {
+      bufferlist expected;
+      expected.append(data2.substr(0x3e000, 0x1000 - 1));
+      expected.append(data.substr(0, 0x1001));
       ASSERT_TRUE(newdata.contents_equal(expected));
     }
   }
@@ -3117,7 +3178,8 @@ public:
   }
 };
 
-TEST_P(StoreTest, Synthetic) {
+void doSyntheticTest(boost::scoped_ptr<ObjectStore>& store)
+{
   ObjectStore::Sequencer osr("test");
   MixedGenerator gen(555);
   gen_type rng(time(NULL));
@@ -3158,6 +3220,28 @@ TEST_P(StoreTest, Synthetic) {
   }
   test_obj.wait_for_done();
   test_obj.shutdown();
+}
+
+TEST_P(StoreTest, Synthetic) {
+  doSyntheticTest(store);
+}
+
+TEST_P(StoreTest, SyntheticCompressed) {
+  if(string(GetParam()) != "bluestore")
+    return;
+  g_conf->set_val("bluestore_compression", "force");
+  g_ceph_context->_conf->apply_changes(NULL);
+
+  doSyntheticTest(store);
+
+  g_conf->set_val("bluestore_compression_algorithm", "zlib");
+  g_ceph_context->_conf->apply_changes(NULL);
+
+  doSyntheticTest(store);
+
+  g_conf->set_val("bluestore_compression", "none");
+  g_conf->set_val("bluestore_compression_algorithm", "snappy");
+  g_ceph_context->_conf->apply_changes(NULL);
 }
 
 TEST_P(StoreTest, AttrSynthetic) {
