@@ -2278,6 +2278,24 @@ int buffer::list::write_fd_zero_copy(int fd) const
   return 0;
 }
 
+__u32 buffer::list::crc32c(buffer::list::const_iterator& it, size_t len, __u32 crc)
+{
+  if (it.get_off() == 0 && len == it.get_remaining()) {
+    return it.get_bl().crc32c(crc); //fall back to full implementation that supports caching.
+  }
+  len = MIN(len, it.get_remaining());
+  while (len > 0) {
+
+    const char *data;
+    size_t l = it.get_ptr_and_advance(len, &data);
+    if (l) {
+      crc = ceph_crc32c(crc, (unsigned char*)data, l);
+      len -= l;
+    }
+  }
+  return crc;
+}
+
 __u32 buffer::list::crc32c(__u32 crc) const
 {
   for (std::list<ptr>::const_iterator it = _buffers.begin();
