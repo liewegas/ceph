@@ -979,7 +979,7 @@ static int os_statfs(const char *path, struct statvfs *stbuf)
   FuseStore *fs = static_cast<FuseStore*>(fc->private_data);
 
   struct statfs s;
-  int r = fs->store->statfs(&s);
+  int r = fs->store->statfs(&s, NULL);
   if (r < 0)
     return r;
   stbuf->f_bsize = s.f_bsize;

@@ -768,7 +768,7 @@ void OSDService::update_osd_stat(vector<int>& hb_peers)
 
   // fill in osd stats too
   struct statfs stbuf;
-  int r = osd->store->statfs(&stbuf);
+  int r = osd->store->statfs(&stbuf, NULL); //FIXME: start using statfs_ex_t
   if (r < 0) {
     derr << "statfs() failed: " << cpp_strerror(r) << dendl;
     return;
@@ -2791,7 +2791,7 @@ int OSD::update_crush_location()
     snprintf(weight, sizeof(weight), "%.4lf", g_conf->osd_crush_initial_weight);
   } else {
     struct statfs st;
-    int r = store->statfs(&st);
+    int r = store->statfs(&st, NULL);
     if (r < 0) {
       derr << "statfs: " << cpp_strerror(r) << dendl;
       return r;

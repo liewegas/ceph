@@ -2075,7 +2075,6 @@ int BlueStore::mount()
     if (r < 0)
       goto out_coll;
   }
-
   finisher.start();
   wal_tp.start();
   kv_sync_thread.create("bstore_kv_sync");
@@ -2141,7 +2140,7 @@ int BlueStore::umount()
   _close_bdev();
   _close_fsid();
   _close_path();
-
+  statfs_ex.clear();
   if (g_conf->bluestore_fsck_on_umount) {
     int rc = fsck();
     if (rc < 0)
@@ -2641,7 +2640,7 @@ void BlueStore::_sync()
   dout(10) << __func__ << " done" << dendl;
 }
 
-int BlueStore::statfs(struct statfs *buf)
+int BlueStore::statfs(struct statfs *buf, statfs_ex_t* ex_buf)
 {
   memset(buf, 0, sizeof(*buf));
   uint64_t bluefs_len = 0;
@@ -2656,6 +2655,11 @@ int BlueStore::statfs(struct statfs *buf)
 
   dout(20) << __func__ << " free " << pretty_si_t(buf->f_bfree * buf->f_bsize)
 	   << " / " << pretty_si_t(buf->f_blocks * buf->f_bsize) << dendl;
+  if (ex_buf) {
+    *ex_buf = statfs_ex;
+    dout(20) << __func__ << " ex "
+      << statfs_ex << dendl;
+  }
   return 0;
 }
 
@@ -3027,7 +3031,8 @@ int BlueStore::_read_whole_blob(const bluestore_blob_t* blob, OnodeRef o, bool b
 
   result->clear();
 
-  uint32_t l = blob->length;
+
+  uint32_t l = blob->get_payload_length();
   uint64_t ext_pos = 0;
   auto it = blob->extents.cbegin();
   while (it != blob->extents.cend() && l > 0) {
@@ -3135,9 +3140,9 @@ int BlueStore::_blob2read_to_extents2read(
     uint64_t x_offs = cur->blob_xoffset;
     while (l > 0 && ext_it != ext_end) {
 
-      assert(blob->length >= ext_pos + r_offs);
+      assert(blob->get_payload_length() >= ext_pos + r_offs);
 
-      uint64_t r_len = MIN(blob->length - ext_pos - r_offs, ext_it->length - r_offs);
+      uint64_t r_len = MIN(blob->get_payload_length() - ext_pos - r_offs, ext_it->length - r_offs);
       if (r_len > 0) {
 	r_len = MIN(r_len, l);
 	const bluestore_pextent_t* eptr = &(*ext_it);
@@ -3985,6 +3990,20 @@ int BlueStore::_open_super_meta()
     }
     dout(10) << __func__ << " bluefs_extents " << bluefs_extents << dendl;
   }
+  //statfs_ex
+  {
+    bufferlist bl;
+    int r = db->get(PREFIX_SUPER, "statfs_ex", &bl);
+    if (r >= 0) {
+      assert(bl.length() > 0);
+      bufferlist::iterator p = bl.begin();
+      ::decode(statfs_ex, p);
+      dout(10) << __func__ << " statfs_ex " << std::hex << statfs_ex << std::dec << dendl;
+    } else {
+      dout(10) << __func__ << " statfs_ex missed, using empty" << dendl;
+    }
+  }
+
   return 0;
 }
 
@@ -4002,6 +4021,18 @@ void BlueStore::_assign_nid(TransContext *txc, OnodeRef o)
     txc->t->set(PREFIX_SUPER, "nid_max", bl);
     dout(10) << __func__ << " nid_max now " << nid_max << dendl;
   }
+}
+
+void BlueStore::_update_statfs_ex(TransContext *txc, const statfs_ex_t& delta)
+{
+  if (delta.is_empty())
+    return;
+  std::lock_guard<std::mutex> l(statfs_ex_lock);
+  statfs_ex.add(delta);
+  bufferlist bl;
+  ::encode(statfs_ex, bl);
+  txc->t->set(PREFIX_SUPER, "statfs_ex", bl);
+  dout(20) << __func__ << " statfs_ex now " << statfs_ex << dendl;
 }
 
 BlueStore::TransContext *BlueStore::_txc_create(OpSequencer *osr)
@@ -4323,6 +4354,9 @@ void BlueStore::_txc_finalize_kv(TransContext *txc, KeyValueDB::Transaction t)
 
   txc->allocated.clear();
   txc->released.clear();
+
+  _update_statfs_ex(txc, txc->statfs_ex_delta);
+  txc->statfs_ex_delta.clear();
 }
 
 void BlueStore::_kv_sync_thread()
@@ -5393,6 +5427,7 @@ void BlueStore::_do_write_small(
 	bluestore_lextent_t(blob, b_off + head_pad, length, 0);
       b->ref_map.get(lex.offset, lex.length);
       b->mark_used(lex.offset, lex.length);
+      txc->statfs_ex_delta.stored += lex.length;
       dout(20) << __func__ << "  lex 0x" << std::hex << offset << std::dec
 	       << ": " << lex << dendl;
       dout(20) << __func__ << "  old " << blob << ": " << *b << dendl;
@@ -5458,6 +5493,7 @@ void BlueStore::_do_write_small(
 	bluestore_lextent_t(blob, offset - bstart, length, 0);
       b->ref_map.get(lex.offset, lex.length);
       b->mark_used(lex.offset, lex.length);
+      txc->statfs_ex_delta.stored += lex.length;
       dout(20) << __func__ << "  lex 0x" << std::hex << offset
 	       << std::dec << ": " << lex << dendl;
       dout(20) << __func__ << "  old " << blob << ": " << *b << dendl;
@@ -5482,6 +5518,8 @@ void BlueStore::_do_write_small(
   bluestore_lextent_t& lex = o->onode.extent_map[offset] =
     bluestore_lextent_t(blob, offset % min_alloc_size, length);
   b->ref_map.get(lex.offset, lex.length);
+  txc->statfs_ex_delta.stored += lex.length;
+
   dout(20) << __func__ << "  lex 0x" << std::hex << offset << std::dec
 	   << ": " << lex << dendl;
   dout(20) << __func__ << "  new " << blob << ": " << *b << dendl;
@@ -5515,6 +5553,8 @@ void BlueStore::_do_write_big(
     o->onode.punch_hole(offset, length, &wctx->lex_old);
     o->onode.extent_map[offset] = bluestore_lextent_t(blob, 0, length, 0);
     b->ref_map.get(0, length);
+    txc->statfs_ex_delta.stored += length;
+
     dout(20) << __func__ << "  lex 0x" << std::hex << offset << std::dec << ": "
 	     << o->onode.extent_map[offset] << dendl;
     dout(20) << __func__ << "  blob " << *b << dendl;
@@ -5549,6 +5589,7 @@ int BlueStore::_do_alloc_write(
     bufferlist *l = &wi.bl;
     uint64_t final_length = b->length;
     uint64_t csum_length = b->length;
+
     bufferlist compressed_bl;
     CompressorRef c;
     if (b_off == 0 &&
@@ -5573,10 +5614,14 @@ int BlueStore::_do_alloc_write(
 		 << " -> 0x" << rawlen << " => 0x" << newlen
 		 << " with " << chdr.type
 		 << dec << dendl;
+	txc->statfs_ex_delta.compressed += rawlen;
+	txc->statfs_ex_delta.compressed_original += l->length();
 	l = &compressed_bl;
 	final_length = newlen;
 	csum_length = newlen;
-	b->set_flag(bluestore_blob_t::FLAG_COMPRESSED);
+	b->set_compressed(rawlen);
+
+
       } else {
 	dout(20) << __func__ << hex << "  compressed 0x" << l->length() << " -> 0x"
 		 << rawlen << " with " << chdr.type
@@ -5596,6 +5641,7 @@ int BlueStore::_do_alloc_write(
       need -= l;
       e.length = l;
       txc->allocated.insert(e.offset, e.length);
+      txc->statfs_ex_delta.allocated += e.length;
       b->extents.push_back(e);
       final_length -= e.length;
       hint = e.end();
@@ -5632,11 +5678,17 @@ void BlueStore::_wctx_finish(
     bluestore_blob_t *b = c->get_blob_ptr(o, l.blob);
     vector<bluestore_pextent_t> r;
     b->put_ref(l.offset, l.length, min_alloc_size, &r);
+    txc->statfs_ex_delta.stored -= l.length;
     for (auto e : r) {
       dout(20) << __func__ << " release " << e << dendl;
       txc->released.insert(e.offset, e.length);
+      txc->statfs_ex_delta.allocated -= e.length;
     }
     if (b->ref_map.empty()) {
+      if (b->is_compressed()) {
+	txc->statfs_ex_delta.compressed -= b->get_payload_length();
+	txc->statfs_ex_delta.compressed_original -= b->length;
+      }
       dout(20) << __func__ << " rm blob " << *b << dendl;
       if (l.blob >= 0) {
 	o->onode.blob_map.erase(l.blob);
@@ -6204,6 +6256,7 @@ int BlueStore::_clone(TransContext *txc,
 	newo->onode.extent_map[p.first] = p.second;
 	e->blob_map[-p.second.blob].ref_map.get(p.second.offset,
 						p.second.length);
+	txc->statfs_ex_delta.stored += p.second.length;
       }
       newo->bnode = e;
       _dump_onode(newo);

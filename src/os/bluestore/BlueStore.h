@@ -619,6 +619,7 @@ public:
     vector<OnodeRef> wal_op_onodes;
 
     interval_set<uint64_t> allocated, released;
+    statfs_ex_t statfs_ex_delta;
 
     IOContext ioc;
 
@@ -892,6 +893,9 @@ private:
 
   uint64_t min_alloc_size; ///< minimum allocation unit (power of 2)
 
+  std::mutex statfs_ex_lock;
+  statfs_ex_t statfs_ex;
+
   // compression options
   enum CompressionMode {
     COMP_NONE,                  ///< compress never
@@ -958,6 +962,7 @@ private:
   void _reap_collections();
 
   void _assign_nid(TransContext *txc, OnodeRef o);
+  void _update_statfs_ex(TransContext *txc, const statfs_ex_t& delta);
 
   void _dump_onode(OnodeRef o, int log_level=30);
   void _dump_bnode(BnodeRef b, int log_level=30);
@@ -1036,7 +1041,7 @@ public:
   }
 
 public:
-  int statfs(struct statfs *buf) override;
+  int statfs(struct statfs *buf, statfs_ex_t* ex_buf) override;
 
   bool exists(const coll_t& cid, const ghobject_t& oid) override;
   bool exists(CollectionHandle &c, const ghobject_t& oid) override;

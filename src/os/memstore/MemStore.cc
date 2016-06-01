@@ -220,9 +220,11 @@ int MemStore::mkfs()
   return 0;
 }
 
-int MemStore::statfs(struct statfs *st)
+int MemStore::statfs(struct statfs *st, statfs_ex_t* ex_buf)
 {
   dout(10) << __func__ << dendl;
+  if (ex_buf)
+    ex_buf->clear();
   st->f_bsize = 4096;
 
   // Device size is a configured constant
