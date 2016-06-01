@@ -253,6 +253,7 @@ struct bluestore_blob_t {
 
   vector<bluestore_pextent_t> extents; ///< raw data position on device
   uint32_t length;                 ///< logical (decompressed) length
+  uint32_t clength;                ///< compressed length if any
   uint32_t flags;                  ///< FLAG_*
 
   uint8_t csum_type;               ///< CSUM_*
@@ -264,6 +265,7 @@ struct bluestore_blob_t {
 
   bluestore_blob_t(uint32_t l = 0, uint32_t f = 0)
     : length(l),
+      clength(0),
       flags(f),
       csum_type(CSUM_NONE),
       csum_block_order(12) {
@@ -295,13 +297,19 @@ struct bluestore_blob_t {
     return get_flags_string(flags);
   }
 
+  void set_compressed(uint64_t clen) {
+    set_flag(FLAG_COMPRESSED);
+    clength = clen;
+  }
   bool is_mutable() const {
     return has_flag(FLAG_MUTABLE);
   }
   bool is_compressed() const {
     return has_flag(FLAG_COMPRESSED);
   }
-
+  uint32_t get_payload_length() const {
+    return is_compressed() ? clength : length;
+  }
   uint64_t calc_offset(uint64_t x_off, uint64_t *plen) const {
     auto p = extents.begin();
     assert(p != extents.end());

@@ -3027,7 +3027,7 @@ int BlueStore::_read_whole_blob(const bluestore_blob_t* blob, OnodeRef o, bool b
 
   result->clear();
 
-  uint32_t l = blob->length;
+  uint32_t l = blob->get_payload_length();
   uint64_t ext_pos = 0;
   auto it = blob->extents.cbegin();
   while (it != blob->extents.cend() && l > 0) {
@@ -3135,9 +3135,9 @@ int BlueStore::_blob2read_to_extents2read(
     uint64_t x_offs = cur->blob_xoffset;
     while (l > 0 && ext_it != ext_end) {
 
-      assert(blob->length >= ext_pos + r_offs);
+      assert(blob->get_payload_length() >= ext_pos + r_offs);
 
-      uint64_t r_len = MIN(blob->length - ext_pos - r_offs, ext_it->length - r_offs);
+      uint64_t r_len = MIN(blob->get_payload_length() - ext_pos - r_offs, ext_it->length - r_offs);
       if (r_len > 0) {
 	r_len = MIN(r_len, l);
 	const bluestore_pextent_t* eptr = &(*ext_it);
@@ -5576,7 +5576,7 @@ int BlueStore::_do_alloc_write(
 	l = &compressed_bl;
 	final_length = newlen;
 	csum_length = newlen;
-	b->set_flag(bluestore_blob_t::FLAG_COMPRESSED);
+	b->set_compressed(rawlen);
       } else {
 	dout(20) << __func__ << hex << "  compressed 0x" << l->length() << " -> 0x"
 		 << rawlen << " with " << chdr.type
