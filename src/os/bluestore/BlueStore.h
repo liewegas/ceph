@@ -893,6 +893,7 @@ private:
 
   uint64_t min_alloc_size; ///< minimum allocation unit (power of 2)
 
+  std::mutex statfs_ex_lock;
   statfs_ex_t statfs_ex;
 
   // compression options
@@ -961,6 +962,7 @@ private:
   void _reap_collections();
 
   void _assign_nid(TransContext *txc, OnodeRef o);
+  void _update_statfs_ex(TransContext *txc, const statfs_ex_t& delta);
 
   void _dump_onode(OnodeRef o, int log_level=30);
   void _dump_bnode(BnodeRef b, int log_level=30);

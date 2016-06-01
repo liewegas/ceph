@@ -91,6 +91,7 @@ TYPE(obj_list_snap_response_t)
 TYPE(PullOp)
 TYPE(PushOp)
 TYPE(PushReplyOp)
+TYPE(statfs_ex_t)
 
 #include "osd/ECUtil.h"
 TYPE(ECUtil::HashInfo)

@@ -4326,7 +4326,28 @@ struct statfs_ex_t {
     return allocated == 0 && stored == 0 && compressed == 0 && compressed_original == 0;
   }
 
+  void encode(bufferlist& bl) const {
+    ENCODE_START(1, 1, bl);
+    ::encode(allocated, bl);
+    ::encode(stored, bl);
+    ::encode(compressed, bl);
+    ::encode(compressed_original, bl);
+    ENCODE_FINISH(bl);
+  }
+  void decode(bufferlist::iterator& bl) {
+    DECODE_START(1, bl);
+    ::decode(allocated, bl);
+    ::decode(stored, bl);
+    ::decode(compressed, bl);
+    ::decode(compressed_original, bl);
+    DECODE_FINISH(bl);
+  }
   void dump(Formatter *f) const;
+  static void generate_test_instances(list<statfs_ex_t*>& o) {
+    o.push_back(new statfs_ex_t());
+  }
 };
+WRITE_CLASS_ENCODER(statfs_ex_t)
+ostream &operator<<(ostream &lhs, const statfs_ex_t &rhs);
 
 #endif

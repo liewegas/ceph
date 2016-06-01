@@ -2075,7 +2075,6 @@ int BlueStore::mount()
     if (r < 0)
       goto out_coll;
   }
-
   finisher.start();
   wal_tp.start();
   kv_sync_thread.create("bstore_kv_sync");
@@ -2086,9 +2085,6 @@ int BlueStore::mount()
 
   _set_csum();
   _set_compression();
-  
-  //FIXME:
-  //statfs_ex.set();
 
   mounted = true;
   return 0;
@@ -2661,11 +2657,8 @@ int BlueStore::statfs(struct statfs *buf, statfs_ex_t* ex_buf)
 	   << " / " << pretty_si_t(buf->f_blocks * buf->f_bsize) << dendl;
   if (ex_buf) {
     *ex_buf = statfs_ex;
-    dout(20) << __func__ << " statfs_ex " << pretty_si_t(ex_buf->allocated)
-      << " / " << pretty_si_t(ex_buf->stored) 
-      << " / " << pretty_si_t(ex_buf->compressed_original)
-      << " / " << pretty_si_t(ex_buf->compressed)
-      << dendl;
+    dout(20) << __func__ << " ex "
+      << statfs_ex << dendl;
   }
   return 0;
 }
@@ -3997,6 +3990,20 @@ int BlueStore::_open_super_meta()
     }
     dout(10) << __func__ << " bluefs_extents " << bluefs_extents << dendl;
   }
+  //statfs_ex
+  {
+    bufferlist bl;
+    int r = db->get(PREFIX_SUPER, "statfs_ex", &bl);
+    if (r >= 0) {
+      assert(bl.length() > 0);
+      bufferlist::iterator p = bl.begin();
+      ::decode(statfs_ex, p);
+      dout(10) << __func__ << " statfs_ex " << std::hex << statfs_ex << std::dec << dendl;
+    } else {
+      dout(10) << __func__ << " statfs_ex missed, using empty" << dendl;
+    }
+  }
+
   return 0;
 }
 
@@ -4014,6 +4021,18 @@ void BlueStore::_assign_nid(TransContext *txc, OnodeRef o)
     txc->t->set(PREFIX_SUPER, "nid_max", bl);
     dout(10) << __func__ << " nid_max now " << nid_max << dendl;
   }
+}
+
+void BlueStore::_update_statfs_ex(TransContext *txc, const statfs_ex_t& delta)
+{
+  if (delta.is_empty())
+    return;
+  std::lock_guard<std::mutex> l(statfs_ex_lock);
+  statfs_ex.add(delta);
+  bufferlist bl;
+  ::encode(statfs_ex, bl);
+  txc->t->set(PREFIX_SUPER, "statfs_ex", bl);
+  dout(20) << __func__ << " statfs_ex now " << statfs_ex << dendl;
 }
 
 BlueStore::TransContext *BlueStore::_txc_create(OpSequencer *osr)
@@ -4336,11 +4355,8 @@ void BlueStore::_txc_finalize_kv(TransContext *txc, KeyValueDB::Transaction t)
   txc->allocated.clear();
   txc->released.clear();
 
-  if (!txc->statfs_ex_delta.is_empty()) {
-    statfs_ex.add(txc->statfs_ex_delta);
-    //FIXME: t->set(, , statfs_ex);
-    txc->statfs_ex_delta.clear();
-  }
+  _update_statfs_ex(txc, txc->statfs_ex_delta);
+  txc->statfs_ex_delta.clear();
 }
 
 void BlueStore::_kv_sync_thread()
