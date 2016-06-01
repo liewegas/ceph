@@ -424,7 +424,7 @@ public:
     return 0;
   }
 
-  int statfs(struct statfs *buf);
+  int statfs(struct statfs *buf, statfs_ex_t* ex_buf);
 
   using ObjectStore::exists;
   bool exists(const coll_t& cid, const ghobject_t& oid);

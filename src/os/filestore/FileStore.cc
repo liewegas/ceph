@@ -701,8 +701,10 @@ void FileStore::collect_metadata(map<string,string> *pm)
   }
 }
 
-int FileStore::statfs(struct statfs *buf)
+int FileStore::statfs(struct statfs *buf, statfs_ex_t* ex_buf)
 {
+  if (ex_buf)
+    ex_buf->clear();
   if (::statfs(basedir.c_str(), buf) < 0) {
     int r = -errno;
     assert(!m_filestore_fail_eio || r != -EIO);

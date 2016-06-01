@@ -619,6 +619,7 @@ public:
     vector<OnodeRef> wal_op_onodes;
 
     interval_set<uint64_t> allocated, released;
+    statfs_ex_t statfs_ex_delta;
 
     IOContext ioc;
 
@@ -892,6 +893,8 @@ private:
 
   uint64_t min_alloc_size; ///< minimum allocation unit (power of 2)
 
+  statfs_ex_t statfs_ex;
+
   // compression options
   enum CompressionMode {
     COMP_NONE,                  ///< compress never
@@ -1036,7 +1039,7 @@ public:
   }
 
 public:
-  int statfs(struct statfs *buf) override;
+  int statfs(struct statfs *buf, statfs_ex_t* ex_buf) override;
 
   bool exists(const coll_t& cid, const ghobject_t& oid) override;
   bool exists(CollectionHandle &c, const ghobject_t& oid) override;
