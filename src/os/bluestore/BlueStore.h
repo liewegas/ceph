@@ -287,6 +287,7 @@ public:
   /// in-memory blob metadata and associated cached buffers (if any)
   struct Blob : public boost::intrusive::set_base_hook<> {
     std::atomic_int nref;  ///< reference count
+    string key;              ///< key under PREFIX_OBJ where we are stored
     int64_t id = 0;          ///< id
     BufferSpace bc;          ///< buffer cache
 
@@ -296,7 +297,7 @@ public:
     mutable bufferlist blob_bl;   ///< cached encoded blob
 
   public:
-    Blob(int64_t i, Cache *c) : nref(0), id(i), bc(c) {}
+    Blob(const string& k, int64_t i, Cache *c) : nref(0), key(k), id(i), bc(c) {}
     ~Blob() {
       assert(bc.empty());
     }
@@ -360,50 +361,27 @@ public:
   typedef boost::intrusive_ptr<Blob> BlobRef;
 
   /// a map of blobs, indexed by int64_t
+  class Collection;
   struct BlobMap {
     typedef boost::intrusive::set<Blob> blob_map_t;
 
+    Collection *coll;
+    uint32_t hash;
     blob_map_t blob_map;
 
-    void encode(bufferlist& bl) const;
-    void decode(bufferlist::iterator& p, Cache *c);
+    BlobMap(Collection *c, uint32_t h) : coll(c), hash(h) {}
 
     bool empty() const {
       return blob_map.empty();
     }
 
-    BlobRef get(int64_t id) {
-      Blob dummy(id, nullptr);
-      auto p = blob_map.find(dummy);
-      if (p != blob_map.end()) {
-	return &*p;
-      }
-      return nullptr;
-    }
+    BlobRef get(int64_t id);
 
-    BlobRef new_blob(Cache *c) {
-      int64_t id = get_new_id();
-      Blob *b = new Blob(id, c);
-      b->get();
-      blob_map.insert(*b);
-      return b;
-    }
-
-    void claim(BlobRef b) {
-      assert(b->id == 0);
-      b->id = get_new_id();
-      b->get();
-      blob_map.insert(*b);
-    }
+    BlobRef new_blob(uint64_t id);
 
     void erase(BlobRef b) {
       blob_map.erase(*b);
-      b->id = 0;
       b->put();
-    }
-
-    int64_t get_new_id() {
-      return blob_map.empty() ? 1 : blob_map.rbegin()->id + 1;
     }
 
     // must be called under protection of the Cache lock
@@ -430,17 +408,29 @@ public:
   /// an in-memory extent-map, shared by a group of objects (w/ same hash value)
   struct Bnode : public boost::intrusive::unordered_set_base_hook<> {
     std::atomic_int nref;        ///< reference count
+    shard_id_t shard;
+    int64_t pool;
     uint32_t hash;
-    string key;           ///< key under PREFIX_OBJ where we are stored
     BnodeSet *bnode_set;  ///< reference to the containing set
 
     BlobMap blob_map;
 
-    Bnode(uint32_t h, const string& k, BnodeSet *s)
+    Bnode(Collection *c, uint32_t h, BnodeSet *s)
       : nref(0),
 	hash(h),
-	key(k),
-	bnode_set(s) {}
+	bnode_set(s),
+	blob_map(c, h) {
+      if (c) {
+	spg_t pgid;
+	if (c->cid.is_pg(&pgid)) {
+	  pool = pgid.pgid.pool();
+	  shard = pgid.shard;
+	} else {
+	  pool = -1;
+	  shard = shard_id_t::NO_SHARD;
+	}
+      }
+    }
 
     void get() {
       ++nref;
@@ -475,7 +465,7 @@ public:
       : num_buckets(n),
 	buckets(n),
 	uset(bucket_traits(buckets.data(), num_buckets)),
-	dummy(0, string(), NULL) {
+	dummy(0, 0, NULL) {
       assert(n > 0);
     }
     ~BnodeSet() {
@@ -515,13 +505,11 @@ public:
     bluestore_onode_t onode;  ///< metadata stored as value in kv store
     bool exists;
 
-    BlobMap blob_map;       ///< local blobs (this onode onode)
-
     std::mutex flush_lock;  ///< protect flush_txns
     std::condition_variable flush_cond;   ///< wait here for unapplied txns
     set<TransContext*> flush_txns;   ///< committing or wal txns
 
-    Onode(OnodeSpace *s, const ghobject_t& o, const string& k)
+    Onode(Collection *c, OnodeSpace *s, const ghobject_t& o, const string& k)
       : nref(0),
 	oid(o),
 	key(k),
@@ -530,11 +518,8 @@ public:
     }
 
     BlobRef get_blob(int64_t id) {
-      if (id < 0) {
-	assert(bnode);
-	return bnode->blob_map.get(-id);
-      }
-      return blob_map.get(id);
+      assert(bnode);
+      return bnode->blob_map.get(id);
     }
 
     void flush();
@@ -729,7 +714,7 @@ public:
 
     void add(const ghobject_t& oid, OnodeRef o);
     OnodeRef lookup(const ghobject_t& o);
-    void rename(OnodeRef& o, const ghobject_t& old_oid,
+    void rename(Collection *c, OnodeRef& o, const ghobject_t& old_oid,
 		const ghobject_t& new_oid);
     void clear();
 
@@ -758,13 +743,8 @@ public:
     BnodeRef get_bnode(uint32_t hash);
 
     BlobRef get_blob(OnodeRef& o, int64_t blob) {
-      if (blob < 0) {
-	if (!o->bnode) {
-	  o->bnode = get_bnode(o->oid.hobj.get_hash());
-	}
-	return o->bnode->blob_map.get(-blob);
-      }
-      return o->blob_map.get(blob);
+      assert(o->bnode);
+      return o->bnode->blob_map.get(blob);
     }
 
     const coll_t &get_cid() override {
@@ -859,8 +839,8 @@ public:
     uint64_t ops, bytes;
 
     set<OnodeRef> onodes;     ///< these onodes need to be updated/written
-    set<BnodeRef> bnodes;     ///< these bnodes need to be updated/written
     set<BlobRef> blobs;       ///< these blobs need to be updated on io completion
+    set<BlobRef> old_blobs;
 
     KeyValueDB::Transaction t; ///< then we will commit this
     Context *oncommit;         ///< signal on commit
@@ -967,8 +947,8 @@ public:
     void write_onode(OnodeRef &o) {
       onodes.insert(o);
     }
-    void write_bnode(BnodeRef &e) {
-      bnodes.insert(e);
+    void write_blob(BlobRef &b) {
+      blobs.insert(b);
     }
 
     void add_deferred_csum(OnodeRef& o, int64_t b, uint64_t bo, bufferlist& bl) {
@@ -1162,6 +1142,10 @@ private:
   uint64_t nid_last;
   uint64_t nid_max;
 
+  std::mutex blobid_lock;
+  uint64_t blobid_last = 0;
+  uint64_t blobid_max = 0;
+
   Throttle throttle_ops, throttle_bytes;          ///< submit to commit
   Throttle throttle_wal_ops, throttle_wal_bytes;  ///< submit to wal complete
 
@@ -1266,6 +1250,7 @@ private:
   void _reap_collections();
 
   void _assign_nid(TransContext *txc, OnodeRef o);
+  uint64_t _assign_blobid(TransContext *txc);
 
   void _dump_onode(OnodeRef o, int log_level=30);
   void _dump_bnode(BnodeRef b, int log_level=30);
@@ -1308,9 +1293,8 @@ private:
   int _wal_replay();
 
   // for fsck
-  int _fsck_verify_blob_map(
-    string what,
-    const BlobMap& blob_map,
+  int _fsck_verify_bnode(
+    BnodeRef bnode,
     map<int64_t,bluestore_extent_ref_map_t>& v,
     boost::dynamic_bitset<> &used_blocks,
     store_statfs_t& expected_statfs);

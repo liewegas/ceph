@@ -596,10 +596,6 @@ struct bluestore_lextent_t {
     return offset + length;
   }
 
-  bool is_shared() const {
-    return blob < 0;
-  }
-
   void encode(bufferlist& bl) const;
   void decode(bufferlist::iterator& p);
 

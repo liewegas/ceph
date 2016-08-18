@@ -1000,6 +1000,7 @@ OPTION(bluestore_max_bytes, OPT_U64, 64*1024*1024)
 OPTION(bluestore_wal_max_ops, OPT_U64, 512)
 OPTION(bluestore_wal_max_bytes, OPT_U64, 128*1024*1024)
 OPTION(bluestore_nid_prealloc, OPT_INT, 1024)
+OPTION(bluestore_blobid_prealloc, OPT_U64, 10240)
 OPTION(bluestore_overlay_max_length, OPT_INT, 65536)
 OPTION(bluestore_overlay_max, OPT_INT, 0)
 OPTION(bluestore_clone_cow, OPT_BOOL, false)  // do copy-on-write for clones

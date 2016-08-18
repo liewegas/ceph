@@ -251,27 +251,30 @@ static void get_coll_key_range(const coll_t& cid, int bits,
   }
 }
 
-static bool is_bnode_key(const string& key)
+static bool is_blob_key(const string& key)
 {
-  if (key.size() == 2 + 8 + 4)
+  if (key.size() == 2 + 8 + 4 + 1 + 8 &&
+      key[2 + 8 + 4] == '-')
     return true;
   return false;
 }
 
-static void get_bnode_key(shard_id_t shard, int64_t pool, uint32_t hash,
-			  string *key)
+static void get_blob_key(shard_id_t shard, int64_t pool, uint32_t hash,
+			 uint64_t blobid, string *key)
 {
   key->clear();
   _key_encode_shard(shard, key);
-  _key_encode_u64(pool + 0x8000000000000000ull, key);
+  _key_encode_u64((uint64_t)pool + 0x8000000000000000ull, key);
   _key_encode_u32(hobject_t::_reverse_bits(hash), key);
+  key->append("-");
+  _key_encode_u64(blobid, key);
 }
 
-static int get_key_bnode(const string& key, shard_id_t *shard,
-			 int64_t *pool, uint32_t *hash)
+static int get_key_blob(const string& key, shard_id_t *shard,
+			 int64_t *pool, uint32_t *hash, uint64_t *blobid)
 {
   const char *p = key.c_str();
-  if (key.length() < 2 + 8 + 4)
+  if (key.length() < 2 + 8 + 4 + 1 + 8)
     return -1;
   p = _key_decode_shard(p, shard);
   p = _key_decode_u64(p, (uint64_t*)pool);
@@ -279,6 +282,8 @@ static int get_key_bnode(const string& key, shard_id_t *shard,
   uint32_t hash_reverse_bits;
   p = _key_decode_u32(p, &hash_reverse_bits);
   *hash = hobject_t::_reverse_bits(hash_reverse_bits);
+  ++p; // skip -
+  p = _key_decode_u64(p, blobid);
   return 0;
 }
 
@@ -549,7 +554,7 @@ void BlueStore::LRUCache::trim(uint64_t onode_max, uint64_t buffer_max)
     }
     o->get();  // paranoia
     o->space->onode_map.erase(o->oid);
-    o->blob_map._clear();    // clear blobs and their buffers, too
+    //o->blob_map._clear();    // clear blobs and their buffers, too
     o->put();
     --num;
   }
@@ -820,7 +825,7 @@ void BlueStore::TwoQCache::trim(uint64_t onode_max, uint64_t buffer_max)
     }
     o->get();  // paranoia
     o->space->onode_map.erase(o->oid);
-    o->blob_map._clear();    // clear blobs and their buffers, too
+    //o->blob_map._clear();    // clear blobs and their buffers, too
     o->put();
     --num;
   }
@@ -1089,12 +1094,12 @@ void BlueStore::OnodeSpace::clear()
     cache->_rm_onode(p.second);
 
     // clear blobs and their buffers too, while we have cache->lock
-    p.second->blob_map._clear();
+    //p.second->blob_map._clear();
   }
   onode_map.clear();
 }
 
-void BlueStore::OnodeSpace::rename(OnodeRef& oldo,
+void BlueStore::OnodeSpace::rename(Collection *c, OnodeRef& oldo,
 				     const ghobject_t& old_oid,
 				     const ghobject_t& new_oid)
 {
@@ -1114,7 +1119,7 @@ void BlueStore::OnodeSpace::rename(OnodeRef& oldo,
   OnodeRef o = po->second;
 
   // install a non-existent onode at old location
-  oldo.reset(new Onode(this, old_oid, o->key));
+  oldo.reset(new Onode(c, this, old_oid, o->key));
   po->second = oldo;
   cache->_add_onode(po->second, 1);
 
@@ -1176,29 +1181,42 @@ void BlueStore::Blob::discard_unallocated()
 #undef dout_prefix
 #define dout_prefix *_dout << "bluestore.blobmap(" << this << ") "
 
-void BlueStore::BlobMap::encode(bufferlist& bl) const
+BlueStore::BlobRef BlueStore::BlobMap::get(int64_t id)
 {
-  uint32_t n = blob_map.size();
-  ::encode(n, bl);
-  for (auto p = blob_map.begin(); n--; ++p) {
-    ::encode(p->id, bl);
-    p->encode(bl);
+  Blob dummy(string(), id, nullptr);
+  auto p = blob_map.find(dummy);
+  if (p != blob_map.end()) {
+    return &*p;
   }
+  string key;
+  spg_t pgid;
+  if (!coll->cid.is_pg(&pgid)) {
+    pgid.pgid.set_pool(-1);
+  }    
+  get_blob_key(pgid.shard, pgid.pool(), this->hash, id, &key);
+  bufferlist v;
+  int r = coll->store->db->get(PREFIX_OBJ, key, &v);
+  dout(20) << __func__ << " r " << r << " v.len " << v.length() << dendl;
+  Blob *b = new Blob(key, id, coll->cache);
+  bufferlist::iterator q = v.begin();
+  b->decode(q);
+  b->get();
+  blob_map.insert(*b);
+  return b;
 }
 
-void BlueStore::BlobMap::decode(bufferlist::iterator& p, Cache *c)
+BlueStore::BlobRef BlueStore::BlobMap::new_blob(uint64_t id)
 {
-  assert(blob_map.empty());
-  uint32_t n;
-  ::decode(n, p);
-  while (n--) {
-    int64_t id;
-    ::decode(id, p);
-    Blob *b = new Blob(id, c);
-    b->decode(p);
-    b->get();
-    blob_map.insert(*b);
-  }
+  string key;
+  spg_t pgid;
+  if (!coll->cid.is_pg(&pgid)) {
+    pgid.pgid.set_pool(-1);
+  }    
+  get_blob_key(pgid.shard, pgid.pool(), this->hash, id, &key);
+  Blob *b = new Blob(key, id, coll->cache);
+  b->get();
+  blob_map.insert(*b);
+  return b;
 }
 
 // Bnode
@@ -1279,27 +1297,9 @@ BlueStore::BnodeRef BlueStore::Collection::get_bnode(
     return b;
   }
 
-  spg_t pgid;
-  if (!cid.is_pg(&pgid))
-    pgid = spg_t();  // meta
-  string key;
-  get_bnode_key(pgid.shard, pgid.pool(), hash, &key);
-  b = new Bnode(hash, key, &bnode_set);
+  b = new Bnode(this, hash, &bnode_set);
   dout(10) << __func__ << " hash " << std::hex << hash << std::dec
 	   << " created " << b << dendl;
-
-  bufferlist v;
-  int r = store->db->get(PREFIX_OBJ, key, &v);
-  if (r >= 0) {
-    assert(v.length() > 0);
-    bufferlist::iterator p = v.begin();
-    b->blob_map.decode(p, cache);
-    dout(10) << __func__ << " hash " << std::hex << hash << std::dec
-	     << " loaded blob_map " << b->blob_map << dendl;
-  } else {
-    dout(10) << __func__ << " hash " <<std::hex << hash << std::dec
-	     << " missed, new blob_map" << dendl;
-  }
   bnode_set.add(b.get());
   return b;
 }
@@ -1340,16 +1340,19 @@ BlueStore::OnodeRef BlueStore::Collection::get_onode(
       return OnodeRef();
 
     // new
-    on = new Onode(&onode_map, oid, key);
+    on = new Onode(this, &onode_map, oid, key);
   } else {
     // loaded
     assert(r >=0);
-    on = new Onode(&onode_map, oid, key);
+    on = new Onode(this, &onode_map, oid, key);
     on->exists = true;
     bufferlist::iterator p = v.begin();
     ::decode(on->onode, p);
-    on->blob_map.decode(p, cache);
   }
+
+  // unconditionally set up bnode
+  on->bnode = get_bnode(oid.hobj.get_hash());
+
   o.reset(on);
   onode_map.add(oid, o);
   return o;
@@ -2939,16 +2942,18 @@ void apply(uint64_t off,
   }
 }
 
-int BlueStore::_fsck_verify_blob_map(
-  string what,
-  const BlobMap& blob_map,
+int BlueStore::_fsck_verify_bnode(
+  BnodeRef bnode,
   map<int64_t,bluestore_extent_ref_map_t>& v,
   boost::dynamic_bitset<> &used_blocks,
   store_statfs_t& expected_statfs)
 {
   int errors = 0;
+  ostringstream ss;
+  ss << std::hex << "0x" << bnode->hash;
+  string what = ss.str();
   dout(20) << __func__ << " " << what << " " << v << dendl;
-  for (auto& b : blob_map.blob_map) {
+  for (auto& b : bnode->blob_map.blob_map) {
     auto pv = v.find(b.id);
     if (pv == v.end()) {
       derr << " " << what << " blob " << b.id
@@ -3100,44 +3105,91 @@ int BlueStore::fsck()
   expected_statfs.total = actual_statfs.total;
   expected_statfs.available = actual_statfs.available;
 
-  // walk collections, objects
-  for (ceph::unordered_map<coll_t, CollectionRef>::iterator p = coll_map.begin();
-       p != coll_map.end();
-       ++p) {
-    dout(1) << __func__ << " collection " << p->first << dendl;
-    CollectionRef c = _get_collection(p->first);
-    RWLock::RLocker l(c->lock);
-    ghobject_t pos;
-    while (true) {
-      vector<ghobject_t> ols;
-      int r = collection_list(p->first, pos, ghobject_t::get_max(), true,
-			      100, &ols, &pos);
-      if (r < 0) {
-	++errors;
-	break;
-      }
-      if (ols.empty()) {
-	break;
-      }
-      for (auto& oid : ols) {
-	OnodeRef o = c->get_onode(oid, false);
-	if (!o || !o->exists) {
-	  derr << __func__ << "  " << oid << " missing" << dendl;
+  // walk PREFIX_OBJ
+  dout(1) << __func__ << " walking object/blob keyspace" << dendl;
+  it = db->get_iterator(PREFIX_OBJ);
+  if (it) {
+    CollectionRef c;
+    spg_t pgid;
+    for (it->lower_bound(string()); it->valid(); it->next()) {
+      ghobject_t oid;
+      uint64_t blobid = 0;
+      if (is_blob_key(it->key())) {
+	shard_id_t shard;
+	int64_t pool;
+	uint32_t hash;
+	int r = get_key_blob(it->key(), &shard, &pool, &hash, &blobid);
+	if (r < 0) {
+	  dout(30) << __func__ << "  bad blob key "
+		   << pretty_binary_string(it->key()) << dendl;
 	  ++errors;
-	  continue; // go for next object
+	  continue;
 	}
-	if (!bnode || bnode->hash != o->oid.hobj.get_hash()) {
-	  if (bnode)
-	    errors += _fsck_verify_blob_map(
-	      "hash " + stringify(bnode->hash),
-	      bnode->blob_map,
-	      hash_shared,
-	      used_blocks,
-	      expected_statfs);
-	  bnode = c->get_bnode(o->oid.hobj.get_hash());
-	  hash_shared.clear();
+	oid = ghobject_t();
+	oid.set_shard(shard);
+	oid.hobj.pool = pool;
+	oid.hobj.set_hash(hash);
+      } else {
+	int r = get_key_object(it->key(), &oid);
+	if (r < 0) {
+	  dout(30) << __func__ << "  bad object key "
+		   << pretty_binary_string(it->key()) << dendl;
+	  ++errors;
+	  continue;
 	}
+      }
+      if (!bnode ||
+	  oid.shard_id != bnode->shard ||
+	  oid.hobj.pool  != bnode->pool ||
+	  oid.hobj.get_hash() != bnode->hash) {
+	if (!c ||
+	    oid.shard_id != pgid.shard ||
+	    oid.hobj.pool != (int64_t)pgid.pool() ||
+	    !c->contains(oid)) {
+	  c = nullptr;
+	  for (ceph::unordered_map<coll_t, CollectionRef>::iterator p =
+		 coll_map.begin();
+	       p != coll_map.end();
+	       ++p) {
+	    if (p->second->contains(oid)) {
+	      c = p->second;
+	      break;
+	    }
+	  }
+	  if (!c) {
+	    dout(30) << __func__ << "  stray object or blob " << oid
+		     << " not owned by any collection" << dendl;
+	    ++errors;
+	    continue;
+	  }
+	  c->cid.is_pg(&pgid);
+	  dout(20) << __func__ << "  collection " << c->cid << dendl;
+	}
+	if (bnode) {
+	  errors += _fsck_verify_bnode(
+	    bnode,
+	    hash_shared,
+	    used_blocks,
+	    expected_statfs);
+	}
+	hash_shared.clear();
+	bnode = c->get_bnode(oid.hobj.get_hash());
+      }
+      if (blobid) {
+	// blob
+	BlobRef b = bnode->blob_map.get(blobid);
+	if (!b) {
+	  derr << " blob " << blobid << " failed to load" << dendl;
+	  ++errors;
+	  continue;
+	}
+	dout(20) << __func__ << "  blob " << b->id << " "
+		 << b->get_blob() << dendl;
+      } else {
+	// object
 	dout(10) << __func__ << "  " << oid << dendl;
+	RWLock::RLocker l(c->lock);
+	OnodeRef o = c->get_onode(oid, false);
 	_dump_onode(o, 30);
 	if (o->onode.nid) {
 	  if (used_nids.count(o->onode.nid)) {
@@ -3149,7 +3201,6 @@ int BlueStore::fsck()
 	  used_nids.insert(o->onode.nid);
 	}
 	// lextents
-	map<int64_t,bluestore_extent_ref_map_t> local_blobs;
 	uint64_t lext_next_offset = 0, lext_prev_offset = 0;
 	for (auto& l : o->onode.extent_map) {
 	  if (l.first < lext_next_offset) {
@@ -3163,20 +3214,9 @@ int BlueStore::fsck()
 	  }
 	  lext_next_offset = l.first + l.second.length;
 	  lext_prev_offset = l.first;
-	  if (l.second.blob >= 0) {
-	    local_blobs[l.second.blob].get(l.second.offset, l.second.length);
-	  } else {
-	    hash_shared[-l.second.blob].get(l.second.offset, l.second.length);
-	  }
+	  hash_shared[l.second.blob].get(l.second.offset, l.second.length);
 	  expected_statfs.stored += l.second.length;
 	}
-	// blobs
-	errors += _fsck_verify_blob_map(
-	  "object " + stringify(oid),
-	  o->blob_map,
-	  local_blobs,
-	  used_blocks,
-	  expected_statfs);
 	// omap
 	while (o->onode.omap_head) {
 	  if (used_omap_head.count(o->onode.omap_head)) {
@@ -3216,9 +3256,8 @@ int BlueStore::fsck()
     }
   }
   if (bnode) {
-    errors += _fsck_verify_blob_map(
-      "hash " + stringify(bnode->hash),
-      bnode->blob_map,
+    errors += _fsck_verify_bnode(
+      bnode,
       hash_shared,
       used_blocks,
       expected_statfs);
@@ -3230,55 +3269,6 @@ int BlueStore::fsck()
              << actual_statfs << " vs. "
              << expected_statfs << dendl;
     ++errors;
-  }
-
-  dout(1) << __func__ << " checking for stray bnodes and onodes" << dendl;
-  it = db->get_iterator(PREFIX_OBJ);
-  if (it) {
-    CollectionRef c;
-    shard_id_t expecting_shard;
-    int64_t expecting_pool;
-    uint32_t expecting_hash;
-    for (it->lower_bound(string()); it->valid(); it->next()) {
-      ghobject_t oid;
-      if (is_bnode_key(it->key())) {
-	int r = get_key_bnode(it->key(), &expecting_shard, &expecting_pool,
-		      &expecting_hash);
-        if (r < 0) {
-          dout(30) << __func__ << "  bad bnode key "
-                   << pretty_binary_string(it->key()) << dendl;
-          ++errors;
-        }
-	continue;
-      }
-
-      int r = get_key_object(it->key(), &oid);
-      if (r < 0) {
-	dout(30) << __func__ << "  bad object key "
-		 << pretty_binary_string(it->key()) << dendl;
-	++errors;
-	continue;
-      }
-
-      if (!c || !c->contains(oid)) {
-	c = NULL;
-	for (ceph::unordered_map<coll_t, CollectionRef>::iterator p =
-	       coll_map.begin();
-	     p != coll_map.end();
-	     ++p) {
-	  if (p->second->contains(oid)) {
-	    c = p->second;
-	    break;
-	  }
-	}
-	if (!c) {
-	  dout(30) << __func__ << "  stray object " << oid
-		   << " not owned by any collection" << dendl;
-	  ++errors;
-	  continue;
-	}
-      }
-    }
   }
 
   dout(1) << __func__ << " checking for stray omap data" << dendl;
@@ -3363,9 +3353,9 @@ int BlueStore::fsck()
     size_t count = used_blocks.count();
     if (used_blocks.size() != count) {
       assert(used_blocks.size() > count);
-      derr << __func__ << " leaked some space;"
+      derr << __func__ << " leaked "
 	   << (used_blocks.size() - count) * min_alloc_size
-	   << " bytes leaked" << dendl;
+	   << " bytes" << dendl;
       ++errors;
     }
   }
@@ -4269,10 +4259,10 @@ int BlueStore::collection_list(
         }
         break;
       }
-      if (is_bnode_key(it->key())) {
+      if (is_blob_key(it->key())) {
         dout(20) << __func__ << " key "
   	         << pretty_binary_string(it->key())
-  	         << " (bnode, skipping)" << dendl;
+  	         << " (blob, skipping)" << dendl;
         it->next();
         continue;
       }
@@ -4722,6 +4712,19 @@ int BlueStore::_open_super_meta()
     dout(10) << __func__ << " old nid_max " << nid_max << dendl;
     nid_last = nid_max;
   }
+  // blobid
+  {
+    blobid_max = 0;
+    bufferlist bl;
+    db->get(PREFIX_SUPER, "blobid_max", &bl);
+    bufferlist::iterator p = bl.begin();
+    try {
+      ::decode(blobid_max, p);
+    } catch (buffer::error& e) {
+    }
+    dout(10) << __func__ << " old blobid_max " << blobid_max << dendl;
+    blobid_last = blobid_max;
+  }
 
   // freelist
   {
@@ -4769,6 +4772,22 @@ void BlueStore::_assign_nid(TransContext *txc, OnodeRef o)
     dout(10) << __func__ << " nid_max now " << nid_max << dendl;
   }
 }
+
+uint64_t BlueStore::_assign_blobid(TransContext *txc)
+{
+  std::lock_guard<std::mutex> l(blobid_lock);
+  uint64_t bid = ++blobid_last;
+  dout(20) << __func__ << " " << bid << dendl;
+  if (blobid_last > blobid_max) {
+    blobid_max += g_conf->bluestore_blobid_prealloc;
+    bufferlist bl;
+    ::encode(blobid_max, bl);
+    txc->t->set(PREFIX_SUPER, "blobid_max", bl);
+    dout(10) << __func__ << " blobid_max now " << blobid_max << dendl;
+  }
+  return bid;
+}
+
 
 BlueStore::TransContext *BlueStore::_txc_create(OpSequencer *osr)
 {
@@ -4932,7 +4951,8 @@ void BlueStore::_txc_write_nodes(TransContext *txc, KeyValueDB::Transaction t)
 {
   dout(20) << __func__ << " txc " << txc
 	   << " onodes " << txc->onodes
-	   << " bnodes " << txc->bnodes
+	   << " blobs " << txc->blobs
+	   << " old_blobs " << txc->old_blobs
 	   << dendl;
 
   // finalize onodes
@@ -4941,32 +4961,27 @@ void BlueStore::_txc_write_nodes(TransContext *txc, KeyValueDB::Transaction t)
        ++p) {
     bufferlist bl;
     ::encode((*p)->onode, bl);
-    unsigned first_part = bl.length();
-    (*p)->blob_map.encode(bl);
     dout(20) << "  onode " << (*p)->oid << " is " << bl.length()
-	     << " (" << first_part << " onode + "
-	     << (bl.length() - first_part) << " blob_map)" << dendl;
+	     << " key " << pretty_binary_string((*p)->key)
+	     << dendl;
     t->set(PREFIX_OBJ, (*p)->key, bl);
 
     std::lock_guard<std::mutex> l((*p)->flush_lock);
     (*p)->flush_txns.insert(txc);
   }
 
-  // finalize bnodes
-  for (set<BnodeRef>::iterator p = txc->bnodes.begin();
-       p != txc->bnodes.end();
-       ++p) {
-    if ((*p)->blob_map.empty()) {
-      dout(20) << "  bnode " << std::hex << (*p)->hash << std::dec
-	       << " blob_map is empty" << dendl;
-      t->rmkey(PREFIX_OBJ, (*p)->key);
-    } else {
-      bufferlist bl;
-      (*p)->blob_map.encode(bl);
-      dout(20) << "  bnode " << std::hex << (*p)->hash << std::dec
-	       << " blob_map is " << bl.length() << dendl;
-      t->set(PREFIX_OBJ, (*p)->key, bl);
-    }
+  // finalize blobs
+  for (auto &b : txc->blobs) {
+    bufferlist bl;
+    b->encode(bl);
+    dout(20) << "  blob " << b->id << " is " << bl.length()
+	     << " key " << pretty_binary_string(b->key)
+	     << dendl;
+    t->set(PREFIX_OBJ, b->key, bl);
+  }
+  for (auto &b : txc->old_blobs) {
+    dout(20) << "  rm blob " << b->id << dendl;
+    t->rmkey(PREFIX_OBJ, b->key);
   }
 }
 
@@ -5838,10 +5853,7 @@ void BlueStore::_dump_onode(OnodeRef o, int log_level)
     assert(p.first >= pos);
     pos = p.first + p.second.length;
   }
-  _dump_blob_map(o->blob_map, log_level);
-  if (o->bnode) {
-    _dump_bnode(o->bnode, log_level);
-  }
+  _dump_bnode(o->bnode, log_level);
 }
 
 void BlueStore::_dump_bnode(BnodeRef b, int log_level)
@@ -5857,8 +5869,9 @@ void BlueStore::_dump_blob_map(BlobMap &bm, int log_level)
 {
   for (auto& b : bm.blob_map) {
     dout(log_level) << __func__ << "  " << b
-		    << " blob_bl " << b.blob_bl.length()
-		    << (b.blob_bl.length() ? "" : " (dirty)") << dendl;
+      //<< " blob_bl " << b.blob_bl.length()
+      //<< (b.blob_bl.length() ? "" : " (dirty)") << dendl;
+		    << dendl;
     if (b.get_blob().has_csum()) {
       vector<uint64_t> v;
       unsigned n = b.get_blob().get_csum_count();
@@ -6130,7 +6143,7 @@ void BlueStore::_do_write_small(
   }
 
   // new blob.
-  b = o->blob_map.new_blob(c->cache);
+  b = o->bnode->blob_map.new_blob(_assign_blobid(txc));
   unsigned alloc_len = min_alloc_size;
   uint64_t b_off = P2PHASE(offset, alloc_len);
   _buffer_cache_write(txc, b, b_off, bl, wctx->buffered ? 0 : Buffer::FLAG_NOCACHE);
@@ -6162,7 +6175,7 @@ void BlueStore::_do_write_big(
 	   << " compress " << (int)wctx->compress
 	   << std::dec << dendl;
   while (length > 0) {
-    BlobRef b = o->blob_map.new_blob(c->cache);
+    BlobRef b = o->bnode->blob_map.new_blob(_assign_blobid(txc));
     auto l = MIN(max_blob_len, length);
     bufferlist t;
     blp.copy(l, t);
@@ -6332,7 +6345,7 @@ void BlueStore::_wctx_finish(
   WriteContext *wctx)
 {
   dout(10) << __func__ << " lex_old " << wctx->lex_old << dendl;
-  set<pair<bool, BlobRef> > blobs2remove;
+  set<BlobRef> blobs2remove;
   for (auto &lo : wctx->lex_old) {
     bluestore_lextent_t& l = lo.second;
     BlobRef b = c->get_blob(o, l.blob);
@@ -6340,7 +6353,9 @@ void BlueStore::_wctx_finish(
     bool compressed = b->get_blob().is_compressed();
     if (o->onode.deref_lextent(lo.first, l, &b->dirty_blob(),
 			       min_alloc_size, &r)) {
-      blobs2remove.insert(std::make_pair(l.blob >= 0, b));
+      blobs2remove.insert(b);
+    } else {
+      txc->write_blob(b);
     }
     // we can't invalidate our logical extents as we drop them because
     // other lextents (either in our onode or others) may still
@@ -6361,19 +6376,13 @@ void BlueStore::_wctx_finish(
         txc->statfs_delta.compressed_allocated() -= e.length;
       }
     }
-    if (l.blob < 0) {
-      txc->write_bnode(o->bnode);
-    }
   }
   for (auto br : blobs2remove) {
-    dout(20) << __func__ << " rm blob " << *br.second << dendl;
+    dout(20) << __func__ << " rm blob " << *br << dendl;
     txc->statfs_delta.compressed() -=
-      br.second->get_blob().get_compressed_payload_length();
-    if (br.first) {
-      o->blob_map.erase(br.second);
-    } else {
-      o->bnode->blob_map.erase(br.second);
-    }
+      br->get_blob().get_compressed_payload_length();
+    txc->old_blobs.insert(br);
+    o->bnode->blob_map.erase(br);
   }
 
   o->onode.compress_extent_map();
@@ -6907,49 +6916,28 @@ int BlueStore::_clone(TransContext *txc,
 
   if (g_conf->bluestore_clone_cow) {
     if (!oldo->onode.extent_map.empty()) {
-      if (!oldo->bnode) {
-	oldo->bnode = c->get_bnode(newo->oid.hobj.get_hash());
-      }
-      if (!newo->bnode) {
-	newo->bnode = oldo->bnode;
-      }
       assert(newo->bnode == oldo->bnode);
-      // move blobs
-      map<int64_t,int64_t> moved_blobs;
+      // mark blobs immutable
+      set<BlobRef> needs_refmap;
       for (auto& p : oldo->onode.extent_map) {
-        if (!p.second.is_shared()) {
-          BlobRef b;
-          if (moved_blobs.count(p.second.blob) == 0) {
-            b = oldo->blob_map.get(p.second.blob);
-            oldo->blob_map.erase(b);
-            newo->bnode->blob_map.claim(b);
-            moved_blobs[p.second.blob] = b->id;
-            dout(30) << __func__ << "  moving old onode blob " << p.second.blob
-                    << " to bnode blob " << b->id << dendl;
-            b->dirty_blob().clear_flag(bluestore_blob_t::FLAG_MUTABLE);
-            b->dirty_blob().set_flag(bluestore_blob_t::FLAG_HAS_REFMAP);
-          } else {
-            b = newo->bnode->blob_map.get(moved_blobs[p.second.blob]);
-          }
-          b->dirty_blob().get_ref(p.second.offset, p.second.length);
-        }
-      }
-      // update lextents
-      for (auto& p : oldo->onode.extent_map) {
-	if (moved_blobs.count(p.second.blob)) {
-	  p.second.blob = -moved_blobs[p.second.blob];
+	BlobRef b = oldo->bnode->blob_map.get(p.second.blob);
+	bluestore_blob_t& blob = b->dirty_blob();
+	if (blob.has_flag(bluestore_blob_t::FLAG_MUTABLE)) {
+	  blob.clear_flag(bluestore_blob_t::FLAG_MUTABLE);
 	}
-	newo->onode.extent_map[p.first] = p.second;
-        assert(p.second.blob < 0);
-	newo->bnode->blob_map.get(-p.second.blob)->dirty_blob().get_ref(
-	  p.second.offset, p.second.length);
+	if (!blob.has_flag(bluestore_blob_t::FLAG_HAS_REFMAP)) {
+	  needs_refmap.insert(b);
+	  b->dirty_blob().set_flag(bluestore_blob_t::FLAG_HAS_REFMAP);
+	}
+	if (needs_refmap.count(b)) {
+	  blob.get_ref(p.second.offset, p.second.length);
+	}
+	blob.get_ref(p.second.offset, p.second.length);
+	txc->write_blob(b);
 	txc->statfs_delta.stored() += p.second.length;
+	newo->onode.extent_map[p.first] = p.second;
       }
       _dump_onode(newo);
-      txc->write_bnode(newo->bnode);
-      if (!moved_blobs.empty()) {
-	txc->write_onode(oldo);
-      }
     }
     newo->onode.size = oldo->onode.size;
   } else {
@@ -7066,7 +7054,24 @@ int BlueStore::_rename(TransContext *txc,
 
   // this adjusts oldo->{oid,key}, and reset oldo to a fresh empty
   // Onode in the old slot
-  c->onode_map.rename(oldo, old_oid, new_oid);
+  c->onode_map.rename(c.get(), oldo, old_oid, new_oid);
+
+  // swap bnodes, and rewrite all blobs
+  oldo->bnode = newo->bnode;
+  newo->bnode = c->get_bnode(newo->oid.hobj.get_hash());
+  for (auto& b : oldo->bnode->blob_map.blob_map) {
+    // remove old key
+    txc->t->rmkey(PREFIX_OBJ, b.key);
+    // set new key
+    get_blob_key(newo->oid.shard_id, newo->oid.hobj.pool,
+		 newo->oid.hobj.get_hash(), b.id, &b.key);
+    dout(20) << __func__ << " blob " << b.id << " has new key "
+	     << pretty_binary_string(b.key) << dendl;
+    bufferlist bl;
+    b.encode(bl);
+    txc->t->set(PREFIX_OBJ, b.key, bl);
+  }
+
   r = 0;
 
  out:
