@@ -1121,6 +1121,10 @@ private:
   int fsid_fd;  ///< open handle (locked) to $path/fsid
   bool mounted;
 
+  /// true if allocation + io submission must be serialized (e.g., SMR)
+  bool serialize_alloc_io_submit = true;
+  std::mutex alloc_io_lock;
+
   RWLock coll_lock;    ///< rwlock to protect coll_map
   ceph::unordered_map<coll_t, CollectionRef> coll_map;
 

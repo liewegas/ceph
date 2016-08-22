@@ -4806,6 +4806,12 @@ void BlueStore::_txc_state_proc(TransContext *txc)
       if (txc->ioc.has_aios()) {
 	txc->state = TransContext::STATE_AIO_WAIT;
 	_txc_aio_submit(txc);
+      }
+      if (serialize_alloc_io_submit) {
+	alloc_io_lock.unlock();
+	dout(20) << __func__ << " released alloc_io_lock for " << txc << dendl;
+      }
+      if (txc->ioc.has_aios()) {
 	return;
       }
       // ** fall-thru **
@@ -5379,6 +5385,11 @@ int BlueStore::queue_transactions(
   txc->onreadable = onreadable;
   txc->onreadable_sync = onreadable_sync;
   txc->oncommit = ondisk;
+
+  if (serialize_alloc_io_submit) {
+    alloc_io_lock.lock();
+    dout(20) << __func__ << " took alloc_io_lock for " << txc << dendl;
+  }
 
   for (vector<Transaction>::iterator p = tls.begin(); p != tls.end(); ++p) {
     (*p).set_osr(osr);
