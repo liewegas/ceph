@@ -823,39 +823,76 @@ ostream& operator<<(ostream& out, const bluestore_lextent_t& lb)
 }
 
 // bluestore_onode_t
-void small_encode(const map<uint64_t,bluestore_lextent_t>& extents, bufferlist& bl)
+void small_encode(const map<uint64_t,bluestore_lextent_t>& extents,
+		  bufferlist& bl)
 {
   size_t n = extents.size();
   small_encode_varint(n, bl);
   if (n) {
-    auto p = extents.begin();
-    small_encode_varint_lowz(p->first, bl);
-    p->second.encode(bl);
-    uint64_t pos = p->first;
-    while (--n) {
-      ++p;
-      small_encode_varint_lowz((uint64_t)p->first - pos, bl);
-      p->second.encode(bl);
-      pos = p->first;
+    int64_t last_blob = 0;
+    uint64_t pos = 0;
+    uint64_t prev_len = 0;
+    for (auto p = extents.begin(); p != extents.end(); ++p) {
+      uint64_t blob = (p->second.blob - last_blob) << 3;
+      last_blob = p->second.blob;
+      if (p->first == pos) {
+	blob |= 1;
+      }
+      if (p->second.offset == 0) {
+	blob |= 2;
+      }
+      if (p->second.length == prev_len) {
+	blob |= 4;
+      } else {
+	prev_len = p->second.length;
+      }
+      small_encode_signed_varint(blob, bl);
+      if ((blob & 1) == 0) {
+	small_encode_varint_lowz(p->first - pos, bl);
+      }
+      if ((blob & 2) == 0) {
+	small_encode_varint_lowz(p->second.offset, bl);
+      }
+      if ((blob & 4) == 0) {
+	small_encode_varint_lowz(p->second.length, bl);
+      }
+      pos = p->first + p->second.length;
     }
   }
 }
 
-void small_decode(map<uint64_t,bluestore_lextent_t>& extents, bufferlist::iterator& p)
+void small_decode(map<uint64_t,bluestore_lextent_t>& extents,
+		  bufferlist::iterator& p)
 {
   size_t n;
   extents.clear();
   small_decode_varint(n, p);
-  if (n) {
-    uint64_t pos;
-    small_decode_varint_lowz(pos, p);
-    extents[pos].decode(p);
-    while (--n) {
-      uint64_t delta;
-      small_decode_varint_lowz(delta, p);
-      pos += delta;
-      extents[pos].decode(p);
+  uint64_t pos = 0;
+  uint64_t prev_len = 0;
+  uint64_t last_blob = 0;
+  while (n--) {
+    int64_t blob;
+    small_decode_signed_varint(blob, p);
+    if ((blob & 1) == 0) {
+      uint64_t gap;
+      small_decode_varint_lowz(gap, p);
+      pos += gap;
     }
+    bluestore_lextent_t& le = extents[pos];
+    le.blob = last_blob + (blob >> 3);
+    last_blob = le.blob;
+    if (blob & 2) {
+      le.offset = 0;
+    } else {
+      small_decode_varint_lowz(le.offset, p);
+    }
+    if (blob & 4) {
+      le.length = prev_len;
+    } else {
+      small_decode_varint_lowz(le.length, p);
+      prev_len = le.length;
+    }
+    pos += prev_len;
   }
 }
 
