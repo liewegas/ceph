@@ -9,6 +9,36 @@
 // varint encoding
 //
 // high bit of every byte indicates whether another byte follows.
+inline void small_encode_varint(uint64_t v, bufferlist& bl) {
+  int bits = v ? (64 - clzll(v)) : 0;
+  int bytes = (bits + 7 - 5) / 8;
+  char buf[9];
+  char *p = buf;
+  *p++ = bytes | (v << 3);
+  if (bytes) {
+    *(uint64_t*)p = v >> 5;   // fixme: little-endian only!
+    p += bytes;
+  }
+  bl.append(buf, p - buf);
+}
+
+template<typename T>
+inline void small_decode_varint(T& v, bufferlist::iterator& p) {
+  uint8_t first;
+  ::decode(first, p);
+  int bytes = first & 7;
+  if (bytes) {
+    // fixme: little-endian only
+    uint64_t t = 0;
+    p.copy(bytes, (char*)&t);
+    v = ((uint64_t)first >> 3) | (t << 5);
+  } else {
+    v = first >> 3;
+  }
+}
+
+
+#if 0
 template<typename T>
 inline void small_encode_varint(T v, bufferlist& bl) {
   char buf[sizeof(T) + 2];
@@ -70,6 +100,7 @@ inline void small_decode_varint(T& v, bufferlist::iterator& p)
     shift += 7;
   }
 }
+#endif
 
 // signed varint encoding
 //
