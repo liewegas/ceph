@@ -261,7 +261,7 @@ TEST(small_encoding, varint) {
       cout << std::hex << v[i][0] << "\t" << v[i][1] << "\t";
       bl.hexdump(cout, false);
       cout << std::endl;
-      //ASSERT_EQ(bl.length(), v[i][1]);
+      ASSERT_EQ(bl.length(), v[i][1]);
       uint32_t u;
       auto p = bl.begin();
       small_decode_varint(u, p);
@@ -273,7 +273,7 @@ TEST(small_encoding, varint) {
       cout << std::hex << v[i][0] << "\t" << v[i][2] << "\t";
       bl.hexdump(cout, false);
       cout << std::endl;
-      //ASSERT_EQ(bl.length(), v[i][2]);
+      ASSERT_EQ(bl.length(), v[i][2]);
       int32_t u;
       auto p = bl.begin();
       small_decode_signed_varint(u, p);
@@ -286,11 +286,55 @@ TEST(small_encoding, varint) {
       cout << std::dec << x << std::hex << "\t" << v[i][3] << "\t";
       bl.hexdump(cout, false);
       cout << std::endl;
-      //ASSERT_EQ(bl.length(), v[i][3]);
+      ASSERT_EQ(bl.length(), v[i][3]);
       int64_t u;
       auto p = bl.begin();
       small_decode_signed_varint(u, p);
       ASSERT_EQ(x, u);
+    }
+  }
+}
+
+TEST(small_encoding, prefixint32) {
+  uint32_t v[][4] = {
+    /* value, varint bytes, signed varint bytes, signed varint bytes (neg) */
+    {0, 1, 1, 1},
+    {1, 1, 1, 1},
+    {2, 1, 1, 1},
+    {31, 1, 1, 1},
+    {32, 1, 1, 1},
+    {0xff, 2, 2, 2},
+    {0x100, 2, 2, 2},
+    {0xfff, 2, 2, 2},
+    {0x1000, 2, 2, 2},
+    {0x2000, 2, 3, 3},
+    {0x3fff, 2, 3, 3},
+    {0x4000, 3, 3, 3},
+    {0x4001, 3, 3, 3},
+    {0x10001, 3, 3, 3},
+    {0x20001, 3, 3, 3},
+    {0x40001, 3, 3, 3},
+    {0x80001, 3, 3, 3},
+    {0x7f0001, 4, 4, 4},
+    {0xff00001, 4, 5, 5},
+    {0x1ff00001, 5, 5, 5},
+    {0xffff0001, 5, 5, 5},
+    {0xffffffff, 5, 5, 5},
+    {1074790401, 5, 5, 5},
+    {0, 0, 0, 0}
+  };
+  for (unsigned i=0; v[i][1]; ++i) {
+    {
+      bufferlist bl;
+      small_encode_prefixint(v[i][0], bl);
+      cout << std::hex << v[i][0] << "\t" << v[i][1] << "\t";
+      bl.hexdump(cout, false);
+      cout << std::endl;
+      //ASSERT_EQ(bl.length(), v[i][1]);
+      uint32_t u;
+      auto p = bl.begin();
+      small_decode_prefixint(u, p);
+      ASSERT_EQ(v[i][0], u);
     }
   }
 }

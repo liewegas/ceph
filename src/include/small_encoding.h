@@ -6,29 +6,34 @@
 #include "include/buffer.h"
 #include "include/int_types.h"
 
-// varint encoding
+// prefix int encoding
 //
-// high bit of every byte indicates whether another byte follows.
-inline void small_encode_varint(uint64_t v, bufferlist& bl) {
+// encode the number of additional bytes in the low 3, 2, or 1 bits
+// (depending on the variable size)
+inline void small_encode_prefixint(uint64_t v, bufferlist& bl) {
   int bits = v ? (64 - clzll(v)) : 0;
   int bytes = (bits + 7 - 5) / 8;
   char buf[9];
   char *p = buf;
-  *p++ = bytes | (v << 3);
+  *p++ = std::min(bytes, 7) | (v << 3);
   if (bytes) {
-    *(uint64_t*)p = v >> 5;   // fixme: little-endian only!
-    p += bytes;
+    *((uint64_t*)p) = v >> 5;   // fixme: little-endian only!
+    if (bytes == 7) {
+      bytes = 8;
+    }
   }
-  bl.append(buf, p - buf);
+  bl.append(buf, 1 + bytes);
 }
 
-template<typename T>
-inline void small_decode_varint(T& v, bufferlist::iterator& p) {
+inline void small_decode_prefixint(uint64_t& v, bufferlist::iterator& p) {
   uint8_t first;
   ::decode(first, p);
   int bytes = first & 7;
   if (bytes) {
     // fixme: little-endian only
+    if (bytes == 7) {
+      bytes = 8;
+    }
     uint64_t t = 0;
     p.copy(bytes, (char*)&t);
     v = ((uint64_t)first >> 3) | (t << 5);
@@ -37,8 +42,67 @@ inline void small_decode_varint(T& v, bufferlist::iterator& p) {
   }
 }
 
+inline void small_encode_prefixint(uint32_t v, bufferlist& bl) {
+  int bits = v ? ((sizeof(unsigned long)*8) - clzl((unsigned long)v)) : 0;
+  int bytes = (bits + 7 - 6) / 8;
+  char buf[9];
+  char *p = buf;
+  *p++ = std::min(bytes, 3) | (v << 2);
+  if (bytes) {
+    *((uint64_t*)p) = v >> 6;   // fixme: little-endian only!
+    if (bytes == 3) {
+      bytes = 4;
+    }
+  }
+  bl.append(buf, 1 + bytes);
+}
 
-#if 0
+inline void small_decode_prefixint(uint32_t& v, bufferlist::iterator& p) {
+  uint8_t first;
+  ::decode(first, p);
+  int bytes = first & 3;
+  if (bytes) {
+    if (bytes == 3) {
+      bytes = 4;
+    }
+    // fixme: little-endian only
+    uint32_t t = 0;
+    p.copy(bytes, (char*)&t);
+    v = ((uint32_t)first >> 2) | (t << 6);
+  } else {
+    v = first >> 2;
+  }
+}
+
+inline void small_encode_prefixint(uint16_t v, bufferlist& bl) {
+  int bits = v ? (32 - clz((unsigned)v)) : 0;
+  int bytes = bits / 8;
+  char buf[9];
+  char *p = buf;
+  *p++ = bytes | (v << 1);
+  if (bytes) {
+    *p++ = v >> 7;
+  }
+  bl.append(buf, 1 + bytes);
+}
+
+inline void small_decode_prefixint(uint16_t& v, bufferlist::iterator& p) {
+  uint8_t first;
+  ::decode(first, p);
+  int bytes = first & 1;
+  if (bytes) {
+    uint8_t t;
+    ::decode(t, p);
+    v = ((unsigned)first >> 1) | ((unsigned)t << 7);
+  } else {
+    v = first >> 1;
+  }
+}
+
+
+// varint encoding
+//
+// high bit of every byte indicates whether another byte follows.
 template<typename T>
 inline void small_encode_varint(T v, bufferlist& bl) {
   char buf[sizeof(T) + 2];
@@ -100,7 +164,6 @@ inline void small_decode_varint(T& v, bufferlist::iterator& p)
     shift += 7;
   }
 }
-#endif
 
 // signed varint encoding
 //
