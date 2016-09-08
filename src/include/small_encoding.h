@@ -14,12 +14,14 @@ inline void small_encode_varint(uint64_t v, bufferlist& bl) {
   int bytes = (bits + 7 - 5) / 8;
   char buf[9];
   char *p = buf;
-  *p++ = bytes | (v << 3);
+  *p++ = std::min(7, bytes) | (v << 3);
   if (bytes) {
     *(uint64_t*)p = v >> 5;   // fixme: little-endian only!
-    p += bytes;
+    if (bytes == 7) {
+      bytes = 8;
+    }
   }
-  bl.append(buf, p - buf);
+  bl.append(buf, 1 + bytes);
 }
 
 template<typename T>
@@ -29,6 +31,9 @@ inline void small_decode_varint(T& v, bufferlist::iterator& p) {
   int bytes = first & 7;
   if (bytes) {
     // fixme: little-endian only
+    if (bytes == 7) {
+      bytes = 8;
+    }
     uint64_t t = 0;
     p.copy(bytes, (char*)&t);
     v = ((uint64_t)first >> 3) | (t << 5);
