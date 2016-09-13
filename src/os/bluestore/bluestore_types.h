@@ -49,12 +49,15 @@ struct bluestore_cnode_t {
 
   explicit bluestore_cnode_t(int b=0) : bits(b) {}
 
-  void encode(bufferlist& bl) const;
-  void decode(bufferlist::iterator& p);
+  DENC(bluestore_cnode_t, v, p) {
+    DENC_START(1, 1, p);
+    denc(v.bits, p);
+    DENC_FINISH(p);
+  }
   void dump(Formatter *f) const;
   static void generate_test_instances(list<bluestore_cnode_t*>& o);
 };
-WRITE_CLASS_ENCODER(bluestore_cnode_t)
+WRITE_CLASS_DENC(bluestore_cnode_t)
 
 class AllocExtent {
 public:
@@ -128,23 +131,47 @@ struct bluestore_pextent_t : public AllocExtent{
     return offset != INVALID_OFFSET;
   }
 
-  void encode(bufferlist& bl) const {
-    small_encode_lba(offset, bl);
-    small_encode_varint_lowz(length, bl);
+  DENC(bluestore_pextent_t, v, p) {
+    denc(v.offset, p);
+    denc(v.length, p);
   }
-  void decode(bufferlist::iterator& p) {
-    small_decode_lba(offset, p);
-    small_decode_varint_lowz(length, p);
-  }
+
   void dump(Formatter *f) const;
   static void generate_test_instances(list<bluestore_pextent_t*>& ls);
 };
-WRITE_CLASS_ENCODER(bluestore_pextent_t)
+WRITE_CLASS_DENC(bluestore_pextent_t)
 
 ostream& operator<<(ostream& out, const bluestore_pextent_t& o);
 
-void small_encode(const vector<bluestore_pextent_t>& v, bufferlist& bl);
-void small_decode(vector<bluestore_pextent_t>& v, bufferlist::iterator& p);
+template<>
+struct denc_traits<vector<bluestore_pextent_t>> {
+  enum { supported = true };
+  enum { bounded = false };
+  enum { featured = false };
+  static void bound_encode(const vector<bluestore_pextent_t>& v, size_t& p) {
+    p += sizeof(uint32_t);
+    size_t per = 0;
+    denc(*(bluestore_pextent_t*)nullptr, per);
+    p += per * v.size();
+  }
+  static void encode(const vector<bluestore_pextent_t>& v,
+		     bufferlist::contiguous_appender& p) {
+    denc_varint(v.size(), p);
+    for (auto& i : v) {
+      denc(i, p);
+    }
+  }
+  static void decode(vector<bluestore_pextent_t>& v, bufferptr::iterator& p) {
+    unsigned num;
+    denc_varint(num, p);
+    v.clear();
+    v.resize(num);
+    for (unsigned i=0; i<num; ++i) {
+      denc(v[i], p);
+    }
+  }
+};
+
 
 /// extent_map: a map of reference counted extents
 struct bluestore_extent_ref_map_t {
@@ -152,16 +179,11 @@ struct bluestore_extent_ref_map_t {
     uint32_t length;
     uint32_t refs;
     record_t(uint32_t l=0, uint32_t r=0) : length(l), refs(r) {}
-    void encode(bufferlist& bl) const {
-      small_encode_varint_lowz(length, bl);
-      small_encode_varint(refs, bl);
-    }
-    void decode(bufferlist::iterator& p) {
-      small_decode_varint_lowz(length, p);
-      small_decode_varint(refs, p);
+    DENC(bluestore_extent_ref_map_t::record_t, v, p) {
+      denc_varint_lowz(v.length, p);
+      denc_varint(v.refs, p);
     }
   };
-  WRITE_CLASS_ENCODER(record_t)
 
   map<uint32_t,record_t> ref_map;
 
@@ -181,13 +203,50 @@ struct bluestore_extent_ref_map_t {
   bool contains(uint32_t offset, uint32_t len) const;
   bool intersects(uint32_t offset, uint32_t len) const;
 
-  void encode(bufferlist& bl) const;
-  void decode(bufferlist::iterator& p);
+  void bound_encode(size_t& p) const {
+    denc((uint32_t)0, p);
+    size_t elem_size = 0;
+    denc_varint_lowz((uint32_t)0, p);
+    ((const record_t*)nullptr)->bound_encode(elem_size);
+    p += elem_size * ref_map.size();
+  }
+  void encode(bufferlist::contiguous_appender& p) const {
+    uint32_t n = ref_map.size();
+    denc_varint(n, p);
+    if (n) {
+      auto i = ref_map.begin();
+      denc_varint_lowz(i->first, p);
+      i->second.encode(p);
+      int32_t pos = i->first;
+      while (--n) {
+	++i;
+	denc_varint_lowz((int64_t)i->first - pos, p);
+	i->second.encode(p);
+	pos = i->first;
+      }
+    }
+  }
+  void decode(bufferptr::iterator& p) {
+    uint32_t n;
+    denc_varint(n, p);
+    if (n) {
+      int64_t pos;
+      denc_varint_lowz(pos, p);
+      ref_map[pos].decode(p);
+      while (--n) {
+	int64_t delta;
+	denc_varint_lowz(delta, p);
+	pos += delta;
+	ref_map[pos].decode(p);
+      }
+    }
+  }
+
   void dump(Formatter *f) const;
   static void generate_test_instances(list<bluestore_extent_ref_map_t*>& o);
 };
-WRITE_CLASS_ENCODER(bluestore_extent_ref_map_t::record_t)
-WRITE_CLASS_ENCODER(bluestore_extent_ref_map_t)
+WRITE_CLASS_DENC(bluestore_extent_ref_map_t)
+
 
 ostream& operator<<(ostream& out, const bluestore_extent_ref_map_t& rm);
 static inline bool operator==(const bluestore_extent_ref_map_t::record_t& l,
@@ -294,13 +353,64 @@ struct bluestore_blob_t {
 
   bluestore_blob_t(uint32_t f = 0) : flags(f) {}
 
-  int estimate_encoded_size() const {
-    // conservative upper bound... fixme
-    return csum_data.length() + extents.size() * 16 + 48;
+  DENC_HELPERS;
+  void bound_encode(size_t& p) const {
+    p += 2 + 4;
+    denc(extents, p);
+    denc_varint(flags, p);
+    denc_varint(sbid, p);
+    denc_varint_lowz(compressed_length_orig, p);
+    denc_varint_lowz(compressed_length, p);
+    denc(csum_type, p);
+    denc(csum_chunk_order, p);
+    denc(csum_data, p);
+    p += sizeof(unsigned long long);
+  }
+  void encode(bufferlist::contiguous_appender& p) const {
+    DENC_START(1, 1, p);
+    denc(extents, p);
+    denc_varint(flags, p);
+    if (is_shared()) {
+      denc_varint(sbid, p);
+    }
+    if (is_compressed()) {
+      denc_varint_lowz(compressed_length_orig, p);
+      denc_varint_lowz(compressed_length, p);
+    }
+    if (has_csum()) {
+      denc(csum_type, p);
+      denc(csum_chunk_order, p);
+      denc(csum_data, p);
+    }
+    if (has_unused()) {
+      denc(unused_uint_t(unused.to_ullong()), p);
+    }
+    DENC_FINISH(p);
+  }
+  void decode(bufferptr::iterator& p) {
+    DENC_START(1, 1, p);
+    denc(extents, p);
+    denc_varint(flags, p);
+    if (is_shared()) {
+      denc_varint(sbid, p);
+    }
+    if (is_compressed()) {
+      denc_varint_lowz(compressed_length_orig, p);
+      denc_varint_lowz(compressed_length, p);
+    }
+    if (has_csum()) {
+      denc(csum_type, p);
+      denc(csum_chunk_order, p);
+      denc(csum_data, p);
+    }
+    if (has_unused()) {
+      unused_uint_t val;
+      denc(val, p);
+      unused = unused_t(val);
+    }
+    DENC_FINISH(p);
   }
 
-  void encode(bufferlist& bl) const;
-  void decode(bufferlist::iterator& p);
   void dump(Formatter *f) const;
   static void generate_test_instances(list<bluestore_blob_t*>& ls);
 
@@ -567,7 +677,7 @@ struct bluestore_blob_t {
 		  uint64_t *bad_csum) const;
 
 };
-WRITE_CLASS_ENCODER(bluestore_blob_t)
+WRITE_CLASS_DENC(bluestore_blob_t)
 
 ostream& operator<<(ostream& out, const bluestore_blob_t& o);
 
@@ -575,10 +685,13 @@ ostream& operator<<(ostream& out, const bluestore_blob_t& o);
 /// shared blob state
 struct bluestore_shared_blob_t {
   bluestore_extent_ref_map_t ref_map;  ///< shared blob extents
-  //set<ghobject_t> objects;  ///< objects referencing these shared blocks (debug)
 
-  void encode(bufferlist& bl) const;
-  void decode(bufferlist::iterator& p);
+  DENC(bluestore_shared_blob_t, v, p) {
+    DENC_START(1, 1, p);
+    denc(v.ref_map, p);
+    DENC_FINISH(p);
+  }
+
   void dump(Formatter *f) const;
   static void generate_test_instances(list<bluestore_shared_blob_t*>& ls);
 
@@ -586,7 +699,7 @@ struct bluestore_shared_blob_t {
     return ref_map.empty();
   }
 };
-WRITE_CLASS_ENCODER(bluestore_shared_blob_t)
+WRITE_CLASS_DENC(bluestore_shared_blob_t)
 
 ostream& operator<<(ostream& out, const bluestore_shared_blob_t& o);
 
@@ -601,19 +714,13 @@ struct bluestore_onode_t {
     uint32_t offset = 0;  ///< logical offset for start of shard
     uint32_t bytes = 0;   ///< encoded bytes
     uint32_t extents = 0; ///< extents
-    void encode(bufferlist& bl) const {
-      ::encode(offset, bl);
-      ::encode(bytes, bl);
-      ::encode(extents, bl);
-    }
-    void decode(bufferlist::iterator& p) {
-      ::decode(offset, p);
-      ::decode(bytes, p);
-      ::decode(extents, p);
+    DENC(shard_info, v, p) {
+      denc(v.offset, p);
+      denc(v.bytes, p);
+      denc(v.extents, p);
     }
     void dump(Formatter *f) const;
   };
-  WRITE_CLASS_ENCODER(shard_info)
   vector<shard_info> extent_map_shards; ///< extent map shards (if any)
 
   uint32_t expected_object_size = 0;
@@ -623,13 +730,23 @@ struct bluestore_onode_t {
   /// get preferred csum chunk size
   size_t get_preferred_csum_order() const;
 
-  void encode(bufferlist& bl) const;
-  void decode(bufferlist::iterator& p);
+  DENC(bluestore_onode_t, v, p) {
+    DENC_START(1, 1, p);
+    denc(v.nid, p);
+    denc(v.size, p);
+    denc(v.attrs, p);
+    denc(v.omap_head, p);
+    denc(v.extent_map_shards, p);
+    denc(v.expected_object_size, p);
+    denc(v.expected_write_size, p);
+    denc(v.alloc_hint_flags, p);
+    DENC_FINISH(p);
+  }
   void dump(Formatter *f) const;
   static void generate_test_instances(list<bluestore_onode_t*>& o);
 };
-WRITE_CLASS_ENCODER(bluestore_onode_t::shard_info)
-WRITE_CLASS_ENCODER(bluestore_onode_t)
+WRITE_CLASS_DENC(bluestore_onode_t::shard_info)
+WRITE_CLASS_DENC(bluestore_onode_t)
 
 ostream& operator<<(ostream& out, const bluestore_onode_t::shard_info& si);
 
