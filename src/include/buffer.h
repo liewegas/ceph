@@ -169,6 +169,67 @@ namespace buffer CEPH_BUFFER_API {
     void release();
 
   public:
+    class iterator {
+      const ptr *bp;     ///< parent ptr
+      const char *start; ///< starting pointer into bp->c_str()
+      const char *pos;   ///< pointer into bp->c_str()
+      const char *end_ptr;   ///< pointer to bp->end_c_str()
+      bool deep;         ///< if true, no not allow shallow ptr copies
+
+      iterator(const ptr *p, size_t offset, bool d)
+	: bp(p),
+	  start(p->c_str() + offset),
+	  pos(start),
+	  end_ptr(p->end_c_str()),
+	  deep(d) {}
+
+      friend class ptr;
+
+    public:
+      const char *get_pos_add(size_t n) {
+	const char *r = pos;
+	pos += n;
+	return r;
+      }
+
+      ptr get_ptr(size_t len) {
+	if (deep) {
+	  return buffer::copy(get_pos_add(len), len);
+	} else {
+	  size_t off = pos - bp->c_str();
+	  pos += len;
+	  return ptr(*bp, off, len);
+	}
+      }
+      ptr get_preceding_ptr(size_t len) {
+	if (deep) {
+	  return buffer::copy(get_pos() - len, len);
+	} else {
+	  size_t off = pos - bp->c_str();
+	  return ptr(*bp, off - len, len);
+	}
+      }
+
+      void advance(size_t len) {
+	pos += len;
+      }
+
+      const char *get_pos() {
+	return pos;
+      }
+      const char *get_end() {
+	return end_ptr;
+      }
+
+      size_t get_offset() {
+	return pos - start;
+      }
+
+      bool end() const {
+	return pos == end_ptr;
+      }
+    };
+
     ptr() : _raw(0), _off(0), _len(0) {}
     // cppcheck-suppress noExplicitConstructor
     ptr(raw *r);
@@ -189,6 +250,13 @@ namespace buffer CEPH_BUFFER_API {
     raw *clone();
     void swap(ptr& other);
     ptr& make_shareable();
+
+    iterator begin(size_t offset=0) const {
+      return iterator(this, offset, false);
+    }
+    iterator begin_deep(size_t offset=0) const {
+      return iterator(this, offset, true);
+    }
 
     // misc
     bool at_buffer_head() const { return _off == 0; }
