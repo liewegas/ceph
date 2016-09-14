@@ -1098,7 +1098,7 @@ inline typename std::enable_if<traits::supported == 1 &&
 			   __u8 *struct_compat,				\
 			   char **struct_pos,				\
 			   uint32_t *struct_len) {			\
-    *(__le32*)*struct_pos = p.get_ptr() - *struct_pos - 4 +		\
+    *(__le32*)*struct_pos = p.get_pos() - *struct_pos - 4 +		\
       p.get_out_of_band_offset();					\
   }									\
   static void _denc_start(__u8 v, __u8 compat,				\
