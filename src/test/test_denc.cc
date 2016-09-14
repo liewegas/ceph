@@ -56,7 +56,7 @@ void test_denc(T v) {
   auto bpi = bl.front().begin();
   denc(out, bpi);
   ASSERT_EQ(v, out);
-  ASSERT_EQ(bpi.c_str(), bl.c_str() + bl.length());
+  ASSERT_EQ(bpi.get_pos(), bl.c_str() + bl.length());
 
   // test glue
   test_encode_decode(v);
@@ -93,7 +93,7 @@ void test_denc_featured(T v) {
   auto bpi = bl.front().begin();
   denc(out, bpi, 1);
   ASSERT_EQ(v, out);
-  ASSERT_EQ(bpi.c_str(), bl.c_str() + bl.length());
+  ASSERT_EQ(bpi.get_pos(), bl.c_str() + bl.length());
 
   // test glue
   test_encode_decode_featured(v);
