@@ -187,7 +187,7 @@ struct denc_traits {
     }									\
     static void encode(const itype &o, buffer::list::contiguous_appender& p, \
 		       uint64_t f=0) {					\
-      *(etype *)p.get_ptr_add(sizeof(etype)) = o;			\
+      *(etype *)p.get_pos_add(sizeof(etype)) = o;			\
     }									\
     static void decode(itype& o, buffer::ptr::iterator &p) {		\
       o = *(etype*)p.get_pos_add(sizeof(etype));				\
@@ -218,11 +218,11 @@ inline void denc_varint(T v, bufferlist::contiguous_appender& p) {
   v >>= 7;
   while (v) {
     byte |= 0x80;
-    *(__u8*)p.get_ptr_add(1) = byte;
+    *(__u8*)p.get_pos_add(1) = byte;
     byte = (v & 0x7f);
     v >>= 7;
   }
-  *(__u8*)p.get_ptr_add(1) = byte;
+  *(__u8*)p.get_pos_add(1) = byte;
 }
 
 template<typename T>
@@ -373,20 +373,20 @@ inline void denc_lba(uint64_t v, bufferlist::contiguous_appender& p) {
   word |= (v << pos) & 0x7fffffff;
   v >>= 31 - pos;
   if (!v) {
-    *(__le32*)p.get_ptr_add(sizeof(uint32_t)) = word;
+    *(__le32*)p.get_pos_add(sizeof(uint32_t)) = word;
     return;
   }
   word |= 0x80000000;
-  *(__le32*)p.get_ptr_add(sizeof(uint32_t)) = word;
+  *(__le32*)p.get_pos_add(sizeof(uint32_t)) = word;
   uint8_t byte = v & 0x7f;
   v >>= 7;
   while (v) {
     byte |= 0x80;
-    *(__u8*)p.get_ptr_add(1) = byte;
+    *(__u8*)p.get_pos_add(1) = byte;
     byte = (v & 0x7f);
     v >>= 7;
   }
-  *(__u8*)p.get_ptr_add(1) = byte;
+  *(__u8*)p.get_pos_add(1) = byte;
 }
 
 inline void denc_lba(uint64_t& v, bufferptr::iterator& p) {
@@ -500,7 +500,7 @@ struct denc_traits<std::string> {
   static void encode(const std::string& s, buffer::list::contiguous_appender& p,
 	      uint64_t f=0) {
     ::denc((uint32_t)s.size(), p);
-    memcpy(p.get_ptr_add(s.size()), s.data(), s.size());
+    memcpy(p.get_pos_add(s.size()), s.data(), s.size());
   }
   static void decode(std::string& s, buffer::ptr::iterator& p, uint64_t f=0) {
     uint32_t len;
@@ -1091,7 +1091,7 @@ inline typename std::enable_if<traits::supported == 1 &&
     denc(*struct_v, p);							\
     *struct_compat = compat;						\
     denc(*struct_compat, p);						\
-    *struct_pos = p.get_ptr_add(4) - p.get_out_of_band_offset();	\
+    *struct_pos = p.get_pos_add(4) - p.get_out_of_band_offset();	\
   }									\
   static void _denc_finish(bufferlist::contiguous_appender& p,		\
 			   __u8 *struct_v,				\
