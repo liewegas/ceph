@@ -518,12 +518,12 @@ namespace buffer CEPH_BUFFER_API {
 	maybe_inline_memcpy(pos, p, l, 16);
 	pos += l;
       }
-      char *get_ptr_add(size_t len) {
+      char *get_pos_add(size_t len) {
 	char *r = pos;
 	pos += len;
 	return r;
       }
-      char *get_ptr() {
+      char *get_pos() {
 	return pos;
       }
 
