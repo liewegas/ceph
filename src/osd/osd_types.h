@@ -1727,6 +1727,60 @@ WRITE_CLASS_ENCODER(object_stat_sum_t)
 
 bool operator==(const object_stat_sum_t& l, const object_stat_sum_t& r);
 
+struct fast_object_stat_sum_t {
+  int64_t num_bytes;    // in bytes
+  int64_t num_objects;
+  int64_t num_object_copies;
+  int64_t num_rd;
+  int64_t num_rd_kb;
+  int64_t num_wr;
+  int64_t num_wr_kb;
+  int64_t num_objects_dirty;
+
+  void encode(bufferlist& bl) const {
+    ::encode(num_bytes, bl);
+    ::encode(num_objects, bl);
+    ::encode(num_object_copies, bl);
+    ::encode(num_rd, bl);
+    ::encode(num_rd_kb, bl);
+    ::encode(num_wr_kb, bl);
+    ::encode(num_wr_kb, bl);
+    ::encode(num_objects_dirty, bl);
+  };
+  void decode(bufferlist::iterator& p) {
+    ::decode(num_bytes, p);
+    ::decode(num_objects, p);
+    ::decode(num_object_copies, p);
+    ::decode(num_rd, p);
+    ::decode(num_rd_kb, p);
+    ::decode(num_wr_kb, p);
+    ::decode(num_wr_kb, p);
+    ::decode(num_objects_dirty, p);
+  }
+
+  void populate_from(const object_stat_sum_t& sum) {
+    num_bytes = sum.num_bytes;
+    num_objects = sum.num_objects;
+    num_object_copies = sum.num_object_copies;
+    num_rd = sum.num_rd;
+    num_rd_kb = sum.num_rd_kb;
+    num_wr = sum.num_wr;
+    num_wr_kb = sum.num_wr_kb;
+    num_objects_dirty = sum.num_objects_dirty;
+  }
+  void apply_to(object_stat_sum_t *sum) {
+    sum->num_bytes = num_bytes;
+    sum->num_objects = num_objects;
+    sum->num_object_copies = num_object_copies;
+    sum->num_rd = num_rd;
+    sum->num_rd_kb = num_rd_kb;
+    sum->num_wr = num_wr;
+    sum->num_wr_kb = num_wr_kb;
+    sum->num_objects_dirty = num_objects_dirty;
+  }
+};
+WRITE_CLASS_ENCODER(fast_object_stat_sum_t)
+
 /**
  * a collection of object stat sums
  *
@@ -2255,15 +2309,7 @@ struct pg_fast_info_t {
     utime_t last_fullsized;
     int64_t log_size;  // (also ondisk_log_size, which has the same value)
     struct { // object_stat_collection_t stats;
-      struct { // objct_stat_sum_t sum
-	int64_t num_bytes;    // in bytes
-	int64_t num_objects;
-	int64_t num_object_copies;
-	int64_t num_rd;
-	int64_t num_rd_kb;
-	int64_t num_wr;
-	int64_t num_wr_kb;
-      } sum;
+      fast_object_stat_sum_t sum;
     } stats;
   } stats;
 
@@ -2281,13 +2327,7 @@ struct pg_fast_info_t {
     stats.last_undegraded = info.stats.last_undegraded;
     stats.last_fullsized = info.stats.last_fullsized;
     stats.log_size = info.stats.log_size;
-    stats.stats.sum.num_bytes = info.stats.stats.sum.num_bytes;
-    stats.stats.sum.num_objects = info.stats.stats.sum.num_objects;
-    stats.stats.sum.num_object_copies = info.stats.stats.sum.num_object_copies;
-    stats.stats.sum.num_rd = info.stats.stats.sum.num_rd;
-    stats.stats.sum.num_rd_kb = info.stats.stats.sum.num_rd_kb;
-    stats.stats.sum.num_wr = info.stats.stats.sum.num_wr;
-    stats.stats.sum.num_wr_kb = info.stats.stats.sum.num_wr_kb;
+    stats.stats.sum.populate_from(info.stats.stats.sum);
   }
 
   void apply_to(pg_info_t* info) {
@@ -2305,13 +2345,7 @@ struct pg_fast_info_t {
     info->stats.last_fullsized = stats.last_fullsized;
     info->stats.log_size = stats.log_size;
     info->stats.ondisk_log_size = stats.log_size;
-    info->stats.stats.sum.num_bytes = stats.stats.sum.num_bytes;
-    info->stats.stats.sum.num_objects = stats.stats.sum.num_objects;
-    info->stats.stats.sum.num_object_copies = stats.stats.sum.num_object_copies;
-    info->stats.stats.sum.num_rd = stats.stats.sum.num_rd;
-    info->stats.stats.sum.num_rd_kb = stats.stats.sum.num_rd_kb;
-    info->stats.stats.sum.num_wr = stats.stats.sum.num_wr;
-    info->stats.stats.sum.num_wr_kb = stats.stats.sum.num_wr_kb;
+    stats.stats.sum.apply_to(&info->stats.stats.sum);
   }
 
   void encode(bufferlist& bl) const {
@@ -2329,13 +2363,7 @@ struct pg_fast_info_t {
     ::encode(stats.last_undegraded, bl);
     ::encode(stats.last_fullsized, bl);
     ::encode(stats.log_size, bl);
-    ::encode(stats.stats.sum.num_bytes, bl);
-    ::encode(stats.stats.sum.num_objects, bl);
-    ::encode(stats.stats.sum.num_object_copies, bl);
-    ::encode(stats.stats.sum.num_rd, bl);
-    ::encode(stats.stats.sum.num_rd_kb, bl);
-    ::encode(stats.stats.sum.num_wr, bl);
-    ::encode(stats.stats.sum.num_wr_kb, bl);
+    ::encode(stats.stats.sum, bl);
     ENCODE_FINISH(bl);
   }
   void decode(bufferlist::iterator& p) {
@@ -2353,13 +2381,7 @@ struct pg_fast_info_t {
     ::decode(stats.last_undegraded, p);
     ::decode(stats.last_fullsized, p);
     ::decode(stats.log_size, p);
-    ::decode(stats.stats.sum.num_bytes, p);
-    ::decode(stats.stats.sum.num_objects, p);
-    ::decode(stats.stats.sum.num_object_copies, p);
-    ::decode(stats.stats.sum.num_rd, p);
-    ::decode(stats.stats.sum.num_rd_kb, p);
-    ::decode(stats.stats.sum.num_wr, p);
-    ::decode(stats.stats.sum.num_wr_kb, p);
+    ::decode(stats.stats.sum, p);
     DECODE_FINISH(p);
   }
 };

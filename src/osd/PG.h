@@ -270,6 +270,7 @@ public:
     //generic_dout(0) << this << " " << info.pgid << " unlock" << dendl;
     assert(!dirty_info);
     assert(!dirty_big_info);
+    assert(!dirty_fast_info);
     _lock.Unlock();
   }
 
@@ -285,7 +286,7 @@ public:
   void get(const char* tag);
   void put(const char* tag);
 
-  bool dirty_info, dirty_big_info;
+  bool dirty_info, dirty_big_info, dirty_fast_info;
 
 public:
   bool is_ec_pg() const {
@@ -2236,6 +2237,7 @@ public:
     pg_info_t &info,
     pg_info_t &last_written_info,
     map<epoch_t,pg_interval_t> &past_intervals,
+    bool dirty_info,
     bool dirty_big_info,
     bool dirty_epoch);
   void write_if_dirty(ObjectStore::Transaction& t);

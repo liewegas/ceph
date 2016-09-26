@@ -163,7 +163,7 @@ void PGLog::clear_info_log(
   t->remove(coll, pgid.make_pgmeta_oid());
 }
 
-void PGLog::trim(
+bool PGLog::trim(
   LogEntryHandler *handler,
   eversion_t trim_to,
   pg_info_t &info)
@@ -176,7 +176,9 @@ void PGLog::trim(
     dout(10) << "trim " << log << " to " << trim_to << dendl;
     log.trim(handler, trim_to, &trimmed);
     info.log_tail = log.tail;
+    return true;
   }
+  return false;
 }
 
 void PGLog::proc_replica_log(

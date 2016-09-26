@@ -563,7 +563,7 @@ public:
     spg_t pgid,
     ObjectStore::Transaction *t);
 
-  void trim(
+  bool trim(
     LogEntryHandler *handler,
     eversion_t trim_to,
     pg_info_t &info);

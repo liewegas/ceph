@@ -212,7 +212,10 @@ PG::PG(OSDService *o, OSDMapRef curmap,
   #ifdef PG_DEBUG_REFS
   _ref_id_lock("PG::_ref_id_lock"), _ref_id(0),
   #endif
-  deleting(false), dirty_info(false), dirty_big_info(false),
+  deleting(false),
+  dirty_info(false),
+  dirty_big_info(false),
+  dirty_fast_info(false),
   info(p),
   info_struct_v(0),
   coll(p), pg_log(cct),
@@ -273,6 +276,7 @@ void PG::lock(bool no_lockdep) const
   // if we have unrecorded dirty state with the lock dropped, there is a bug
   assert(!dirty_info);
   assert(!dirty_big_info);
+  assert(!dirty_fast_info);
 
   dout(30) << "lock" << dendl;
 }
@@ -2794,6 +2798,7 @@ int PG::_prepare_write_info(map<string,bufferlist> *km,
 			    epoch_t epoch,
 			    pg_info_t &info, pg_info_t &last_written_info,
 			    map<epoch_t,pg_interval_t> &past_intervals,
+			    bool dirty_info,
 			    bool dirty_big_info,
 			    bool dirty_epoch)
 {
@@ -2802,7 +2807,7 @@ int PG::_prepare_write_info(map<string,bufferlist> *km,
   }
 
   // try to do info efficiently?
-  if (!dirty_big_info) {
+  if (!dirty_big_info && !dirty_info) {
     pg_fast_info_t fast;
     fast.populate_from(info);
     fast.apply_to(&last_written_info);
@@ -2823,6 +2828,7 @@ int PG::_prepare_write_info(map<string,bufferlist> *km,
       jf.flush(*_dout);
     }
     *_dout << dendl;
+    assert(0 == "bug");
   }
   (*km)[fastinfo_key];  // erase any previous fastinfo
   last_written_info = info;
@@ -2883,6 +2889,7 @@ void PG::prepare_write_info(map<string,bufferlist> *km)
 				info,
 				last_written_info,
 				past_intervals,
+				dirty_info,
 				dirty_big_info, need_update_epoch);
   assert(ret == 0);
   if (need_update_epoch)
@@ -2891,6 +2898,7 @@ void PG::prepare_write_info(map<string,bufferlist> *km)
 
   dirty_info = false;
   dirty_big_info = false;
+  dirty_fast_info = false;
 }
 
 #pragma GCC diagnostic ignored "-Wpragmas"
@@ -2963,7 +2971,7 @@ int PG::peek_map_epoch(ObjectStore *store,
 void PG::write_if_dirty(ObjectStore::Transaction& t)
 {
   map<string,bufferlist> km;
-  if (dirty_big_info || dirty_info)
+  if (dirty_big_info || dirty_info || dirty_fast_info)
     prepare_write_info(&km);
   pg_log.write_log_and_missing(t, &km, coll, pgmeta_oid, pool.info.require_rollback());
   if (!km.empty())
@@ -3030,6 +3038,7 @@ void PG::append_log(
    */
   if (info.last_epoch_started != info.history.last_epoch_started) {
     info.history.last_epoch_started = info.last_epoch_started;
+    dirty_info = true;
   }
   dout(10) << "append_log " << pg_log.get_log() << " " << logv << dendl;
 
@@ -3058,14 +3067,16 @@ void PG::append_log(
 	trim_rollback_to));
   }
 
-  pg_log.trim(&handler, trim_to, info);
+  if (pg_log.trim(&handler, trim_to, info)) {
+    dirty_info = true;
+  }
 
   dout(10) << __func__ << ": trimming to " << trim_rollback_to
 	   << " entries " << handler.to_trim << dendl;
   handler.apply(this, &t);
 
   // update the local pg, pg log
-  dirty_info = true;
+  dirty_fast_info = true;
   write_if_dirty(t);
 }
 
