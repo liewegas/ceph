@@ -386,13 +386,15 @@ ostream& operator<<(ostream& out, const bluestore_extent_ref_map_t& m)
 
 void bluestore_pextent_t::dump(Formatter *f) const
 {
+  f->dump_unsigned("bdev", bdev);
   f->dump_unsigned("offset", offset);
   f->dump_unsigned("length", length);
 }
 
 ostream& operator<<(ostream& out, const bluestore_pextent_t& o) {
   if (o.is_valid())
-    return out << "0x" << std::hex << o.offset << "~" << o.length << std::dec;
+    return out << (int)o.bdev << ":0x" << std::hex << o.offset
+	       << "~" << o.length << std::dec;
   else
     return out << "!~" << std::hex << o.length << std::dec;
 }
@@ -400,7 +402,7 @@ ostream& operator<<(ostream& out, const bluestore_pextent_t& o) {
 void bluestore_pextent_t::generate_test_instances(list<bluestore_pextent_t*>& ls)
 {
   ls.push_back(new bluestore_pextent_t);
-  ls.push_back(new bluestore_pextent_t(1, 2));
+  ls.push_back(new bluestore_pextent_t(1, 1, 2));
 }
 
 // bluestore_blob_t
@@ -514,16 +516,16 @@ void bluestore_blob_t::generate_test_instances(list<bluestore_blob_t*>& ls)
   ls.push_back(new bluestore_blob_t);
   ls.push_back(new bluestore_blob_t(0));
   ls.push_back(new bluestore_blob_t);
-  ls.back()->extents.push_back(bluestore_pextent_t(111, 222));
+  ls.back()->extents.push_back(bluestore_pextent_t(1, 111, 222));
   ls.push_back(new bluestore_blob_t);
   ls.back()->init_csum(CSUM_XXHASH32, 16, 65536);
   ls.back()->csum_data = buffer::claim_malloc(4, strdup("abcd"));
   ls.back()->add_unused(0, 3);
   ls.back()->add_unused(8, 8);
-  ls.back()->extents.emplace_back(bluestore_pextent_t(0x40100000, 0x10000));
+  ls.back()->extents.emplace_back(bluestore_pextent_t(1, 0x40100000, 0x10000));
   ls.back()->extents.emplace_back(
-    bluestore_pextent_t(bluestore_pextent_t::INVALID_OFFSET, 0x1000));
-  ls.back()->extents.emplace_back(bluestore_pextent_t(0x40120000, 0x10000));
+    bluestore_pextent_t(1, bluestore_pextent_t::INVALID_OFFSET, 0x1000));
+  ls.back()->extents.emplace_back(bluestore_pextent_t(1, 0x40120000, 0x10000));
 }
 
 ostream& operator<<(ostream& out, const bluestore_blob_t& o)
@@ -773,8 +775,8 @@ void bluestore_wal_op_t::generate_test_instances(list<bluestore_wal_op_t*>& o)
   o.push_back(new bluestore_wal_op_t);
   o.push_back(new bluestore_wal_op_t);
   o.back()->op = OP_WRITE;
-  o.back()->extents.push_back(bluestore_pextent_t(1, 2));
-  o.back()->extents.push_back(bluestore_pextent_t(100, 5));
+  o.back()->extents.push_back(bluestore_pextent_t(1, 1, 2));
+  o.back()->extents.push_back(bluestore_pextent_t(1, 100, 5));
   o.back()->data.append("my data");
 }
 
@@ -823,7 +825,7 @@ void bluestore_wal_transaction_t::generate_test_instances(list<bluestore_wal_tra
   o.back()->ops.push_back(bluestore_wal_op_t());
   o.back()->ops.push_back(bluestore_wal_op_t());
   o.back()->ops.back().op = bluestore_wal_op_t::OP_WRITE;
-  o.back()->ops.back().extents.push_back(bluestore_pextent_t(1,7));
+  o.back()->ops.back().extents.push_back(bluestore_pextent_t(1,1,7));
   o.back()->ops.back().data.append("foodata");
 }
 

@@ -60,12 +60,13 @@ WRITE_CLASS_ENCODER(bluestore_cnode_t)
 struct bluestore_pextent_t {
   uint64_t offset = 0;
   uint32_t length = 0;
+  uint8_t bdev = 0;
 
   const static uint64_t INVALID_OFFSET = ~0ull;
 
   bluestore_pextent_t() {}
-  bluestore_pextent_t(uint64_t o, uint32_t l)
-    : offset(o), length(l) {}
+  bluestore_pextent_t(uint8_t b, uint64_t o, uint32_t l)
+    : offset(o), length(l), bdev(b) {}
 
   uint64_t end() const {
     return offset + length;
@@ -76,10 +77,12 @@ struct bluestore_pextent_t {
   }
 
   void encode(bufferlist& bl) const {
+    ::encode(bdev, bl);
     small_encode_lba(offset, bl);
     small_encode_varint_lowz(length, bl);
   }
   void decode(bufferlist::iterator& p) {
+    ::decode(bdev, p);
     small_decode_lba(offset, p);
     small_decode_varint_lowz(length, p);
   }
