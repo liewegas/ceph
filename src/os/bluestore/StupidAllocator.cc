@@ -215,8 +215,7 @@ int StupidAllocator::alloc_extents(
     max_alloc_size = want_size;
   }
 
-  ExtentList block_list = ExtentList(extents, 1, max_alloc_size);
-
+  assert(extents->empty());
   while (allocated_size < want_size) {
     res = allocate(MIN(max_alloc_size, (want_size - allocated_size)),
        alloc_unit, hint, &offset, &length);
@@ -226,12 +225,12 @@ int StupidAllocator::alloc_extents(
        */
       break;
     }
-    block_list.add_extents(offset, length);
+    extents->emplace_back(AllocExtent(offset, length));
     allocated_size += length;
     hint = offset + length;
   }
 
-  *count = block_list.get_extent_count();
+  *count = extents->size();
   if (want_size - allocated_size > 0) {
     release_extents(extents, *count);
     return -ENOSPC;

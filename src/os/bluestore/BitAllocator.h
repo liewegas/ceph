@@ -26,6 +26,51 @@
 #define alloc_dbg_assert(x) (static_cast<void> (0))
 #endif
 
+class ExtentList {
+  std::vector<AllocExtent> *m_extents;
+  int64_t m_num_extents;
+  int64_t m_block_size;
+  uint64_t m_max_alloc_size;
+
+public:
+  void init(std::vector<AllocExtent> *extents, int64_t block_size,
+	    uint64_t max_alloc_size) {
+    m_extents = extents;
+    m_num_extents = 0;
+    m_block_size = block_size;
+    m_max_alloc_size = max_alloc_size;
+  }
+
+  ExtentList(std::vector<AllocExtent> *extents, int64_t block_size) {
+    init(extents, block_size, 0);
+  }
+
+  ExtentList(std::vector<AllocExtent> *extents, int64_t block_size,
+	     uint64_t max_alloc_size) {
+    init(extents, block_size, max_alloc_size);
+  }
+
+  void reset() {
+    m_num_extents = 0;
+  }
+
+  void add_extents(int64_t start, int64_t count);
+
+  std::vector<AllocExtent> *get_extents() {
+    return m_extents;
+  }
+
+  std::pair<int64_t, int64_t> get_nth_extent(int index) {
+      return std::make_pair
+            ((*m_extents)[index].offset / m_block_size,
+             (*m_extents)[index].length / m_block_size);
+  }
+
+  int64_t get_extent_count() {
+    return m_num_extents;
+  }
+};
+
 class BitAllocatorStats {
 public:
   std::atomic<int64_t> m_total_alloc_calls;
