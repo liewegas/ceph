@@ -204,7 +204,7 @@ int StupidAllocator::allocate(
 
 int StupidAllocator::alloc_extents(
   uint64_t want_size, uint64_t alloc_unit, uint64_t max_alloc_size,
-  int64_t hint, std::vector<AllocExtent> *extents, int *count)
+  int64_t hint, std::vector<bluestore_pextent_t> *extents, int *count)
 {
   uint64_t allocated_size = 0;
   uint64_t offset = 0;
@@ -225,7 +225,7 @@ int StupidAllocator::alloc_extents(
        */
       break;
     }
-    extents->emplace_back(AllocExtent(offset, length));
+    extents->emplace_back(bluestore_pextent_t(offset, length));
     allocated_size += length;
     hint = offset + length;
   }

@@ -364,8 +364,8 @@ TEST(BitAllocator, test_zone_alloc)
   }
 
   int64_t blk_size = 1024;
-  std::vector<AllocExtent> extents = std::vector<AllocExtent>
-        (zone->size() / 2, AllocExtent(-1, -1));
+  std::vector<bluestore_pextent_t> extents = std::vector<bluestore_pextent_t>
+        (zone->size() / 2, bluestore_pextent_t(-1, -1));
 
   ExtentList *block_list = new ExtentList(&extents, blk_size);
   allocated = zone->alloc_blocks_dis(zone->size() / 2, 0, 0, block_list);
@@ -388,8 +388,8 @@ TEST(BitAllocator, test_zone_alloc)
 
   {
     int64_t blk_size = 1024;
-    std::vector<AllocExtent> extents = std::vector<AllocExtent>
-      (zone->size() / 2, AllocExtent(-1, -1));
+    std::vector<bluestore_pextent_t> extents = std::vector<bluestore_pextent_t>
+      (zone->size() / 2, bluestore_pextent_t(-1, -1));
 
     ExtentList *block_list = new ExtentList(&extents, blk_size);
 
@@ -486,8 +486,8 @@ TEST(BitAllocator, test_bmap_alloc)
     }
 
     int64_t blk_size = 1024;
-    auto extents = std::vector<AllocExtent>
-          (alloc->size(), AllocExtent(-1, -1));
+    auto extents = std::vector<bluestore_pextent_t>
+          (alloc->size(), bluestore_pextent_t(-1, -1));
 
     ExtentList *block_list = new ExtentList(&extents, blk_size);
 
@@ -584,8 +584,8 @@ bool alloc_extents_max_block(BitAllocator *alloc,
   int64_t allocated = 0;
   int64_t verified = 0;
   int64_t count = 0;
-  std::vector<AllocExtent> extents = std::vector<AllocExtent>
-        (total_alloc, AllocExtent(-1, -1));
+  std::vector<bluestore_pextent_t> extents = std::vector<bluestore_pextent_t>
+        (total_alloc, bluestore_pextent_t(-1, -1));
 
   ExtentList *block_list = new ExtentList(&extents, blk_size, max_alloc);
 
@@ -671,8 +671,8 @@ do_work_dis(BitAllocator *alloc)
   int64_t alloced = 0;
   int64_t num_blocks = alloc->size() / NUM_THREADS;
 
-  std::vector<AllocExtent> extents = std::vector<AllocExtent>
-        (num_blocks, AllocExtent(-1, -1));
+  std::vector<bluestore_pextent_t> extents = std::vector<bluestore_pextent_t>
+        (num_blocks, bluestore_pextent_t(-1, -1));
   ExtentList *block_list = new ExtentList(&extents, 4096);
 
   while (num_iters--) {

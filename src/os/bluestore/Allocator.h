@@ -41,17 +41,18 @@ public:
    */
   virtual int alloc_extents(uint64_t want_size, uint64_t alloc_unit,
                             uint64_t max_alloc_size, int64_t hint,
-                            std::vector<AllocExtent> *extents, int *count) = 0;
+                            std::vector<bluestore_pextent_t> *extents,
+			    int *count) = 0;
 
   int alloc_extents(uint64_t want_size, uint64_t alloc_unit,
-                    int64_t hint, std::vector<AllocExtent> *extents, int *count) {
+                    int64_t hint, std::vector<bluestore_pextent_t> *extents, int *count) {
     return alloc_extents(want_size, alloc_unit, want_size, hint, extents, count);
   }
 
   virtual int release(
     uint64_t offset, uint64_t length) = 0;
 
-  virtual int release_extents(std::vector<AllocExtent> *extents, int count) {
+  virtual int release_extents(std::vector<bluestore_pextent_t> *extents, int count) {
     int res = 0;
       for (int i = 0; i < count; i++) {
         res = release((*extents)[i].offset, (*extents)[i].length);

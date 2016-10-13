@@ -29,7 +29,7 @@ int64_t BitMapZone::total_blocks = 0;
 
 void ExtentList::add_extents(int64_t start, int64_t count)
 {
-  AllocExtent *last_extent = NULL;
+  bluestore_pextent_t *last_extent = NULL;
   bool can_merge = false;
 
   if (m_num_extents > 0) {

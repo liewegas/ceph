@@ -56,30 +56,20 @@ struct bluestore_cnode_t {
 };
 WRITE_CLASS_ENCODER(bluestore_cnode_t)
 
-class AllocExtent {
-public:
-  uint64_t offset;
-  uint32_t length;
+/// pextent: physical extent
+struct bluestore_pextent_t {
+  uint64_t offset = 0;
+  uint32_t length = 0;
 
-  AllocExtent() { 
-    offset = 0;
-    length = 0;
-  }
+  const static uint64_t INVALID_OFFSET = ~0ull;
 
-  AllocExtent(int64_t off, int32_t len) : offset(off), length(len) { }
+  bluestore_pextent_t() {}
+  bluestore_pextent_t(uint64_t o, uint32_t l)
+    : offset(o), length(l) {}
+
   uint64_t end() const {
     return offset + length;
   }
-};
-
-
-/// pextent: physical extent
-struct bluestore_pextent_t : public AllocExtent{
-  const static uint64_t INVALID_OFFSET = ~0ull;
-
-  bluestore_pextent_t() : AllocExtent() {}
-  bluestore_pextent_t(uint64_t o, uint64_t l) : AllocExtent(o, l) {}
-  bluestore_pextent_t(AllocExtent &ext) : AllocExtent(ext.offset, ext.length) { }
 
   bool is_valid() const {
     return offset != INVALID_OFFSET;

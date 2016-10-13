@@ -105,7 +105,7 @@ void small_encode(const vector<bluestore_pextent_t>& v, bufferlist& bl)
 {
   size_t n = v.size();
   small_encode_varint(n, bl);
-  for (auto e : v) {
+  for (const auto &e : v) {
     e.encode(bl);
   }
 }

@@ -7537,8 +7537,8 @@ int BlueStore::_do_alloc_write(
     }
 
     int count = 0;
-    std::vector<AllocExtent> extents = 
-                std::vector<AllocExtent>(final_length / min_alloc_size);
+    std::vector<bluestore_pextent_t> extents = 
+                std::vector<bluestore_pextent_t>(final_length / min_alloc_size);
 
     int r = alloc->alloc_extents(final_length, min_alloc_size, max_alloc_size,
                                  hint, &extents, &count);

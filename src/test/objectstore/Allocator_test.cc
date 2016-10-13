@@ -67,8 +67,8 @@ TEST_P(AllocTest, test_alloc_min_alloc)
   {
     alloc->init_add_free(0, block_size * 4);
     EXPECT_EQ(alloc->reserve(block_size * 4), 0);
-    std::vector<AllocExtent> extents = std::vector<AllocExtent> 
-                        (4, AllocExtent(0, 0));
+    std::vector<bluestore_pextent_t> extents = std::vector<bluestore_pextent_t> 
+                        (4, bluestore_pextent_t(0, 0));
   
     EXPECT_EQ(alloc->alloc_extents(4 * (uint64_t)block_size, (uint64_t) block_size, 
                                    0, (int64_t) 0, &extents, &count), 0);
@@ -84,8 +84,8 @@ TEST_P(AllocTest, test_alloc_min_alloc)
     alloc->init_add_free(0, block_size * 2);
     alloc->init_add_free(3 * block_size, block_size * 2);
     EXPECT_EQ(alloc->reserve(block_size * 4), 0);
-    std::vector<AllocExtent> extents = std::vector<AllocExtent> 
-                        (4, AllocExtent(0, 0));
+    std::vector<bluestore_pextent_t> extents = std::vector<bluestore_pextent_t> 
+                        (4, bluestore_pextent_t(0, 0));
   
     EXPECT_EQ(alloc->alloc_extents(4 * (uint64_t)block_size, (uint64_t) block_size, 
                                    0, (int64_t) 0, &extents, &count), 0);
@@ -112,8 +112,8 @@ TEST_P(AllocTest, test_alloc_min_max_alloc)
   {
     alloc->init_add_free(0, block_size * 4);
     EXPECT_EQ(alloc->reserve(block_size * 4), 0);
-    std::vector<AllocExtent> extents = std::vector<AllocExtent> 
-                        (4, AllocExtent(0, 0));
+    std::vector<bluestore_pextent_t> extents = std::vector<bluestore_pextent_t> 
+                        (4, bluestore_pextent_t(0, 0));
   
     EXPECT_EQ(alloc->alloc_extents(4 * (uint64_t)block_size, (uint64_t) block_size, 
                                    block_size, (int64_t) 0, &extents, &count), 0);
@@ -131,8 +131,8 @@ TEST_P(AllocTest, test_alloc_min_max_alloc)
   {
     alloc->init_add_free(0, block_size * 4);
     EXPECT_EQ(alloc->reserve(block_size * 4), 0);
-    std::vector<AllocExtent> extents = std::vector<AllocExtent> 
-                        (2, AllocExtent(0, 0));
+    std::vector<bluestore_pextent_t> extents = std::vector<bluestore_pextent_t> 
+                        (2, bluestore_pextent_t(0, 0));
   
     EXPECT_EQ(alloc->alloc_extents(4 * (uint64_t)block_size, (uint64_t) block_size, 
                                    2 * block_size, (int64_t) 0, &extents, &count), 0);
@@ -148,8 +148,8 @@ TEST_P(AllocTest, test_alloc_min_max_alloc)
   {
     alloc->init_add_free(0, block_size * 16);
     EXPECT_EQ(alloc->reserve(block_size * 16), 0);
-    std::vector<AllocExtent> extents = std::vector<AllocExtent> 
-                        (8, AllocExtent(0, 0));
+    std::vector<bluestore_pextent_t> extents = std::vector<bluestore_pextent_t> 
+                        (8, bluestore_pextent_t(0, 0));
   
     EXPECT_EQ(alloc->alloc_extents(16 * (uint64_t)block_size, (uint64_t) block_size, 
                                    2 * block_size, (int64_t) 0, &extents, &count), 0);
@@ -174,8 +174,8 @@ TEST_P(AllocTest, test_alloc_failure)
     alloc->init_add_free(block_size * 512, block_size * 256);
 
     EXPECT_EQ(alloc->reserve(block_size * 512), 0);
-    std::vector<AllocExtent> extents = std::vector<AllocExtent> 
-                        (4, AllocExtent(0, 0));
+    std::vector<bluestore_pextent_t> extents = std::vector<bluestore_pextent_t> 
+                        (4, bluestore_pextent_t(0, 0));
   
     EXPECT_EQ(alloc->alloc_extents(512 * (uint64_t)block_size, (uint64_t) block_size * 256, 
                                    block_size * 256, (int64_t) 0, &extents, &count), 0);
@@ -201,8 +201,8 @@ TEST_P(AllocTest, test_alloc_hint_bmap)
   init_alloc(blocks, 1);
   alloc->init_add_free(0, blocks);
 
-  auto extents = std::vector<AllocExtent>
-          (zone_size * 4, AllocExtent(-1, -1));
+  auto extents = std::vector<bluestore_pextent_t>
+          (zone_size * 4, bluestore_pextent_t(-1, -1));
   alloc->reserve(blocks);
 
   allocated = alloc->alloc_extents(1, 1, 1, zone_size, &extents, &count);

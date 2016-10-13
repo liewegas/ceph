@@ -7,13 +7,19 @@
 #include "include/utime.h"
 #include "include/encoding.h"
 
-class bluefs_extent_t : public AllocExtent{
+class bluefs_extent_t {
 public:
+  uint64_t offset;
+  uint32_t length;
   uint8_t bdev;
 
   bluefs_extent_t(uint8_t b = 0, uint64_t o = 0, uint32_t l = 0)
-    : AllocExtent(o, l), bdev(b) {}
+    : offset(o), length(l), bdev(b) {}
 
+  uint64_t end() const {
+    return offset + length;
+  }
+  
   void encode(bufferlist&) const;
   void decode(bufferlist::iterator&);
   void dump(Formatter *f) const;
