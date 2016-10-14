@@ -149,9 +149,6 @@ void small_decode(vector<bluestore_pextent_t>& v, bufferlist::iterator& p)
 
 // bluestore_extent_ref_map_t
 
-MEMPOOL_DEFINE_MAP_FACTORY(uint64_t, bluestore_extent_ref_map_t::record_t,
-			   uint64_extent_ref_map_record, bluestore_meta_other)
-
 void bluestore_extent_ref_map_t::_check() const
 {
   uint64_t pos = 0;
