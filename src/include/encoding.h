@@ -370,23 +370,23 @@ inline void decode(std::pair<A,B> &pa, bufferlist::iterator &p)
 }
 
 // list
-template<class T>
-inline void encode(const std::list<T>& ls, bufferlist& bl)
+template<class T, class Alloc>
+inline void encode(const std::list<T,Alloc>& ls, bufferlist& bl)
 {
   __u32 n = (__u32)(ls.size());  // c++11 std::list::size() is O(1)
   encode(n, bl);
-  for (typename std::list<T>::const_iterator p = ls.begin(); p != ls.end(); ++p)
+  for (typename std::list<T,Alloc>::const_iterator p = ls.begin(); p != ls.end(); ++p)
     encode(*p, bl);
 }
-template<class T>
-inline void encode(const std::list<T>& ls, bufferlist& bl, uint64_t features)
+template<class T, class Alloc>
+inline void encode(const std::list<T,Alloc>& ls, bufferlist& bl, uint64_t features)
 {
   // should i pre- or post- count?
   if (!ls.empty()) {
     unsigned pos = bl.length();
     unsigned n = 0;
     encode(n, bl);
-    for (typename std::list<T>::const_iterator p = ls.begin(); p != ls.end(); ++p) {
+    for (typename std::list<T,Alloc>::const_iterator p = ls.begin(); p != ls.end(); ++p) {
       n++;
       encode(*p, bl, features);
     }
@@ -396,12 +396,12 @@ inline void encode(const std::list<T>& ls, bufferlist& bl, uint64_t features)
   } else {
     __u32 n = (__u32)(ls.size());    // FIXME: this is slow on a list.
     encode(n, bl);
-    for (typename std::list<T>::const_iterator p = ls.begin(); p != ls.end(); ++p)
+    for (typename std::list<T,Alloc>::const_iterator p = ls.begin(); p != ls.end(); ++p)
       encode(*p, bl, features);
   }
 }
-template<class T>
-inline void decode(std::list<T>& ls, bufferlist::iterator& p)
+template<class T,class Alloc>
+inline void decode(std::list<T,Alloc>& ls, bufferlist::iterator& p)
 {
   __u32 n;
   decode(n, p);
