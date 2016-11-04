@@ -1558,6 +1558,7 @@ ostream& operator<<(ostream& out, const BlueStore::Extent& e)
 {
   return out << std::hex << "0x" << e.logical_offset << "~" << e.length
 	     << ": 0x" << e.blob_offset << "~" << e.length << std::dec
+	     << (e.dirty ? " DIRTY" : "")
 	     << " depth " << (int)e.blob_depth
 	     << " " << *e.blob;
 }
@@ -1826,6 +1827,9 @@ bool BlueStore::ExtentMap::encode_some(uint32_t offset, uint32_t length,
 	blobid = 0;  // the decoder will infer the id from n
       } else {
 	blobid = p->blob->last_encoded_id << BLOBID_SHIFT_BITS;
+      }
+      if (p->dirty) {
+	p->dirty = false;
       }
       if (p->logical_offset == pos) {
 	blobid |= BLOBID_FLAG_CONTIGUOUS;
@@ -2178,11 +2182,12 @@ void BlueStore::ExtentMap::punch_hole(
 	// split and deref middle
 	uint64_t front = offset - p->logical_offset;
 	old_extents->insert(
-	  *new Extent(offset, p->blob_offset + front, length, p->blob_depth, p->blob));
+	  *new Extent(offset, p->blob_offset + front, length, p->blob_depth,
+		      p->dirty, p->blob));
 	add(end,
 	    p->blob_offset + front + length,
 	    p->length - front - length, p->blob_depth,
-	    p->blob);
+	    p->dirty, p->blob);
 	p->length = front;
 	break;
       } else {
@@ -2190,7 +2195,8 @@ void BlueStore::ExtentMap::punch_hole(
 	assert(p->logical_offset + p->length > offset); // else seek_lextent bug
 	uint64_t keep = offset - p->logical_offset;
 	old_extents->insert(*new Extent(offset, p->blob_offset + keep,
-					p->length - keep, p->blob_depth,  p->blob));
+					p->length - keep, p->blob_depth,
+					p->dirty, p->blob));
 	p->length = keep;
 	++p;
 	continue;
@@ -2199,15 +2205,18 @@ void BlueStore::ExtentMap::punch_hole(
     if (p->logical_offset + p->length <= end) {
       // deref whole lextent
       old_extents->insert(*new Extent(p->logical_offset, p->blob_offset,
-				      p->length, p->blob_depth, p->blob));
+				      p->length, p->blob_depth, p->dirty,
+				      p->blob));
       rm(p++);
       continue;
     }
     // deref head
     uint64_t keep = (p->logical_offset + p->length) - end;
     old_extents->insert(*new Extent(p->logical_offset, p->blob_offset,
-				    p->length - keep, p->blob_depth, p->blob));
-    add(end, p->blob_offset + p->length - keep, keep, p->blob_depth, p->blob);
+				    p->length - keep, p->blob_depth, p->dirty,
+				    p->blob));
+    add(end, p->blob_offset + p->length - keep, keep, p->blob_depth, p->dirty,
+	p->blob);
     rm(p);
     break;
   }
@@ -2220,7 +2229,8 @@ BlueStore::Extent *BlueStore::ExtentMap::set_lextent(
 {
   punch_hole(logical_offset, length, old_extents);
   b->ref_map.get(blob_offset, length);
-  Extent *le = new Extent(logical_offset, blob_offset, length, blob_depth, b);
+  Extent *le = new Extent(logical_offset, blob_offset, length, blob_depth,
+			  true, b);
   extent_map.insert(*le);
   if (!needs_reshard && spans_shard(logical_offset, length)) {
     needs_reshard = true;
@@ -2250,7 +2260,8 @@ BlueStore::BlobRef BlueStore::ExtentMap::split_blob(
     if (ep->logical_offset < pos) {
       // split extent
       size_t left = pos - ep->logical_offset;
-      Extent *ne = new Extent(pos, 0, ep->length - left, ep->blob_depth, rb);
+      Extent *ne = new Extent(pos, 0, ep->length - left, ep->blob_depth,
+			      ep->dirty, rb);
       extent_map.insert(*ne);
       lb->ref_map.put(ep->blob_offset + left, ep->length - left, &released);
       ep->length = left;
@@ -6960,6 +6971,7 @@ int BlueStore::queue_transactions(
   }
 
   _txc_write_nodes(txc, txc->t);
+
   // journal wal items
   if (txc->wal_txn) {
     // move releases to after wal
@@ -8766,7 +8778,8 @@ int BlueStore::_do_clone_range(
     }
     Extent *ne = new Extent(e.logical_offset + skip_front + dstoff - srcoff,
 			    e.blob_offset + skip_front,
-			    e.length - skip_front - skip_back, e.blob_depth, cb);
+			    e.length - skip_front - skip_back, e.blob_depth,
+			    true, cb);
     newo->extent_map.extent_map.insert(*ne);
     ne->blob->ref_map.get(ne->blob_offset, ne->length);
     // fixme: we may leave parts of new blob unreferenced that could

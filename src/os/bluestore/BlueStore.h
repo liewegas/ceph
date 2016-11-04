@@ -542,6 +542,7 @@ public:
     uint32_t blob_offset = 0;         ///< blob offset
     uint32_t length = 0;              ///< length
     uint8_t  blob_depth = 0;          ///< blob overlapping count
+    bool dirty = false;               ///< extent has been modified this txc
     BlobRef blob;                     ///< the blob with our data
 
     /// ctor for lookup only
@@ -550,8 +551,8 @@ public:
     explicit Extent() {
     }
     /// ctor for general usage
-    Extent(uint32_t lo, uint32_t o, uint32_t l, uint8_t bd, BlobRef& b)
-      : logical_offset(lo), blob_offset(o), length(l), blob_depth(bd) {
+    Extent(uint32_t lo, uint32_t o, uint32_t l, uint8_t bd, bool d, BlobRef& b)
+      : logical_offset(lo), blob_offset(o), length(l), blob_depth(bd), dirty(d) {
       assign_blob(b);
     }
     ~Extent() {
@@ -708,8 +709,9 @@ public:
     extent_map_t::iterator seek_lextent(uint64_t offset);
 
     /// add a new Extent
-    void add(uint32_t lo, uint32_t o, uint32_t l, uint8_t bd, BlobRef& b) {
-      extent_map.insert(*new Extent(lo, o, l, bd, b));
+    void add(uint32_t lo, uint32_t o, uint32_t l, uint8_t bd, bool dirty,
+	     BlobRef& b) {
+      extent_map.insert(*new Extent(lo, o, l, bd, dirty, b));
     }
 
     /// remove (and delete) an Extent
