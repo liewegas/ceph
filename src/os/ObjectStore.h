@@ -385,6 +385,10 @@ public:
       OP_COLL_HINT = 40, // cid, type, bl
 
       OP_TRY_RENAME = 41,   // oldcid, oldoid, newoid
+
+      OP_SET_ROLLBACK_ID = 43,  // set rollback id for this txn
+      OP_DISCARD_ROLLBACK = 44, // discard rollback state through given id
+      OP_ROLLBACK = 45,         // rollback object state to given id
     };
 
     // Transaction hint type
@@ -396,7 +400,14 @@ public:
       __le32 op;
       __le32 cid;
       __le32 oid;
-      __le64 off;
+      union {
+	struct {
+	  __le64 off;
+	};
+	struct {
+	  __le64 rollback_id;           // OP_SET_ROLLBACK_ID
+	};
+      };
       __le64 len;
       __le32 dest_cid;
       __le32 dest_oid;                  //OP_CLONE, OP_CLONERANGE
@@ -1387,6 +1398,42 @@ public:
       _op->expected_object_size = expected_object_size;
       _op->expected_write_size = expected_write_size;
       _op->alloc_hint_flags = flags;
+      data.ops++;
+    }
+
+    void set_rollback_id(
+      coll_t cid,
+      const ghobject_t &oid,
+      uint64_t rid) {
+      Op* _op = _get_next_op();
+      _op->op = OP_SET_ROLLBACK_ID;
+      _op->cid = _get_coll_id(cid);
+      _op->oid = _get_object_id(oid);
+      _op->rollback_id = rid;
+      data.ops++;
+    }
+
+    void discard_rollback(
+      coll_t cid,
+      const ghobject_t &oid,
+      uint64_t rid) {
+      Op* _op = _get_next_op();
+      _op->op = OP_DISCARD_ROLLBACK;
+      _op->cid = _get_coll_id(cid);
+      _op->oid = _get_object_id(oid);
+      _op->rollback_id = rid;
+      data.ops++;
+    }
+
+    void rollback(
+      coll_t cid,
+      const ghobject_t &oid,
+      uint64_t rid) {
+      Op* _op = _get_next_op();
+      _op->op = OP_ROLLBACK;
+      _op->cid = _get_coll_id(cid);
+      _op->oid = _get_object_id(oid);
+      _op->rollback_id = rid;
       data.ops++;
     }
 

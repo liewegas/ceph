@@ -415,7 +415,7 @@ void ObjectStore::Transaction::dump(ceph::Formatter *f)
 	f->dump_stream("old_oid") << old_oid;
 	f->dump_stream("new_oid") << new_oid;
       }
-	
+
     case Transaction::OP_SETALLOCHINT:
       {
         coll_t cid = i.get_cid(op->cid);
@@ -427,6 +427,39 @@ void ObjectStore::Transaction::dump(ceph::Formatter *f)
         f->dump_stream("oid") << oid;
         f->dump_stream("expected_object_size") << expected_object_size;
         f->dump_stream("expected_write_size") << expected_write_size;
+      }
+      break;
+
+    case Transaction::OP_SET_ROLLBACK_ID:
+      {
+        coll_t cid = i.get_cid(op->cid);
+        ghobject_t oid = i.get_oid(op->oid);
+        f->dump_string("op_name", "set_rollback_id");
+        f->dump_stream("collection") << cid;
+        f->dump_stream("oid") << oid;
+	f->dump_unsigned("rollback_id", op->rollback_id);
+      }
+      break;
+
+    case Transaction::OP_DISCARD_ROLLBACK:
+      {
+        coll_t cid = i.get_cid(op->cid);
+        ghobject_t oid = i.get_oid(op->oid);
+        f->dump_string("op_name", "discard_rollback");
+        f->dump_stream("collection") << cid;
+        f->dump_stream("oid") << oid;
+	f->dump_unsigned("rollback_id", op->rollback_id);
+      }
+      break;
+
+    case Transaction::OP_ROLLBACK:
+      {
+        coll_t cid = i.get_cid(op->cid);
+        ghobject_t oid = i.get_oid(op->oid);
+        f->dump_string("op_name", "rollback");
+        f->dump_stream("collection") << cid;
+        f->dump_stream("oid") << oid;
+	f->dump_unsigned("rollback_id", op->rollback_id);
       }
       break;
 
