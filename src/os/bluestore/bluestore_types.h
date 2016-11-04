@@ -660,6 +660,18 @@ WRITE_CLASS_DENC(bluestore_shared_blob_t)
 
 ostream& operator<<(ostream& out, const bluestore_shared_blob_t& o);
 
+struct bluestore_rollback_info_t {
+  uint64_t gen = 0;
+  uint64_t size = 0;                ///< previous size of object
+
+  map<string,bufferptr> old_attrs;  ///< overwritten or deleted attrs
+  set<string> new_attrs;            ///< newly created xattrs
+
+  bufferlist omap_data;             ///< roll-forward omap data
+
+  // (extent map of overwritten extents)
+};
+
 /// onode: per-object metadata
 struct bluestore_onode_t {
   uint64_t nid = 0;                    ///< numeric id (locally unique)
@@ -683,6 +695,8 @@ struct bluestore_onode_t {
   uint32_t expected_object_size = 0;
   uint32_t expected_write_size = 0;
   uint32_t alloc_hint_flags = 0;
+
+  vector<uint64_t> open_rollbacks;
 
   /// get preferred csum chunk size
   size_t get_preferred_csum_order() const;
