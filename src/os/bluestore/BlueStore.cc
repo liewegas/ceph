@@ -1776,6 +1776,8 @@ void BlueStore::ExtentMap::reshard(Onode *o, uint64_t min_alloc_size)
 bool BlueStore::ExtentMap::encode_some(uint32_t offset, uint32_t length,
 				       bufferlist& bl, unsigned *pn)
 {
+  compress_extent_map(offset, length);
+
   Extent dummy(offset);
   auto start = extent_map.lower_bound(dummy);
   uint32_t end = offset + length;
@@ -8195,8 +8197,6 @@ int BlueStore::_do_write(
   }
 
   _wctx_finish(txc, c, o, &wctx);
-
-  o->extent_map.compress_extent_map(offset, length);
 
   o->extent_map.dirty_range(txc->t, offset, length);
 
