@@ -24,6 +24,7 @@
 #include <boost/statechart/event_base.hpp>
 #include <boost/scoped_ptr.hpp>
 #include "include/memory.h"
+#include "include/mempool.h"
 
 // re-include our assert to clobber boost's
 #include "include/assert.h" 
@@ -969,9 +970,9 @@ public:
   };
 
   struct PGLogEntryHandler : public PGLog::LogEntryHandler {
-    list<pg_log_entry_t> to_rollback;
+    osd::list<pg_log_entry_t> to_rollback;
     set<hobject_t, hobject_t::BitwiseComparator> to_remove;
-    list<pg_log_entry_t> to_trim;
+    osd::list<pg_log_entry_t> to_trim;
     list<pair<hobject_t, version_t> > to_stash;
     
     // LogEntryHandler
@@ -2288,7 +2289,7 @@ public:
 
 
   bool append_log_entries_update_missing(
-    const list<pg_log_entry_t> &entries,
+    const osd::list<pg_log_entry_t> &entries,
     ObjectStore::Transaction &t);
 
   /**
@@ -2296,7 +2297,7 @@ public:
    * actingbackfill logs and missings (also missing_loc)
    */
   void merge_new_log_entries(
-    const list<pg_log_entry_t> &entries,
+    const osd::list<pg_log_entry_t> &entries,
     ObjectStore::Transaction &t);
 
   void reset_interval_flush();

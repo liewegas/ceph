@@ -26,6 +26,7 @@
 #include <boost/variant.hpp>
 
 #include "include/rados/rados_types.hpp"
+#include "include/mempool.h"
 
 #include "msg/msg_types.h"
 #include "include/types.h"
@@ -2667,7 +2668,7 @@ struct pg_log_t {
   // data can be found
   eversion_t rollback_info_trimmed_to;
 
-  list<pg_log_entry_t> log;  // the actual log.
+  osd::list<pg_log_entry_t> log;  // the actual log.
   
   pg_log_t() {}
 

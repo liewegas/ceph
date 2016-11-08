@@ -2307,7 +2307,7 @@ void ReplicatedPG::record_write_error(OpRequestRef op, const hobject_t &soid,
   assert(op->may_write());
   const osd_reqid_t &reqid = static_cast<MOSDOp*>(op->get_req())->get_reqid();
   ObjectContextRef obc;
-  list<pg_log_entry_t> entries;
+  osd::list<pg_log_entry_t> entries;
   entries.push_back(pg_log_entry_t(pg_log_entry_t::ERROR, soid,
 				   get_next_version(), eversion_t(), 0,
 				   reqid, utime_t(), r));
@@ -8829,7 +8829,7 @@ void ReplicatedPG::simple_opc_submit(OpContextUPtr ctx)
 
 
 void ReplicatedPG::submit_log_entries(
-  const list<pg_log_entry_t> &entries,
+  const osd::list<pg_log_entry_t> &entries,
   ObcLockManager &&manager,
   boost::optional<std::function<void(void)> > &&on_complete)
 {
@@ -9964,7 +9964,7 @@ void ReplicatedPG::mark_all_unfound_lost(
   pg_log.get_log().print(*_dout);
   *_dout << dendl;
 
-  list<pg_log_entry_t> log_entries;
+  osd::list<pg_log_entry_t> log_entries;
 
   utime_t mtime = ceph_clock_now(cct);
   map<hobject_t, pg_missing_item, hobject_t::ComparatorWithDefault>::const_iterator m =
