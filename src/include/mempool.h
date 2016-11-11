@@ -145,7 +145,8 @@ namespace mempool {
   f(buffer_data)		      \
   f(osd)			      \
   f(bluestore_meta_onode)	      \
-  f(bluestore_meta_other)
+  f(bluestore_meta_other)	\
+  f(bstore_balloc) 
 
 // give them integer ids
 #define P(x) mempool_##x,
