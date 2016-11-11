@@ -23,6 +23,13 @@
 #include <assert.h>
 #include <math.h>
 
+MEMPOOL_DEFINE_OBJECT_FACTORY(BitMapArea, BitMapArea, bstore_balloc);
+MEMPOOL_DEFINE_OBJECT_FACTORY(BitMapAreaIN, BitMapAreaIN, bstore_balloc);
+MEMPOOL_DEFINE_OBJECT_FACTORY(BitMapAreaLeaf, BitMapAreaLeaf, bstore_balloc);
+MEMPOOL_DEFINE_OBJECT_FACTORY(BitMapZone, BitMapZone, bstore_balloc);
+MEMPOOL_DEFINE_OBJECT_FACTORY(BmapEntry, BmapEntry, bstore_balloc);
+MEMPOOL_DEFINE_OBJECT_FACTORY(BitAllocator, BitAllocator, bstore_balloc);
+
 int64_t BitMapAreaLeaf::count = 0;
 int64_t BitMapZone::count = 0;
 int64_t BitMapZone::total_blocks = 0;
@@ -350,7 +357,7 @@ void BitMapZone::init(int64_t zone_num, int64_t total_blocks, bool def)
   alloc_assert(total_blocks < std::numeric_limits<int32_t>::max());
   alloc_assert(!(total_blocks % BmapEntry::size()));
 
-  std::vector<BmapEntry> *bmaps = new std::vector<BmapEntry> (num_bmaps, BmapEntry(def));
+  BmapEntryVector *bmaps = new BmapEntryVector(num_bmaps, BmapEntry(def));
   m_bmap_list = bmaps;
   incr_count();
 }
