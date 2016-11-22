@@ -1019,7 +1019,7 @@ TEST_F(TestMockJournal, EventCommitError) {
 
   C_SaferCond object_request_ctx;
   AioObjectRemove *object_request = new AioObjectRemove(
-    ictx, "oid", 0, {}, &object_request_ctx);
+    ictx, "oid", 0, {}, &object_request_ctx, nullptr);
 
   ::journal::MockFuture mock_future;
   Context *on_journal_safe;
@@ -1060,7 +1060,7 @@ TEST_F(TestMockJournal, EventCommitErrorWithPendingWriteback) {
 
   C_SaferCond object_request_ctx;
   AioObjectRemove *object_request = new AioObjectRemove(
-    ictx, "oid", 0, {}, &object_request_ctx);
+    ictx, "oid", 0, {}, &object_request_ctx, nullptr);
 
   ::journal::MockFuture mock_future;
   Context *on_journal_safe;
