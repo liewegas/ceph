@@ -1137,6 +1137,15 @@ public:
 
   void request_osdmap_update(epoch_t e);
 
+  // -- heartbeats --
+  Mutex hb_stamp_lock;
+
+  /// osd -> heartbeat stamps
+  vector<HeartbeatStampsRef> hb_stamps;
+
+  /// get or create a ref for a peer's HeartbeatStamps
+  HeartbeatStampsRef get_hb_stamps(unsigned osd);
+
   // -- stopping --
   Mutex is_stopping_lock;
   Cond is_stopping_cond;
@@ -1479,6 +1488,7 @@ private:
   /// state attached to outgoing heartbeat connections
   struct HeartbeatSession : public RefCountedObject {
     int peer;
+    HeartbeatStampsRef stamps;
     explicit HeartbeatSession(int p) : peer(p) {}
   };
   Mutex heartbeat_lock;

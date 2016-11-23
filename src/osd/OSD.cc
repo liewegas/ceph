@@ -275,7 +275,9 @@ OSDService::OSDService(OSD *osd) :
   cur_ratio(0),
   epoch_lock("OSDService::epoch_lock"),
   boot_epoch(0), up_epoch(0), bind_epoch(0),
-  is_stopping_lock("OSDService::is_stopping_lock")
+  hb_stamp_lock("OSDService::hb_stamp_lock"),
+  is_stopping_lock("OSDService::is_stopping_lock"),
+  state(NOT_STOPPING)
 #ifdef PG_DEBUG_REFS
   , pgid_lock("OSDService::pgid_lock")
 #endif
@@ -500,6 +502,16 @@ void OSDService::complete_split(const set<spg_t> &pgs)
 void OSDService::need_heartbeat_peer_update()
 {
   osd->need_heartbeat_peer_update();
+}
+
+HeartbeatStampsRef OSDService::get_hb_stamps(unsigned peer)
+{
+  Mutex::Locker l(hb_stamp_lock);
+  if (peer >= hb_stamps.size())
+    hb_stamps.resize(peer + 1);
+  if (!hb_stamps[peer])
+    hb_stamps[peer].reset(new HeartbeatStamps(peer));
+  return hb_stamps[peer];
 }
 
 void OSDService::start_shutdown()
@@ -4322,6 +4334,7 @@ void OSD::_add_heartbeat_peer(int p)
     hi = &heartbeat_peers[p];
     hi->peer = p;
     HeartbeatSession *s = new HeartbeatSession(p);
+    s->stamps = service.get_hb_stamps(p);
     hi->con_back = cons.first.get();
     hi->con_back->set_priv(s->get());
     if (cons.second) {
@@ -4511,6 +4524,14 @@ void OSD::handle_osd_ping(MOSDPing *m)
     return;
   }
 
+  HeartbeatSession *s = static_cast<HeartbeatSession*>(con->get_priv());
+  if (!s) {
+    dout(20) << __func__ << " new HeartbeatSession for osd." << from << dendl;
+    s = new HeartbeatSession(from);
+    s->stamps = service.get_hb_stamps(from);
+    con->set_priv(s->get());
+  }
+
   switch (m->op) {
 
   case MOSDPing::PING:
@@ -4538,6 +4559,9 @@ void OSD::handle_osd_ping(MOSDPing *m)
 	  break;
 	}
       }
+
+      set<PGRef> wake_pgs;
+      s->stamps->got_ping(now, m->consumed_epoch, &wake_pgs);
 
       if (!cct->get_heartbeat_map()->is_healthy()) {
 	dout(10) << "internal heartbeat not healthy, dropping ping request"
@@ -4637,6 +4661,9 @@ void OSD::handle_osd_ping(MOSDPing *m)
 	  }
 	}
       }
+
+      set<PGRef> wake_pgs;
+      s->stamps->got_ping_reply(m->stamp, m->consumed_epoch, &wake_pgs);
     }
     break;
 
@@ -4649,6 +4676,7 @@ void OSD::handle_osd_ping(MOSDPing *m)
 
   heartbeat_lock.Unlock();
   m->put();
+  s->put();
 }
 
 void OSD::heartbeat_entry()

@@ -134,6 +134,105 @@ private:
   typedef boost::intrusive_ptr<PG> PGRef;
 #endif
 
+struct HeartbeatStamps : public RefCountedObject {
+  mutable Mutex lock;
+
+  const int osd;
+
+  /// last ack we send to this peer (aka last reply we sent)
+  utime_t last_reply;
+
+  /// the ping tx time for the most recent ping reply we recieved
+  /// from this peer.
+  utime_t last_acked_ping;
+
+  /// highest up_from we've seen from this rank
+  epoch_t up_from;
+
+  /// lower bound on consumed epochs for peer's PGs
+  epoch_t consumed_epoch;
+
+  /// PGs we should kick if we reply to a ping
+  set<PGRef> waiting_pgs_last_reply;
+
+  /// PGs we should kick if we get a reply (acking our ping)
+  set<PGRef> waiting_pgs_last_acked_ping;
+
+  HeartbeatStamps(int o)
+    : lock("OSDService::HeartbeatStamps::lock"),
+      osd(o),
+      up_from(0),
+      consumed_epoch(0) {}
+
+  void print(ostream& out) const {
+    Mutex::Locker l(lock);
+    out << "hbstamp(osd." << osd
+	<< " lr " << last_reply
+	<< " lap " << last_acked_ping
+	<< " up_from" << up_from
+	<< " consumed " << consumed_epoch
+	<< " wait_lr " << waiting_pgs_last_reply.size()
+	<< " wait_lap " << waiting_pgs_last_acked_ping.size()
+	<< ")";
+  }
+
+  void got_ping(utime_t now, epoch_t consumed, set<PGRef> *wake_pgs) {
+    Mutex::Locker l(lock);
+    if (consumed < consumed_epoch)
+      return;
+    if (consumed > consumed_epoch)
+      consumed_epoch = consumed;
+    if (now > last_reply) {
+      last_reply = now;
+      wake_pgs->swap(waiting_pgs_last_reply);
+    }
+  }
+
+  void got_ping_reply(utime_t stamp, epoch_t consumed, set<PGRef> *wake_pgs) {
+    Mutex::Locker l(lock);
+    if (consumed < consumed_epoch)
+      return;
+    if (consumed > consumed_epoch)
+      consumed_epoch = consumed;
+    if (stamp > last_acked_ping) {
+      last_acked_ping = stamp;
+      wake_pgs->swap(waiting_pgs_last_acked_ping);
+    }
+  }
+
+  utime_t sample_last_acked_ping() {
+    Mutex::Locker l(lock);
+    return last_acked_ping;
+  }
+  utime_t sample_last_reply() {
+    Mutex::Locker l(lock);
+    return last_reply;
+  }
+
+  /// safely sample last_acked_ping; queue pg if it's old
+  utime_t sample_last_acked_ping_or_queue(utime_t cutoff, PG *p) {
+    Mutex::Locker l(lock);
+    if (last_acked_ping <= cutoff)
+      waiting_pgs_last_acked_ping.insert(p);
+    return last_acked_ping;
+  }
+
+  /// safely sample last_reply; queue pg if it's old
+  utime_t sample_last_reply_or_queue(utime_t cutoff, PG *p) {
+    Mutex::Locker l(lock);
+    if (last_reply <= cutoff)
+      waiting_pgs_last_reply.insert(p);
+    return last_reply;
+  }
+};
+typedef boost::intrusive_ptr<HeartbeatStamps> HeartbeatStampsRef;
+
+inline ostream& operator<<(ostream& out, const HeartbeatStamps& hb)
+{
+  hb.print(out);
+  return out;
+}
+
 class PGRecoveryStats {
   struct per_state_info {
     uint64_t enter, exit;     // enter/exit counts
