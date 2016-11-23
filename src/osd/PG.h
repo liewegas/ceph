@@ -655,12 +655,16 @@ public:
   pg_shard_t pg_whoami;
   pg_shard_t up_primary;
   vector<int> up, acting, want_acting;
+  vector<HeartbeatStampsRef> hb_stamps;
   set<pg_shard_t> actingbackfill, actingset, upset;
   map<pg_shard_t,eversion_t> peer_last_complete_ondisk;
   eversion_t  min_last_complete_ondisk;  // up: min over last_complete_ondisk, peer_last_complete_ondisk
   eversion_t  pg_trim_to;
 
   set<int> blocked_by; ///< osds we are blocked by (for pg stats)
+
+  /// initialize hb_stamps peer set based on role, acting
+  void init_hb_stamps();
 
   // [primary only] content recovery state
  protected:

@@ -358,6 +358,26 @@ void PG::init_primary_up_acting(
   }
 }
 
+void PG::init_hb_stamps()
+{
+  if (is_primary()) {
+    // we care about all other osds in the acting set
+    hb_stamps.resize(acting.size() - 1);
+    unsigned i = 0;
+    for (vector<int>::iterator p = acting.begin(); p != acting.end(); ++p) {
+      if (*p == CRUSH_ITEM_NONE || *p == get_primary().osd)
+	continue;
+      hb_stamps[i++] = osd->get_hb_stamps(*p);
+    }
+    hb_stamps.resize(i);
+  } else if (is_replica()) {
+    // we care about just the primary
+    hb_stamps.resize(1);
+    hb_stamps[0] = osd->get_hb_stamps(get_primary().osd);
+  } else {
+    hb_stamps.clear();
+  }
+}
 
 void PG::proc_master_log(
   ObjectStore::Transaction& t, pg_info_t &oinfo,
@@ -5316,6 +5336,8 @@ void PG::on_new_interval()
   }
 
   assert(osdmap->test_flag(CEPH_OSDMAP_SORTBITWISE));
+
+  init_hb_stamps();
 
   _on_new_interval();
 }
