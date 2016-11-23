@@ -4502,6 +4502,8 @@ void OSD::handle_osd_ping(MOSDPing *m)
     return;
   }
 
+  utime_t now = ceph_clock_now();
+  ConnectionRef con(m->get_connection());
   OSDMapRef curmap = service.get_osdmap();
   if (!curmap) {
     heartbeat_lock.Unlock();
@@ -4538,7 +4540,8 @@ void OSD::handle_osd_ping(MOSDPing *m)
       }
 
       if (!cct->get_heartbeat_map()->is_healthy()) {
-	dout(10) << "internal heartbeat not healthy, dropping ping request" << dendl;
+	dout(10) << "internal heartbeat not healthy, dropping ping request"
+		 << dendl;
 	break;
       }
 
@@ -4548,14 +4551,15 @@ void OSD::handle_osd_ping(MOSDPing *m)
 				m->stamp, service.get_up_epoch(),
 				service.get_min_pg_epoch(),
 				cct->_conf->osd_heartbeat_min_size);
-      m->get_connection()->send_message(r);
+      con->send_message(r);
 
       if (curmap->is_up(from)) {
 	service.note_peer_epoch(from, m->map_epoch);
 	if (is_active()) {
-	  ConnectionRef con = service.get_con_osd_cluster(from, curmap->get_epoch());
-	  if (con) {
-	    service.share_map_peer(from, con.get());
+	  ConnectionRef cluster_con =
+	    service.get_con_osd_cluster(from, curmap->get_epoch());
+	  if (cluster_con) {
+	    service.share_map_peer(from, cluster_con.get());
 	  }
 	}
       } else if (!curmap->exists(from) ||
@@ -4568,7 +4572,7 @@ void OSD::handle_osd_ping(MOSDPing *m)
 				  service.get_up_epoch(),
 				  service.get_min_pg_epoch(),
 				  cct->_conf->osd_heartbeat_min_size);
-	m->get_connection()->send_message(r);
+	con->send_message(r);
       }
     }
     break;
@@ -4577,28 +4581,30 @@ void OSD::handle_osd_ping(MOSDPing *m)
     {
       map<int,HeartbeatInfo>::iterator i = heartbeat_peers.find(from);
       if (i != heartbeat_peers.end()) {
-	if (m->get_connection() == i->second.con_back) {
+	if (con == i->second.con_back) {
 	  dout(25) << "handle_osd_ping got reply from osd." << from
 		   << " first_tx " << i->second.first_tx
 		   << " last_tx " << i->second.last_tx
-		   << " last_rx_back " << i->second.last_rx_back << " -> " << m->stamp
+		   << " last_rx_back " << i->second.last_rx_back
+		   << " -> " << m->stamp
 		   << " last_rx_front " << i->second.last_rx_front
 		   << dendl;
 	  i->second.last_rx_back = m->stamp;
 	  // if there is no front con, set both stamps.
 	  if (i->second.con_front == NULL)
 	    i->second.last_rx_front = m->stamp;
-	} else if (m->get_connection() == i->second.con_front) {
+	} else if (con == i->second.con_front) {
 	  dout(25) << "handle_osd_ping got reply from osd." << from
 		   << " first_tx " << i->second.first_tx
 		   << " last_tx " << i->second.last_tx
 		   << " last_rx_back " << i->second.last_rx_back
-		   << " last_rx_front " << i->second.last_rx_front << " -> " << m->stamp
+		   << " last_rx_front " << i->second.last_rx_front
+		   << " -> " << m->stamp
 		   << dendl;
 	  i->second.last_rx_front = m->stamp;
 	}
 
-        utime_t cutoff = ceph_clock_now();
+        utime_t cutoff = now;
         cutoff -= cct->_conf->osd_heartbeat_grace;
         if (i->second.is_healthy(cutoff)) {
           // Cancel false reports
@@ -4624,9 +4630,10 @@ void OSD::handle_osd_ping(MOSDPing *m)
 	  curmap->is_up(from)) {
 	service.note_peer_epoch(from, m->map_epoch);
 	if (is_active()) {
-	  ConnectionRef con = service.get_con_osd_cluster(from, curmap->get_epoch());
-	  if (con) {
-	    service.share_map_peer(from, con.get());
+	  ConnectionRef cluster_con =
+	    service.get_con_osd_cluster(from, curmap->get_epoch());
+	  if (cluster_con) {
+	    service.share_map_peer(from, cluster_con.get());
 	  }
 	}
       }
