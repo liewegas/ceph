@@ -2093,6 +2093,9 @@ struct pg_history_t {
   epoch_t last_epoch_clean;    // lower bound on last epoch the PG was completely clean.
   epoch_t last_epoch_split;    // as parent
   epoch_t last_epoch_marked_full;  // pool or cluster
+
+  /// least recent interval that may be readable
+  epoch_t oldest_interval_readable;
   
   /**
    * In the event of a map discontinuity, same_*_since may reflect the first
@@ -2132,6 +2135,7 @@ struct pg_history_t {
     : epoch_created(0),
       last_epoch_started(0), last_epoch_clean(0), last_epoch_split(0),
       last_epoch_marked_full(0),
+      oldest_interval_readable(0),
       same_up_since(0), same_interval_since(0), same_primary_since(0) {}
   
   bool merge(const pg_history_t &other) {
@@ -2155,6 +2159,10 @@ struct pg_history_t {
     }
     if (last_epoch_marked_full < other.last_epoch_marked_full) {
       last_epoch_marked_full = other.last_epoch_marked_full;
+      modified = true;
+    }
+    if (other.oldest_interval_readable > oldest_interval_readable) {
+      oldest_interval_readable = other.oldest_interval_readable;
       modified = true;
     }
     if (other.last_scrub > last_scrub) {
@@ -2191,7 +2199,9 @@ inline ostream& operator<<(ostream& out, const pg_history_t& h) {
   return out << "ec=" << h.epoch_created
 	     << " les/c/f " << h.last_epoch_started << "/" << h.last_epoch_clean
 	     << "/" << h.last_epoch_marked_full
-	     << " " << h.same_up_since << "/" << h.same_interval_since << "/" << h.same_primary_since;
+	     << " " << h.same_up_since << "/" << h.same_interval_since
+	     << "/" << h.same_primary_since
+	     << "." << h.oldest_interval_readable;
 }
 
 
