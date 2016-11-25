@@ -268,7 +268,7 @@ TEST_P(KVTest, RocksDBColumnFamilyTest) {
   cfs.push_back(KeyValueDB::ColumnFamily("cf2", ""));
   ASSERT_EQ(0, db->init(g_conf->bluestore_rocksdb_options));
   cout << "creating two column families and opening them" << std::endl;
-  ASSERT_EQ(0, db->create_and_open(cout, cfs));
+  ASSERT_EQ(0, db->create_and_open_with_cf(cout, cfs));
   {
     KeyValueDB::Transaction t = db->get_transaction();
     bufferlist value;
@@ -282,7 +282,7 @@ TEST_P(KVTest, RocksDBColumnFamilyTest) {
   fini();
 
   init();
-  ASSERT_EQ(0, db->open(cout, cfs));
+  ASSERT_EQ(0, db->open_with_cf(cout, cfs));
   {
     bufferlist v1, v2, v3;
     cout << "reopen db and read those keys" << std::endl;
@@ -303,7 +303,7 @@ TEST_P(KVTest, RocksDBColumnFamilyTest) {
   fini();
 
   init();
-  ASSERT_EQ(0, db->open(cout, cfs));
+  ASSERT_EQ(0, db->open_with_cf(cout, cfs));
   {
     cout << "reopen db and read keys again." << std::endl;
     bufferlist v1, v2, v3;
@@ -323,7 +323,7 @@ TEST_P(KVTest, RocksDBIteratorTest) {
   cfs.push_back(KeyValueDB::ColumnFamily("cf1", ""));
   ASSERT_EQ(0, db->init(g_conf->bluestore_rocksdb_options));
   cout << "creating one column family and opening it" << std::endl;
-  ASSERT_EQ(0, db->create_and_open(cout, cfs));
+  ASSERT_EQ(0, db->create_and_open_with_cf(cout, cfs));
   {
     KeyValueDB::Transaction t = db->get_transaction();
     bufferlist bl1;
@@ -376,7 +376,7 @@ TEST_P(KVTest, RocksDBCFMerge) {
   cfs.push_back(KeyValueDB::ColumnFamily("cf1", ""));
   ASSERT_EQ(0, db->init(g_conf->bluestore_rocksdb_options));
   cout << "creating one column family and opening it" << std::endl;
-  ASSERT_EQ(0, db->create_and_open(cout, cfs));
+  ASSERT_EQ(0, db->create_and_open_with_cf(cout, cfs));
 
   {
     KeyValueDB::Transaction t = db->get_transaction();
