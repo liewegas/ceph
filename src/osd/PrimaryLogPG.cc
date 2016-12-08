@@ -1703,7 +1703,7 @@ void PrimaryLogPG::do_op(OpRequestRef& op)
 {
   FUNCTRACE();
 
-  if (check_unreadable()) {
+  if (check_unreadable(false)) {
     waiting_for_active.push_back(op);
     return;
   }
@@ -10028,7 +10028,7 @@ void PrimaryLogPG::on_activate()
     Mutex::Locker l(osd->timer_lock);
     osd->timer.add_event_at(
       rup.first,
-      new C_RecheckReadable(this, get_osdmap()->get_epoch()));
+      new C_RecheckReadable(this, get_osdmap()->get_epoch(), false));
   }
 }
 

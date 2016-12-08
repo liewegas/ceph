@@ -467,7 +467,8 @@ void PG::recalc_prior_readable_until(utime_t now)
 	continue;  // it restarted; clearly not readable for this interval
       }
       HeartbeatStampsRef hsr = osd->get_hb_stamps(o);
-      if (hsr->consumed_epoch > interval.last) {
+      epoch_t ce = hsr->sample_consumed_epoch_or_queue(interval.last, this);
+      if (ce > interval.last) {
 	dout(30) << __func__ << "  osd." << o << " consumed_epoch "
 		 << hsr->consumed_epoch << dendl;
 	continue;  // its PG knows interval ended; not readable
@@ -480,7 +481,10 @@ void PG::recalc_prior_readable_until(utime_t now)
 	       << (interval.last + 1) << dendl;
       readable_until.erase(interval.first);
       info.history.oldest_interval_readable = interval.last + 1;
-      dirty_info = true;
+      // FIXME?  we could dirty here, but we don't, since one caller
+      // (C_RecheckReadable) does not open a transaction.  and anyway, it
+      // is not that important that this is persisted.
+      //dirty_info = true;
       continue;
     }
 
@@ -1944,7 +1948,7 @@ void PG::activate(ObjectStore::Transaction& t,
     assert(ctx);
     // start up replicas
 
-    check_unreadable();
+    check_unreadable(false);
 
     assert(!actingbackfill.empty());
     for (set<pg_shard_t>::iterator i = actingbackfill.begin();
@@ -2240,20 +2244,27 @@ void PG::queue_op(OpRequestRef& op)
   }
 }
 
-void PG::queue_recheck_unreadable()
+void PG::queue_recheck_current_unreadable()
 {
   dout(20) << __func__ << dendl;
-  osd->objecter_finisher.queue(new C_RecheckReadable(this));
+  osd->objecter_finisher.queue(new C_RecheckReadable(this, 0, false));
 }
 
-void PG::recheck_unreadable(epoch_t e)
+void PG::queue_recheck_prior_unreadable()
 {
-  dout(20) << __func__ << " from " << e << dendl;
+  dout(20) << __func__ << dendl;
+  osd->objecter_finisher.queue(new C_RecheckReadable(this, 0, true));
+}
+
+void PG::recheck_unreadable(epoch_t e, bool prior)
+{
+  dout(20) << __func__ << " from " << e
+	   << (prior ? " (check prior too)" : "") << dendl;
   if (e > 0 && pg_has_reset_since(e))
     return;
   if (!is_active() || !is_unreadable())
     return;
-  if (check_unreadable())
+  if (check_unreadable(prior))
     return;  // still unreadable
   dout(10) << __func__ << " now readable, requeueing" << dendl;
   state_clear(PG_STATE_UNREADABLE);
@@ -2261,13 +2272,16 @@ void PG::recheck_unreadable(epoch_t e)
   requeue_ops(waiting_for_active);
 }
 
-bool PG::check_unreadable()
+bool PG::check_unreadable(bool prior)
 {
   utime_t now = ceph_clock_now();
   prune_past_readable_until(now);
   pair<utime_t,utime_t> rup = get_readable_from_until();
   if (now <= rup.first || now >= rup.second) {
-    recalc_current_readable_until(now, true);
+    if (now <= rup.first && prior)
+      recalc_prior_readable_until(now);
+    if (now >= rup.second)
+      recalc_current_readable_until(now, true);
     rup = get_readable_from_until();
   }
   dout(20) << __func__ << " rup " << rup << dendl;
@@ -6554,8 +6568,7 @@ void PG::RecoveryState::Peering::exit()
   pg->state_clear(PG_STATE_PEERING);
   pg->clear_probe_targets();
 
-  pg->recalc_prior_readable_until(ceph_clock_now(),
-				  context< Peering >().prior_set.get());
+  pg->recalc_prior_readable_until(ceph_clock_now());
 
   utime_t dur = ceph_clock_now() - enter_time;
   pg->osd->recoverystate_perf->tinc(rs_peering_latency, dur);
