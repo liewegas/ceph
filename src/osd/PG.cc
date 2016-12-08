@@ -2197,6 +2197,12 @@ bool PG::op_has_sufficient_caps(OpRequestRef& op)
   return cap;
 }
 
+void PG::queue_recheck_unreadable()
+{
+  dout(20) << __func__ << dendl;
+  osd->objecter_finisher.queue(new C_RecheckReadable(this));
+}
+
 void PG::recheck_unreadable(epoch_t e)
 {
   dout(20) << __func__ << " from " << e << dendl;
