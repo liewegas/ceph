@@ -542,6 +542,20 @@ bool PG::proc_replica_info(
   return true;
 }
 
+void PG::proc_replica_readable_until(pg_shard_t from,
+				     utime_t rx_stamp,
+				     const map<epoch_t,utime_t>& delta)
+{
+  for (map<epoch_t,utime_t>::const_iterator p = delta.begin();
+       p != delta.end();
+       ++p) {
+    if (p->second == utime_t())
+      peer_readable_until[p->first][from] = utime_t();
+    else
+      peer_readable_until[p->first][from] = rx_stamp + p->second;
+  }
+}
+
 void PG::remove_snap_mapped_object(
   ObjectStore::Transaction &t, const hobject_t &soid)
 {
@@ -1095,6 +1109,7 @@ void PG::clear_primary_state()
   peer_log_requested.clear();
   peer_missing_requested.clear();
   peer_info.clear();
+  peer_readable_until.clear();
   peer_missing.clear();
   need_up_thru = false;
   peer_last_complete_ondisk.clear();
@@ -5926,6 +5941,8 @@ boost::statechart::result PG::RecoveryState::Initial::react(const Load& l)
 boost::statechart::result PG::RecoveryState::Initial::react(const MNotifyRec& notify)
 {
   PG *pg = context< RecoveryMachine >().pg;
+  pg->proc_replica_readable_until(notify.from, notify.rx_stamp,
+				  notify.notify.readable_delta);
   pg->proc_replica_info(
     notify.from, notify.notify.info, notify.notify.epoch_sent);
   pg->set_last_peering_reset();
@@ -6179,6 +6196,8 @@ boost::statechart::result PG::RecoveryState::Primary::react(const MNotifyRec& no
 {
   dout(7) << "handle_pg_notify from osd." << notevt.from << dendl;
   PG *pg = context< RecoveryMachine >().pg;
+  pg->proc_replica_readable_until(notevt.from, notevt.rx_stamp,
+				  notevt.notify.readable_delta);
   if (pg->peer_info.count(notevt.from) &&
       pg->peer_info[notevt.from].last_update == notevt.notify.info.last_update) {
     dout(10) << *pg << " got dup osd." << notevt.from << " info " << notevt.notify.info
@@ -7484,6 +7503,8 @@ boost::statechart::result PG::RecoveryState::GetInfo::react(const MNotifyRec& in
   }
 
   epoch_t old_start = pg->info.history.last_epoch_started;
+  pg->proc_replica_readable_until(infoevt.from, infoevt.rx_stamp,
+				  infoevt.notify.readable_delta);
   if (pg->proc_replica_info(
 	infoevt.from, infoevt.notify.info, infoevt.notify.epoch_sent)) {
     // we got something new ...
