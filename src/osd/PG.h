@@ -696,6 +696,9 @@ public:
     return make_pair(from, to);
   }
 
+  bool check_unreadable();
+  void recheck_unreadable(epoch_t e);
+
   // [primary only] content recovery state
  protected:
   struct PriorSet {
@@ -2504,5 +2507,18 @@ public:
 ostream& operator<<(ostream& out, const PG& pg);
 
 ostream& operator<<(ostream& out, const PG::BackfillInterval& bi);
+
+struct C_RecheckReadable : public Context {
+  PGRef pg;
+  epoch_t epoch;
+  C_RecheckReadable(PG *p, epoch_t e=0) : pg(p), epoch(e) {}
+  void finish(int r) {
+    if (r >= 0) {
+      pg->lock();
+      pg->recheck_unreadable(epoch);
+      pg->unlock();
+    }
+  }
+};
 
 #endif

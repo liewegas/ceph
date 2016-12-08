@@ -1702,6 +1702,12 @@ hobject_t PrimaryLogPG::earliest_backfill() const
 void PrimaryLogPG::do_op(OpRequestRef& op)
 {
   FUNCTRACE();
+
+  if (check_unreadable()) {
+    waiting_for_active.push_back(op);
+    return;
+  }
+
   // NOTE: take a non-const pointer here; we must be careful not to
   // change anything that will break other reads on m (operator<<).
   MOSDOp *m = static_cast<MOSDOp*>(op->get_nonconst_req());
@@ -10012,6 +10018,18 @@ void PrimaryLogPG::on_activate()
 
   hit_set_setup();
   agent_setup();
+
+  utime_t now = ceph_clock_now();
+  pair<utime_t,utime_t> rup = get_readable_from_until();
+  if (now <= rup.first) {
+    dout(10) << __func__ << " not readable until " << rup.first << dendl;
+    state_set(PG_STATE_UNREADABLE);
+    publish_stats_to_osd();
+    Mutex::Locker l(osd->timer_lock);
+    osd->timer.add_event_at(
+      rup.first,
+      new C_RecheckReadable(this, get_osdmap()->get_epoch()));
+  }
 }
 
 void PrimaryLogPG::_on_new_interval()
