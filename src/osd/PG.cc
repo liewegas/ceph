@@ -2144,6 +2144,12 @@ void PG::replay_queued_ops()
   publish_stats_to_osd();
 }
 
+void PG::queue_recheck_unreadable()
+{
+  dout(20) << __func__ << dendl;
+  osd->objecter_finisher.queue(new C_RecheckReadable(this));
+}
+
 void PG::recheck_unreadable(epoch_t e)
 {
   dout(20) << __func__ << " from " << e << dendl;
