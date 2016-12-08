@@ -108,6 +108,9 @@ struct HeartbeatStamps {
   /// PGs we should kick if we get a reply (acking our ping)
   set<PGRef> waiting_pgs_last_acked_ping;
 
+  /// PGs we should kick if consumed_epoch advances
+  map<epoch_t, set<PGRef> > waiting_pgs_consumed_epoch;
+
   HeartbeatStamps(int o)
     : lock("OSDService::HeartbeatStamps::lock"),
       osd(o),
@@ -123,30 +126,48 @@ struct HeartbeatStamps {
 	<< " consumed " << consumed_epoch
 	<< " wait_lr " << waiting_pgs_last_reply.size()
 	<< " wait_lap " << waiting_pgs_last_acked_ping.size()
+	<< " wait_ce " << waiting_pgs_consumed_epoch.size()
 	<< ")";
   }
 
-  void got_ping(utime_t now, epoch_t consumed, set<PGRef> *wake_pgs) {
+  void _take_pg_consumed(set<PGRef> *wake_pgs_consumed_epoch) {
+    map<epoch_t, set<PGRef> >::iterator p = waiting_pgs_consumed_epoch.begin();
+    while (p != waiting_pgs_consumed_epoch.end() &&
+	   p->first < consumed_epoch) {
+      wake_pgs_consumed_epoch->insert(p->second.begin(), p->second.end());
+      waiting_pgs_consumed_epoch.erase(p++);
+    }
+  }
+
+  void got_ping(utime_t now, epoch_t consumed,
+		set<PGRef> *wake_pgs_timing,
+		set<PGRef> *wake_pgs_consumed_epoch) {
     Mutex::Locker l(lock);
     if (consumed < consumed_epoch)
       return;
-    if (consumed > consumed_epoch)
+    if (consumed > consumed_epoch) {
       consumed_epoch = consumed;
+      _take_pg_consumed(wake_pgs_consumed_epoch);
+    }
     if (now > last_reply) {
       last_reply = now;
       wake_pgs->swap(waiting_pgs_last_reply);
     }
   }
 
-  void got_ping_reply(utime_t stamp, epoch_t consumed, set<PGRef> *wake_pgs) {
+  void got_ping_reply(utime_t stamp, epoch_t consumed,
+		      set<PGRef> *wake_pgs_timing,
+		      set<PGRef> *wake_pgs_consumed_epoch) {
     Mutex::Locker l(lock);
     if (consumed < consumed_epoch)
       return;
-    if (consumed > consumed_epoch)
+    if (consumed > consumed_epoch) {
       consumed_epoch = consumed;
+      _take_pg_consumed(wake_pgs_consumed_epoch);
+    }
     if (stamp > last_acked_ping) {
       last_acked_ping = stamp;
-      wake_pgs->swap(waiting_pgs_last_acked_ping);
+      wake_pgs_timing->swap(waiting_pgs_last_acked_ping);
     }
   }
 
@@ -157,6 +178,10 @@ struct HeartbeatStamps {
   utime_t sample_last_reply() {
     Mutex::Locker l(lock);
     return last_reply;
+  }
+  epoch_t sample_consumed_epoch() {
+    Mutex::Locker l(lock);
+    return consumed_epoch;
   }
 
   /// safely sample last_acked_ping; queue pg if it's old
@@ -174,6 +199,16 @@ struct HeartbeatStamps {
       waiting_pgs_last_reply.insert(p);
     return last_reply;
   }
+
+  /// safely sample consumed_epoch; queue pg if it's old
+  epoch_t sample_consumed_epoch_or_queue(epoch_t min, PG *p) {
+    Mutex::Locker l(lock);
+    if (consumed_epoch < min)
+      waiting_pgs_consumed_epoch[min].insert(p);
+    return consumed_epoch;
+  }
+
+
 };
 typedef ceph::shared_ptr<HeartbeatStamps> HeartbeatStampsRef;
 
@@ -689,9 +724,10 @@ public:
     return make_pair(from, to);
   }
 
-  bool check_unreadable();
-  void queue_recheck_unreadable();
-  void recheck_unreadable(epoch_t e);
+  bool check_unreadable(bool prior);
+  void recheck_unreadable(epoch_t e, bool prior);
+  void queue_recheck_current_unreadable();
+  void queue_recheck_prior_unreadable();
 
   // [primary only] content recovery state
  protected:
@@ -2491,11 +2527,12 @@ ostream& operator<<(ostream& out, const PG::BackfillInterval& bi);
 struct C_RecheckReadable : public Context {
   PGRef pg;
   epoch_t epoch;
-  C_RecheckReadable(PG *p, epoch_t e=0) : pg(p), epoch(e) {}
+  bool prior;
+  C_RecheckReadable(PG *p, epoch_t e, bool pr) : pg(p), epoch(e), prior(pr) {}
   void finish(int r) {
     if (r >= 0) {
       pg->lock();
-      pg->recheck_unreadable(epoch);
+      pg->recheck_unreadable(epoch, prior);
       pg->unlock();
     }
   }
