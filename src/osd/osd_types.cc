@@ -824,6 +824,8 @@ std::string pg_state_string(int state)
     oss << "snaptrim+";
   if (state & PG_STATE_SNAPTRIM_WAIT)
     oss << "snaptrim_wait+";
+  if (state & PG_STATE_UNREADABLE)
+    oss << "unreadable+";
   string ret(oss.str());
   if (ret.length() > 0)
     ret.resize(ret.length() - 1);
