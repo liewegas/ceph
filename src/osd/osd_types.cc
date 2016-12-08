@@ -2922,18 +2922,19 @@ void pg_info_t::generate_test_instances(list<pg_info_t*>& o)
 // -- pg_notify_t --
 void pg_notify_t::encode(bufferlist &bl) const
 {
-  ENCODE_START(2, 1, bl);
+  ENCODE_START(3, 1, bl);
   ::encode(query_epoch, bl);
   ::encode(epoch_sent, bl);
   ::encode(info, bl);
   ::encode(to, bl);
   ::encode(from, bl);
+  ::encode(readable_delta, bl);
   ENCODE_FINISH(bl);
 }
 
 void pg_notify_t::decode(bufferlist::iterator &bl)
 {
-  DECODE_START(2, bl);
+  DECODE_START(3, bl);
   ::decode(query_epoch, bl);
   ::decode(epoch_sent, bl);
   ::decode(info, bl);
@@ -2943,6 +2944,9 @@ void pg_notify_t::decode(bufferlist::iterator &bl)
   } else {
     to = shard_id_t::NO_SHARD;
     from = shard_id_t::NO_SHARD;
+  }
+  if (struct_v >= 3) {
+    ::decode(readable_delta, bl);
   }
   DECODE_FINISH(bl);
 }
@@ -2958,12 +2962,28 @@ void pg_notify_t::dump(Formatter *f) const
     info.dump(f);
     f->close_section();
   }
+  {
+    f->open_array_section("readable_delta");
+    for (map<epoch_t,utime_t>::const_iterator p = readable_delta.begin();
+	 p != readable_delta.end();
+	 ++p) {
+      f->open_object_section("interval");
+      f->dump_unsigned("start_epoch", p->first);
+      f->dump_float("delta", (double)p->second);
+      f->close_section();
+    }
+    f->close_section();
+  }
 }
 
 void pg_notify_t::generate_test_instances(list<pg_notify_t*>& o)
 {
-  o.push_back(new pg_notify_t(shard_id_t(3), shard_id_t::NO_SHARD, 1, 1, pg_info_t()));
-  o.push_back(new pg_notify_t(shard_id_t(0), shard_id_t(0), 3, 10, pg_info_t()));
+  map<epoch_t,utime_t> t;
+  utime_t now = ceph_clock_now();
+  o.push_back(new pg_notify_t(shard_id_t(3), shard_id_t::NO_SHARD, 1, 1, pg_info_t(), t, now));
+  t[1] = now + utime_t(1, 1);
+  t[2] = now + utime_t(2, 2);
+  o.push_back(new pg_notify_t(shard_id_t(0), shard_id_t(0), 3, 10, pg_info_t(), t, now));
 }
 
 ostream &operator<<(ostream &lhs, const pg_notify_t &notify)

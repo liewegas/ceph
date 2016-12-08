@@ -633,6 +633,7 @@ bool PG::search_for_missing(
     from, oinfo, omissing, ctx->handle);
   if (found_missing && num_unfound_before != missing_loc.num_unfound())
     publish_stats_to_osd();
+  utime_t now = ceph_clock_now();
   if (found_missing &&
       (get_osdmap()->get_features(CEPH_ENTITY_TYPE_OSD, NULL) &
        CEPH_FEATURE_OSD_ERASURE_CODES)) {
@@ -644,7 +645,8 @@ bool PG::search_for_missing(
 	  from.shard, pg_whoami.shard,
 	  get_osdmap()->get_epoch(),
 	  get_osdmap()->get_epoch(),
-	  tinfo),
+	  tinfo,
+	  get_readable_until(now), now),
 	past_intervals));
   }
   return found_missing;
@@ -1811,6 +1813,7 @@ void PG::activate(ObjectStore::Transaction& t,
   log_weirdness();
 
   // if primary..
+  utime_t now = ceph_clock_now();
   if (is_primary()) {
     assert(ctx);
     // start up replicas
@@ -1855,7 +1858,8 @@ void PG::activate(ObjectStore::Transaction& t,
 		peer.shard, pg_whoami.shard,
 		get_osdmap()->get_epoch(),
 		get_osdmap()->get_epoch(),
-		info),
+		info,
+		get_readable_until(now), now),
 	      past_intervals));
 	} else {
 	  dout(10) << "activate peer osd." << peer << " is up to date, but sending pg_log anyway" << dendl;
@@ -2125,12 +2129,14 @@ void PG::_activate_committed(epoch_t epoch, epoch_t activation_epoch)
       all_activated_and_committed();
   } else {
     dout(10) << "_activate_committed " << epoch << " telling primary" << dendl;
+    utime_t now = ceph_clock_now();
     MOSDPGInfo *m = new MOSDPGInfo(epoch);
     pg_notify_t i = pg_notify_t(
       get_primary().shard, pg_whoami.shard,
       get_osdmap()->get_epoch(),
       get_osdmap()->get_epoch(),
-      info);
+      info,
+      get_readable_until(now), now);
 
     i.info.history.last_epoch_started = activation_epoch;
     if (acting.size() >= pool.info.min_size) {
@@ -4939,6 +4945,7 @@ void PG::scrub_finish()
 void PG::share_pg_info()
 {
   dout(10) << "share_pg_info" << dendl;
+  utime_t now = ceph_clock_now();
 
   // share new pg_info_t with replicas
   assert(!actingbackfill.empty());
@@ -4958,7 +4965,8 @@ void PG::share_pg_info()
 	  peer.shard, pg_whoami.shard,
 	  get_osdmap()->get_epoch(),
 	  get_osdmap()->get_epoch(),
-	  info),
+	  info,
+	  get_readable_until(now), now),
 	pg_interval_map_t()));
     osd->send_message_osd_cluster(peer.osd, m, get_osdmap()->get_epoch());
   }
@@ -5347,7 +5355,7 @@ void PG::start_peering_interval(
 
   // make readable_until value for the current interval accurate; we
   // will need it shortly.
-  utime_t now = ceph_clock_now(NULL);
+  utime_t now = ceph_clock_now();
   prune_past_readable_until(now);
   recalc_readable_until(now, is_primary());
 
@@ -6083,7 +6091,7 @@ PG::RecoveryState::Reset::Reset(my_context ctx)
   PG *pg = context< RecoveryMachine >().pg;
 
   // make readable_until value for the prior interval accurate
-  utime_t now = ceph_clock_now(NULL);
+  utime_t now = ceph_clock_now();
   pg->prune_past_readable_until(now);
   pg->recalc_readable_until(now, pg->is_primary());
 
@@ -6140,6 +6148,7 @@ boost::statechart::result PG::RecoveryState::Reset::react(const AdvMap& advmap)
 
 boost::statechart::result PG::RecoveryState::Reset::react(const ActMap&)
 {
+  utime_t now = ceph_clock_now();
   PG *pg = context< RecoveryMachine >().pg;
   if (pg->should_send_notify() && pg->get_primary().osd >= 0) {
     context< RecoveryMachine >().send_notify(
@@ -6148,7 +6157,8 @@ boost::statechart::result PG::RecoveryState::Reset::react(const ActMap&)
 	pg->get_primary().shard, pg->pg_whoami.shard,
 	pg->get_osdmap()->get_epoch(),
 	pg->get_osdmap()->get_epoch(),
-	pg->info),
+	pg->info,
+	pg->get_readable_until(now), now),
       pg->past_intervals);
   }
 
@@ -7315,6 +7325,7 @@ boost::statechart::result PG::RecoveryState::ReplicaActive::react(const MLogRec&
 
 boost::statechart::result PG::RecoveryState::ReplicaActive::react(const ActMap&)
 {
+  utime_t now = ceph_clock_now();
   PG *pg = context< RecoveryMachine >().pg;
   if (pg->should_send_notify() && pg->get_primary().osd >= 0) {
     context< RecoveryMachine >().send_notify(
@@ -7323,7 +7334,8 @@ boost::statechart::result PG::RecoveryState::ReplicaActive::react(const ActMap&)
 	pg->get_primary().shard, pg->pg_whoami.shard,
 	pg->get_osdmap()->get_epoch(),
 	pg->get_osdmap()->get_epoch(),
-	pg->info),
+	pg->info,
+	pg->get_readable_until(now), now),
       pg->past_intervals);
   }
   pg->take_waiters();
@@ -7428,6 +7440,7 @@ boost::statechart::result PG::RecoveryState::Stray::react(const MQuery& query)
 {
   PG *pg = context< RecoveryMachine >().pg;
   if (query.query.type == pg_query_t::INFO) {
+    utime_t now = ceph_clock_now();
     pair<pg_shard_t, pg_info_t> notify_info;
     pg->update_history_from_master(query.query.history);
     pg->fulfill_info(query.from, query.query, notify_info);
@@ -7437,7 +7450,8 @@ boost::statechart::result PG::RecoveryState::Stray::react(const MQuery& query)
 	notify_info.first.shard, pg->pg_whoami.shard,
 	query.query_epoch,
 	pg->get_osdmap()->get_epoch(),
-	notify_info.second),
+	notify_info.second,
+	pg->get_readable_until(now), now),
       pg->past_intervals);
   } else {
     pg->fulfill_log(query.from, query.query, query.query_epoch);
@@ -7449,13 +7463,15 @@ boost::statechart::result PG::RecoveryState::Stray::react(const ActMap&)
 {
   PG *pg = context< RecoveryMachine >().pg;
   if (pg->should_send_notify() && pg->get_primary().osd >= 0) {
+    utime_t now = ceph_clock_now();
     context< RecoveryMachine >().send_notify(
       pg->get_primary(),
       pg_notify_t(
 	pg->get_primary().shard, pg->pg_whoami.shard,
 	pg->get_osdmap()->get_epoch(),
 	pg->get_osdmap()->get_epoch(),
-	pg->info),
+	pg->info,
+	pg->get_readable_until(now), now),
       pg->past_intervals);
   }
   pg->take_waiters();
