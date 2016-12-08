@@ -1814,6 +1814,8 @@ void PG::activate(ObjectStore::Transaction& t,
     assert(ctx);
     // start up replicas
 
+    check_unreadable();
+
     assert(!actingbackfill.empty());
     for (set<pg_shard_t>::iterator i = actingbackfill.begin();
 	 i != actingbackfill.end();
@@ -2140,6 +2142,50 @@ void PG::replay_queued_ops()
   }
 
   publish_stats_to_osd();
+}
+
+void PG::recheck_unreadable(epoch_t e)
+{
+  dout(20) << __func__ << " from " << e << dendl;
+  if (e > 0 && pg_has_reset_since(e))
+    return;
+  if (!is_active() || !is_unreadable())
+    return;
+  if (check_unreadable())
+    return;  // still unreadable
+  dout(10) << __func__ << " now readable, requeueing" << dendl;
+  state_clear(PG_STATE_UNREADABLE);
+  publish_stats_to_osd();
+  requeue_ops(waiting_for_active);
+}
+
+bool PG::check_unreadable()
+{
+  utime_t now = ceph_clock_now(NULL);
+  prune_past_readable_until(now);
+  pair<utime_t,utime_t> rup = get_readable_from_until();
+  if (now <= rup.first || now >= rup.second) {
+    recalc_readable_until(now, true);
+    rup = get_readable_from_until();
+  }
+  dout(20) << __func__ << " rup " << rup << dendl;
+  if (now > rup.first && now < rup.second) {
+    return false;  // readable
+  }
+  if (!is_unreadable()) {
+    dout(10) << __func__ << " now unreadable; readable from " << rup.first
+	     << " until " << rup.second << dendl;
+    state_set(PG_STATE_UNREADABLE);
+    publish_stats_to_osd();
+  }
+  if (now <= rup.first) {
+    dout(10) << __func__ << " unreadable until " << rup.first << dendl;
+  }
+  if (now >= rup.second) {
+    dout(10) << __func__ << " unreadable; readable_until " << rup.second
+	     << " <= now " << now << dendl;
+  }
+  return true;  // unreadable
 }
 
 void PG::_activate_committed(epoch_t epoch, epoch_t activation_epoch)
@@ -5298,6 +5344,7 @@ void PG::start_peering_interval(
   state_clear(PG_STATE_DOWN);
   state_clear(PG_STATE_RECOVERY_WAIT);
   state_clear(PG_STATE_RECOVERING);
+  state_clear(PG_STATE_UNREADABLE);
 
   peer_purged.clear();
   actingbackfill.clear();
