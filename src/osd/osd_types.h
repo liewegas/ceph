@@ -975,6 +975,7 @@ inline ostream& operator<<(ostream& out, const osd_stat_t& s) {
 #define PG_STATE_UNDERSIZED    (1<<23) // pg acting < pool size
 #define PG_STATE_ACTIVATING   (1<<24) // pg is peered but not yet active
 #define PG_STATE_PEERED        (1<<25) // peered, cannot go active, can recover
+#define PG_STATE_UNREADABLE (1<<26) // waiting for prior intervals' readable_until to expire, or suspended because current interval peers haven't heartbeated
 
 std::string pg_state_string(int state);
 std::string pg_vector_string(const vector<int32_t> &a);

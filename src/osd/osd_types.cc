@@ -822,6 +822,8 @@ std::string pg_state_string(int state)
     oss << "incomplete+";
   if (state & PG_STATE_PEERED)
     oss << "peered+";
+  if (state & PG_STATE_UNREADABLE)
+    oss << "unreadable+";
   string ret(oss.str());
   if (ret.length() > 0)
     ret.resize(ret.length() - 1);
