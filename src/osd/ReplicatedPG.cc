@@ -6867,11 +6867,16 @@ void ReplicatedPG::finish_ctx(OpContext *ctx, int log_op_type, bool maintain_ssc
 	  ctx->op);
       } else {
 	assert(ctx->lock_type == ObjectContext::RWState::RWEXCL);
+	bool must_flush = false;
 	got = ctx->lock_manager.get_lock_type(
 	  ObjectContext::RWState::RWEXCL,
 	  snapoid,
 	  ctx->snapset_obc,
-	  ctx->op);
+	  ctx->op,
+	  &must_flush);
+	if (must_flush) {
+	  osr->maybe_flush();
+	}
       }
       assert(got);
       dout(20) << " got greedy write on snapset_obc " << *ctx->snapset_obc << dendl;
@@ -8305,11 +8310,14 @@ int ReplicatedPG::try_flush_mark_clean(FlushOpRef fop)
   // successfully flushed; can we clear the dirty bit?
   // try to take the lock manually, since we don't
   // have a ctx yet.
+  bool must_flush = false;
   if (ctx->lock_manager.get_lock_type(
 	ObjectContext::RWState::RWWRITE,
 	oid,
 	obc,
-	fop->op)) {
+	fop->op,
+	&must_flush)) {
+    assert(!must_flush);  // never on write
     dout(20) << __func__ << " took write lock" << dendl;
   } else if (fop->op) {
     dout(10) << __func__ << " waiting on write lock" << dendl;
@@ -12328,12 +12336,14 @@ bool ReplicatedPG::agent_maybe_evict(ObjectContextRef& obc, bool after_flush)
 
   dout(10) << __func__ << " evicting " << obc->obs.oi << dendl;
   OpContextUPtr ctx = simple_opc_create(obc);
-
+  bool must_flush = false;
   if (!ctx->lock_manager.get_lock_type(
 	ObjectContext::RWState::RWWRITE,
 	obc->obs.oi.soid,
 	obc,
-	OpRequestRef())) {
+	OpRequestRef(),
+	&must_flush)) {
+    assert(!must_flush); // never on write
     close_op_ctx(ctx.release());
     dout(20) << __func__ << " skip (cannot get lock) " << obc->obs.oi << dendl;
     return false;

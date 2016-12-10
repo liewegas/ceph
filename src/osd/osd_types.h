@@ -4167,15 +4167,22 @@ public:
     bool recovery_read_marker:1;
     /// if set, requeue snaptrim on lock release
     bool snaptrimmer_write_marker:1;
+    /// if set, induce a flush before issuing a readable state (read|excl)
+    bool need_flush:1;
 
     RWState()
       : count(0),
 	state(RWNONE),
 	recovery_read_marker(false),
-	snaptrimmer_write_marker(false)
+	snaptrimmer_write_marker(false),
+	need_flush(false)
     {}
-    bool get_read(OpRequestRef op) {
+    bool get_read(OpRequestRef op, bool *must_flush) {
       if (get_read_lock()) {
+	if (need_flush) {
+	  need_flush = false;
+	  *must_flush = true;
+	}
 	return true;
       } // else
       waiters.push_back(op);
@@ -4256,8 +4263,12 @@ public:
 	return false;
       }
     }
-    bool get_excl(OpRequestRef op) {
+    bool get_excl(OpRequestRef op, bool *must_flush) {
       if (get_excl_lock()) {
+	if (need_flush) {
+	  need_flush = false;
+	  *must_flush = true;
+	}
 	return true;
       } // else
       if (op)
@@ -4277,6 +4288,10 @@ public:
       assert(requeue);
       count--;
       if (count == 0) {
+	if (state == RWWRITE ||
+	    state == RWEXCL) {
+	  need_flush = true;
+	}
 	state = RWNONE;
 	requeue->splice(requeue->end(), waiters);
       }
@@ -4296,23 +4311,24 @@ public:
     bool empty() const { return state == RWNONE; }
   } rwstate;
 
-  bool get_read(OpRequestRef op) {
-    return rwstate.get_read(op);
+  bool get_read(OpRequestRef op, bool *must_flush) {
+    return rwstate.get_read(op, must_flush);
   }
   bool get_write(OpRequestRef op) {
     return rwstate.get_write(op, false);
   }
-  bool get_excl(OpRequestRef op) {
-    return rwstate.get_excl(op);
+  bool get_excl(OpRequestRef op, bool *must_flush) {
+    return rwstate.get_excl(op, must_flush);
   }
-  bool get_lock_type(OpRequestRef op, RWState::State type) {
+  bool get_lock_type(OpRequestRef op, RWState::State type,
+		     bool *must_flush) {
     switch (type) {
     case RWState::RWWRITE:
       return get_write(op);
     case RWState::RWREAD:
-      return get_read(op);
+      return get_read(op, must_flush);
     case RWState::RWEXCL:
-      return get_excl(op);
+      return get_excl(op, must_flush);
     default:
       assert(0 == "invalid lock type");
       return true;
@@ -4503,9 +4519,10 @@ public:
     ObjectContext::RWState::State type,
     const hobject_t &hoid,
     ObjectContextRef obc,
-    OpRequestRef op) {
+    OpRequestRef op,
+    bool *must_flush) {
     assert(locks.find(hoid) == locks.end());
-    if (obc->get_lock_type(op, type)) {
+    if (obc->get_lock_type(op, type, must_flush)) {
       locks.insert(make_pair(hoid, ObjectLockState(obc, type)));
       return true;
     } else {

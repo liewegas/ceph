@@ -746,14 +746,19 @@ protected:
       ctx->lock_type = ObjectContext::RWState::RWREAD;
     }
 
+    bool must_flush = false;
     if (ctx->snapset_obc) {
       assert(!ctx->obc->obs.exists);
       if (!ctx->lock_manager.get_lock_type(
 	    ctx->lock_type,
 	    ctx->snapset_obc->obs.oi.soid,
 	    ctx->snapset_obc,
-	    ctx->op)) {
+	    ctx->op,
+	    &must_flush)) {
 	ctx->lock_type = ObjectContext::RWState::RWNONE;
+	if (must_flush) {
+	  osr->maybe_flush();
+	}
 	return false;
       }
     }
@@ -761,11 +766,18 @@ protected:
 	  ctx->lock_type,
 	  ctx->obc->obs.oi.soid,
 	  ctx->obc,
-	  ctx->op)) {
+	  ctx->op,
+	  &must_flush)) {
+      if (must_flush) {
+	osr->maybe_flush();
+      }
       return true;
     } else {
       assert(!ctx->snapset_obc);
       ctx->lock_type = ObjectContext::RWState::RWNONE;
+      if (must_flush) {
+	osr->maybe_flush();
+      }
       return false;
     }
   }
