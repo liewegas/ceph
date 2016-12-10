@@ -64,8 +64,7 @@ public:
   void handle_sub_write(
     pg_shard_t from,
     OpRequestRef msg,
-    ECSubWrite &op,
-    Context *on_local_applied_sync = 0
+    ECSubWrite &op
     );
   void handle_sub_read(
     pg_shard_t from,
@@ -103,7 +102,6 @@ public:
     const eversion_t &roll_forward_to,
     const vector<pg_log_entry_t> &log_entries,
     boost::optional<pg_hit_set_history_t> &hset_history,
-    Context *on_local_applied_sync,
     Context *on_all_applied,
     Context *on_all_commit,
     ceph_tid_t tid,
@@ -491,11 +489,9 @@ public:
     ExtentCache::write_pin pin;
 
     /// Callbacks
-    Context *on_local_applied_sync = nullptr;
     Context *on_all_applied = nullptr;
     Context *on_all_commit = nullptr;
     ~Op() {
-      delete on_local_applied_sync;
       delete on_all_applied;
       delete on_all_commit;
     }
