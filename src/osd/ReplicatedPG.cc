@@ -177,22 +177,6 @@ class ReplicatedPG::C_PG_ObjectContext : public Context {
   }
 };
 
-class ReplicatedPG::C_OSD_OndiskWriteUnlock : public Context {
-  ObjectContextRef obc, obc2, obc3;
-  public:
-  C_OSD_OndiskWriteUnlock(
-    ObjectContextRef o,
-    ObjectContextRef o2 = ObjectContextRef(),
-    ObjectContextRef o3 = ObjectContextRef()) : obc(o), obc2(o2), obc3(o3) {}
-  void finish(int r) {
-    obc->ondisk_write_unlock();
-    if (obc2)
-      obc2->ondisk_write_unlock();
-    if (obc3)
-      obc3->ondisk_write_unlock();
-  }
-};
-
 struct OnReadComplete : public Context {
   ReplicatedPG *pg;
   ReplicatedPG::OpContext *opcontext;
@@ -376,7 +360,6 @@ void ReplicatedPG::on_local_recover(
   if (is_primary()) {
     assert(obc);
     obc->obs.exists = true;
-    obc->ondisk_write_lock();
 
     bool got = obc->get_recovery_read();
     assert(got);
@@ -387,7 +370,6 @@ void ReplicatedPG::on_local_recover(
 
 
     t->register_on_applied(new C_OSD_AppliedRecoveredObject(this, obc));
-    t->register_on_applied_sync(new C_OSD_OndiskWriteUnlock(obc));
 
     publish_stats_to_osd();
     assert(missing_loc.needs_recovery(hoid));
@@ -3071,7 +3053,6 @@ void ReplicatedPG::execute_ctx(OpContext *ctx)
   MOSDOp *m = static_cast<MOSDOp*>(op->get_req());
   ObjectContextRef obc = ctx->obc;
   const hobject_t& soid = obc->obs.oi.soid;
-  map<hobject_t,ObjectContextRef, hobject_t::BitwiseComparator>& src_obc = ctx->src_obc;
 
   // this method must be idempotent since we may call it several times
   // before we finally apply the resulting transaction.
@@ -3116,15 +3097,6 @@ void ReplicatedPG::execute_ctx(OpContext *ctx)
     ctx->user_at_version = obc->obs.oi.user_version;
   dout(30) << __func__ << " user_at_version " << ctx->user_at_version << dendl;
 
-  if (op->may_read()) {
-    dout(10) << " taking ondisk_read_lock" << dendl;
-    obc->ondisk_read_lock();
-  }
-  for (map<hobject_t,ObjectContextRef, hobject_t::BitwiseComparator>::iterator p = src_obc.begin(); p != src_obc.end(); ++p) {
-    dout(10) << " taking ondisk_read_lock for src " << p->first << dendl;
-    p->second->ondisk_read_lock();
-  }
-
   {
 #ifdef WITH_LTTNG
     osd_reqid_t reqid = ctx->op->get_reqid();
@@ -3141,15 +3113,6 @@ void ReplicatedPG::execute_ctx(OpContext *ctx)
 #endif
     tracepoint(osd, prepare_tx_exit, reqid.name._type,
         reqid.name._num, reqid.tid, reqid.inc);
-  }
-
-  if (op->may_read()) {
-    dout(10) << " dropping ondisk_read_lock" << dendl;
-    obc->ondisk_read_unlock();
-  }
-  for (map<hobject_t,ObjectContextRef, hobject_t::BitwiseComparator>::iterator p = src_obc.begin(); p != src_obc.end(); ++p) {
-    dout(10) << " dropping ondisk_read_lock for src " << p->first << dendl;
-    p->second->ondisk_read_unlock();
   }
 
   if (result == -EINPROGRESS) {
@@ -8611,27 +8574,17 @@ void ReplicatedPG::issue_repop(RepGather *repop, OpContext *ctx)
     }
   }
 
-  ctx->obc->ondisk_write_lock();
-
-  bool unlock_snapset_obc = false;
   ctx->op_t->add_obc(ctx->obc);
   if (ctx->clone_obc) {
-    ctx->clone_obc->ondisk_write_lock();
     ctx->op_t->add_obc(ctx->clone_obc);
   }
   if (ctx->snapset_obc && ctx->snapset_obc->obs.oi.soid !=
       ctx->obc->obs.oi.soid) {
-    ctx->snapset_obc->ondisk_write_lock();
-    unlock_snapset_obc = true;
     ctx->op_t->add_obc(ctx->snapset_obc);
   }
 
   Context *on_all_commit = new C_OSD_RepopCommit(this, repop);
   Context *on_all_applied = new C_OSD_RepopApplied(this, repop);
-  Context *onapplied_sync = new C_OSD_OndiskWriteUnlock(
-    ctx->obc,
-    ctx->clone_obc,
-    unlock_snapset_obc ? ctx->snapset_obc : ObjectContextRef());
   if (!(ctx->log.empty())) {
     assert(ctx->at_version >= projected_last_update);
     projected_last_update = ctx->at_version;
@@ -8648,7 +8601,7 @@ void ReplicatedPG::issue_repop(RepGather *repop, OpContext *ctx)
     min_last_complete_ondisk,
     ctx->log,
     ctx->updated_hset_history,
-    onapplied_sync,
+    nullptr,
     on_all_applied,
     on_all_commit,
     repop->rep_tid,
@@ -10688,7 +10641,6 @@ uint64_t ReplicatedPG::recover_primary(uint64_t max, ThreadPool::TPHandle &handl
 	      dout(10) << " already reverting " << soid << dendl;
 	    } else {
 	      dout(10) << " reverting " << soid << " to " << latest->prior_version << dendl;
-	      obc->ondisk_write_lock();
 	      obc->obs.oi.version = latest->version;
 
 	      ObjectStore::Transaction t;
@@ -10707,8 +10659,7 @@ uint64_t ReplicatedPG::recover_primary(uint64_t max, ThreadPool::TPHandle &handl
 					    new C_OSD_CommittedPushedObject(
 					      this,
 					      get_osdmap()->get_epoch(),
-					      info.last_complete),
-					    new C_OSD_OndiskWriteUnlock(obc));
+					      info.last_complete));
 	      continue;
 	    }
 	  } else {
@@ -10827,14 +10778,12 @@ int ReplicatedPG::prep_object_replica_pushes(
    * a client write would be blocked since the object is degraded.
    * In almost all cases, therefore, this lock should be uncontended.
    */
-  obc->ondisk_read_lock();
   pgbackend->recover_object(
     soid,
     v,
     ObjectContextRef(),
     obc, // has snapset context
     h);
-  obc->ondisk_read_unlock();
   return 1;
 }
 
@@ -11412,14 +11361,12 @@ void ReplicatedPG::prep_backfill_object_push(
   recovering.insert(make_pair(oid, obc));
 
   // We need to take the read_lock here in order to flush in-progress writes
-  obc->ondisk_read_lock();
   pgbackend->recover_object(
     oid,
     v,
     ObjectContextRef(),
     obc,
     h);
-  obc->ondisk_read_unlock();
 }
 
 void ReplicatedPG::update_range(
@@ -12189,10 +12136,8 @@ void ReplicatedPG::agent_load_hit_sets()
 
 	bufferlist bl;
 	{
-	  obc->ondisk_read_lock();
 	  int r = osd->store->read(ch, ghobject_t(oid), 0, 0, bl);
 	  assert(r >= 0);
-	  obc->ondisk_read_unlock();
 	}
 	HitSetRef hs(new HitSet);
 	bufferlist::iterator pbl = bl.begin();

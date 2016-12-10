@@ -4432,42 +4432,6 @@ public:
     return blocked;
   }
 
-  // do simple synchronous mutual exclusion, for now.  no waitqueues or anything fancy.
-  void ondisk_write_lock() {
-    lock.Lock();
-    writers_waiting++;
-    while (readers_waiting || readers)
-      cond.Wait(lock);
-    writers_waiting--;
-    unstable_writes++;
-    lock.Unlock();
-  }
-  void ondisk_write_unlock() {
-    lock.Lock();
-    assert(unstable_writes > 0);
-    unstable_writes--;
-    if (!unstable_writes && readers_waiting)
-      cond.Signal();
-    lock.Unlock();
-  }
-  void ondisk_read_lock() {
-    lock.Lock();
-    readers_waiting++;
-    while (unstable_writes)
-      cond.Wait(lock);
-    readers_waiting--;
-    readers++;
-    lock.Unlock();
-  }
-  void ondisk_read_unlock() {
-    lock.Lock();
-    assert(readers > 0);
-    readers--;
-    if (!readers && writers_waiting)
-      cond.Signal();
-    lock.Unlock();
-  }
-
   /// in-progress copyfrom ops for this object
   bool blocked:1;
   bool requeue_scrub_on_unblock:1;    // true if we need to requeue scrub on unblock
