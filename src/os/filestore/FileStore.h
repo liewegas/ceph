@@ -311,6 +311,10 @@ private:
       return o;
     }
 
+    void maybe_flush() override {
+      flush();
+    }
+
     void flush() {
       Mutex::Locker l(qlock);
 

@@ -143,6 +143,15 @@ public:
       Context *c ///< [in] context to call upon flush/commit
       ) = 0; ///< @return true if idle, false otherwise
 
+    // flush any pending writes that precede this on the current
+    // sequencer... IF the objectstore backend requires this in order
+    // to ensure the read reflects previous writes.  (FileStore needs
+    // this because it doesn't track in-progress state on a per-object
+    // basis; BlueStore does not because it does.  Memstore is synchronous
+    // and doesn't need it.)
+    virtual void maybe_flush() {
+    }
+    
     Sequencer_impl() : RefCountedObject(NULL, 0) {}
     virtual ~Sequencer_impl() {}
   };
@@ -169,6 +178,11 @@ public:
     void flush() {
       if (p)
 	p->flush();
+    }
+
+    void maybe_flush() {
+      if (p)
+	p->maybe_flush();
     }
 
     /// @see Sequencer_impl::flush_commit()
