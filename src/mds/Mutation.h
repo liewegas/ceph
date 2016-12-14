@@ -36,7 +36,7 @@ class ScatterLock;
 class MClientRequest;
 class MMDSSlaveRequest;
 
-struct MutationImpl {
+struct MutationImpl : public TrackedOp {
   metareqid_t reqid;
   __u32 attempt = 0;      // which attempt for this request
   LogSegment *ls = nullptr;  // the log segment i'm committing to
@@ -170,7 +170,7 @@ typedef ceph::shared_ptr<MutationImpl> MutationRef;
  * mostly information about locks held, so that we can drop them all
  * the request is finished or forwarded.  see request_*().
  */
-struct MDRequestImpl : public MutationImpl, public TrackedOp {
+struct MDRequestImpl : public MutationImpl {
   Session *session;
   elist<MDRequestImpl*>::item item_session_request;  // if not on list, op is aborted.
 
@@ -331,13 +331,13 @@ struct MDRequestImpl : public MutationImpl, public TrackedOp {
   void dump(Formatter *f) const override;
 
   // TrackedOp stuff
-  typedef ceph::shared_ptr<MDRequestImpl> Ref;
+  typedef boost::intrusive_ptr<MDRequestImpl> Ref;
 protected:
   void _dump(Formatter *f) const;
   void _dump_op_descriptor_unlocked(ostream& stream) const;
 };
 
-typedef ceph::shared_ptr<MDRequestImpl> MDRequestRef;
+typedef boost::intrusive_ptr<MDRequestImpl> MDRequestRef;
 
 
 struct MDSlaveUpdate {

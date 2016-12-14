@@ -190,7 +190,7 @@ public:
     return reqid;
   }
 
-  typedef ceph::shared_ptr<OpRequest> Ref;
+  typedef boost::intrusive_ptr<OpRequest> Ref;
 
 private:
   void set_rmw_flags(int flags);

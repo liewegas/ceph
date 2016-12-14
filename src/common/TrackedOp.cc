@@ -331,17 +331,6 @@ void OpTracker::_mark_event(TrackedOp *op, const string &evt,
      
 }
 
-void OpTracker::RemoveOnDelete::operator()(TrackedOp *op) {
-  if (!op->is_tracked) {
-    op->_unregistered();
-    delete op;
-    return;
-  }
-  op->mark_event("done");
-  tracker->unregister_inflight_op(op);
-  // Do not delete op, unregister_inflight_op took control
-}
-
 void TrackedOp::mark_event(const string &event)
 {
   if (!is_tracked)

@@ -25,7 +25,7 @@
 #include <atomic>
 
 class TrackedOp;
-typedef ceph::shared_ptr<TrackedOp> TrackedOpRef;
+typedef boost::intrusive_ptr<TrackedOp> TrackedOpRef;
 
 class OpTracker;
 class OpHistory {
@@ -115,8 +115,7 @@ public:
   template <typename T, typename U>
   typename T::Ref create_request(U params)
   {
-    typename T::Ref retval(new T(params, this),
-			   RemoveOnDelete(this));
+    typename T::Ref retval(new T(params, this));
     retval->tracking_start();
     return retval;
   }
@@ -128,7 +127,8 @@ private:
   friend class OpTracker;
   xlist<TrackedOp*>::item xitem;
 protected:
-  OpTracker *tracker; /// the tracker we are associated with
+  OpTracker *tracker;          ///< the tracker we are associated with
+  std::atomic_int nref = {0};  ///< ref count
 
   utime_t initiated_at;
   list<pair<utime_t, string> > events; /// list of events and their times
@@ -183,6 +183,23 @@ public:
     if (tracker->register_inflight_op(&xitem)) {
       events.push_back(make_pair(initiated_at, "initiated"));
       is_tracked = true;
+    }
+  }
+
+  // ref counting via intrusive_ptr, with special behavior on final
+  // put for historical op tracking
+  friend void intrusive_ptr_add_ref(TrackedOp *o) {
+    ++o->nref;
+  }
+  friend void intrusive_ptr_release(TrackedOp *o) {
+    if (--o->nref == 0) {
+      if (!o->is_tracked) {
+	o->_unregistered();
+	delete o;
+      } else {
+	o->mark_event("done");
+	o->tracker->unregister_inflight_op(o);
+      }
     }
   }
 };
