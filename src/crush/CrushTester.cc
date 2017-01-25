@@ -566,6 +566,9 @@ int CrushTester::test()
 
     for (int nr = minr; nr <= maxr; nr++) {
       vector<int> per(crush.get_max_devices());
+      vector<vector<int>> perslot(crush.get_max_devices());
+      for (int i=0; i<crush.get_max_devices(); ++i)
+	perslot[i].resize(nr);
       map<int,int> sizes;
 
       int num_objects = ((max_x - min_x) + 1);
@@ -663,6 +666,7 @@ int CrushTester::test()
           for (unsigned i = 0; i < out.size(); i++) {
             if (out[i] != CRUSH_ITEM_NONE) {
               per[out[i]]++;
+	      perslot[out[i]][i]++;
               temporary_per[out[i]]++;
             } else {
               has_item_none = true;
@@ -699,12 +703,14 @@ int CrushTester::test()
             if (num_objects_expected[i] > 0 && per[i] > 0) {
               err << "  device " << i << ":\t"
                   << "\t" << " stored " << ": " << per[i]
+		<< "\t" << perslot[i]
                   << "\t" << " expected " << ": " << num_objects_expected[i]
                   << std::endl;
             }
           } else if (output_utilization_all) {
             err << "  device " << i << ":\t"
                 << "\t" << " stored " << ": " << per[i]
+		<< "\t" << perslot[i]
                 << "\t" << " expected " << ": " << num_objects_expected[i]
                 << std::endl;
           }
