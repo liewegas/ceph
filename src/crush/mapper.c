@@ -300,7 +300,7 @@ static __u64 crush_ln(unsigned int xin)
  */
 
 static int bucket_straw2_choose(const struct crush_bucket_straw2 *bucket,
-				int x, int r)
+				int x, int r, int pos)
 {
 	unsigned int i, high = 0;
 	unsigned int u;
@@ -309,6 +309,13 @@ static int bucket_straw2_choose(const struct crush_bucket_straw2 *bucket,
 
 	for (i = 0; i < bucket->h.size; i++) {
 		w = bucket->item_weights[i];
+
+		if (pos == 1) {
+			double oldw = w;
+			double bucketw = bucket->h.weight;
+			double neww = oldw / (bucketw - oldw) * bucketw;
+			w = neww;
+		}
 		if (w) {
 			u = crush_hash32_3(bucket->h.hash, x,
 					   bucket->h.items[i], r);
@@ -349,9 +356,9 @@ static int bucket_straw2_choose(const struct crush_bucket_straw2 *bucket,
 
 static int crush_bucket_choose(const struct crush_bucket *in,
 			       struct crush_work_bucket *work,
-			       int x, int r)
+			       int x, int r, int pos)
 {
-	dprintk(" crush_bucket_choose %d x=%d r=%d\n", in->id, x, r);
+	dprintk(" crush_bucket_choose %d x=%d r=%d pos=%d\n", in->id, x, r, pos);
 	BUG_ON(in->size == 0);
 	switch (in->alg) {
 	case CRUSH_BUCKET_UNIFORM:
@@ -371,7 +378,7 @@ static int crush_bucket_choose(const struct crush_bucket *in,
 	case CRUSH_BUCKET_STRAW2:
 		return bucket_straw2_choose(
 			(const struct crush_bucket_straw2 *)in,
-			x, r);
+			x, r, pos);
 	default:
 		dprintk("unknown bucket %d alg %d\n", in->id, in->alg);
 		return in->items[0];
@@ -485,7 +492,7 @@ parent_r %d stable %d\n",
 				else
 					item = crush_bucket_choose(
 						in, work->work[-1-in->id],
-						x, r);
+						x, r, outpos);
 				if (item >= map->max_devices) {
 					dprintk("   bad item %d\n", item);
 					skip_rep = 1;
@@ -693,7 +700,7 @@ static void crush_choose_indep(const struct crush_map *map,
 
 				item = crush_bucket_choose(
 					in, work->work[-1-in->id],
-					x, r);
+					x, r, outpos);
 				if (item >= map->max_devices) {
 					dprintk("   bad item %d\n", item);
 					out[rep] = CRUSH_ITEM_NONE;
