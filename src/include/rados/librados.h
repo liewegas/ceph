@@ -976,7 +976,8 @@ CEPH_RADOS_API void rados_ioctx_set_namespace(rados_ioctx_t io,
  * @returns 0 on success, negative error code on failure
  */
 CEPH_RADOS_API int rados_nobjects_list_open(rados_ioctx_t io,
-                                            rados_list_ctx_t *ctx);
+                                            rados_list_ctx_t *ctx)
+  __attribute__ ((deprecated));
 
 /**
  * Return hash position of iterator, rounded to the current PG
@@ -984,7 +985,9 @@ CEPH_RADOS_API int rados_nobjects_list_open(rados_ioctx_t io,
  * @param ctx iterator marking where you are in the listing
  * @returns current hash position, rounded to the current pg
  */
-CEPH_RADOS_API uint32_t rados_nobjects_list_get_pg_hash_position(rados_list_ctx_t ctx);
+CEPH_RADOS_API uint32_t rados_nobjects_list_get_pg_hash_position(
+  rados_list_ctx_t ctx)
+  __attribute__ ((deprecated));
 
 /**
  * Reposition object iterator to a different hash position
@@ -994,7 +997,8 @@ CEPH_RADOS_API uint32_t rados_nobjects_list_get_pg_hash_position(rados_list_ctx_
  * @returns actual (rounded) position we moved to
  */
 CEPH_RADOS_API uint32_t rados_nobjects_list_seek(rados_list_ctx_t ctx,
-                                                 uint32_t pos);
+                                                 uint32_t pos)
+  __attribute__ ((deprecated));
 
 /**
  * Get the next object name and locator in the pool
@@ -1011,7 +1015,8 @@ CEPH_RADOS_API uint32_t rados_nobjects_list_seek(rados_list_ctx_t ctx,
 CEPH_RADOS_API int rados_nobjects_list_next(rados_list_ctx_t ctx,
                                             const char **entry,
 	                                    const char **key,
-                                            const char **nspace);
+                                            const char **nspace)
+  __attribute__ ((deprecated));
 
 /**
  * Close the object listing handle.
@@ -1021,7 +1026,8 @@ CEPH_RADOS_API int rados_nobjects_list_next(rados_list_ctx_t ctx,
  *
  * @param ctx the handle to close
  */
-CEPH_RADOS_API void rados_nobjects_list_close(rados_list_ctx_t ctx);
+CEPH_RADOS_API void rados_nobjects_list_close(rados_list_ctx_t ctx)
+  __attribute__ ((deprecated));
 
 /**
  * Get cursor handle pointing to the *beginning* of a pool.

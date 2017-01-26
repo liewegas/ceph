@@ -660,6 +660,11 @@ struct librados::ObjListCtx {
 };
 
 ///////////////////////////// NObjectIteratorImpl /////////////////////////////
+
+#pragma GCC diagnostic ignored "-Wpragmas"
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+
 librados::NObjectIteratorImpl::NObjectIteratorImpl(ObjListCtx *ctx_)
   : ctx(ctx_)
 {
@@ -866,6 +871,9 @@ uint32_t librados::NObjectIterator::get_pg_hash_position() const
 }
 
 const librados::NObjectIterator librados::NObjectIterator::__EndObjectIterator(NULL);
+
+#pragma GCC diagnostic pop
+#pragma GCC diagnostic warning "-Wpragmas"
 
 ///////////////////////////// PoolAsyncCompletion //////////////////////////////
 int librados::PoolAsyncCompletion::PoolAsyncCompletion::set_callback(void *cb_arg,
@@ -1664,6 +1672,10 @@ int librados::IoCtx::list_lockers(const std::string &oid, const std::string &nam
   return tmp_lockers.size();
 }
 
+#pragma GCC diagnostic ignored "-Wpragmas"
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+
 librados::NObjectIterator librados::IoCtx::nobjects_begin()
 {
   bufferlist bl;
@@ -1706,6 +1718,10 @@ const librados::NObjectIterator& librados::IoCtx::nobjects_end() const
 {
   return NObjectIterator::__EndObjectIterator;
 }
+
+#pragma GCC diagnostic pop
+#pragma GCC diagnostic warning "-Wpragmas"
+
 
 int librados::IoCtx::hit_set_list(uint32_t hash, AioCompletion *c,
 				  std::list< std::pair<time_t, time_t> > *pls)

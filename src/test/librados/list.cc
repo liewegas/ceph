@@ -22,6 +22,9 @@ typedef RadosTestECNS LibRadosListEC;
 typedef RadosTestECPPNS LibRadosListECPP;
 typedef RadosTestNP LibRadosListNP;
 
+#pragma GCC diagnostic ignored "-Wpragmas"
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 
 TEST_F(LibRadosList, ListObjects) {
   char buf[128];
