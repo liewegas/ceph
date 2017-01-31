@@ -1881,6 +1881,10 @@ void BlueStore::ExtentMap::reshard(
 {
   auto cct = onode->c->store->cct; // used by dout
 
+#warning hack force full reshard
+  needs_reshard_begin = 0;
+  needs_reshard_end = OBJECT_MAX_SIZE;
+  
   dout(10) << __func__ << " 0x[" << std::hex << needs_reshard_begin << ","
 	   << needs_reshard_end << ")" << std::dec
 	   << " of " << onode->onode.extent_map_shards.size()
