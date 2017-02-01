@@ -1823,21 +1823,22 @@ void BlueStore::ExtentMap::update(KeyValueDB::Transaction t,
 	  if (len > cct->_conf->bluestore_extent_map_shard_max_size) {
 	    // we are big; reshard ourselves
 	    request_reshard(p->offset, endoff);
-	    return;
 	  }
 	  // avoid resharding the trailing shard, even if it is small
-	  if (n != shards.end() &&
-	      len < g_conf->bluestore_extent_map_shard_min_size) {
+	  else if (n != shards.end() &&
+		   len < g_conf->bluestore_extent_map_shard_min_size) {
 	    // we are small; combine with a neighbor
 	    if (p == shards.begin() && endoff == OBJECT_MAX_SIZE) {
 	      // we are an only shard
 	      request_reshard(0, OBJECT_MAX_SIZE);
+	      return;
 	    } else if (p == shards.begin()) {
 	      // combine with next shard
 	      request_reshard(p->offset, endoff + 1);
 	    } else if (endoff == OBJECT_MAX_SIZE) {
 	      // combine with previous shard
 	      request_reshard(prev_p->offset, endoff);
+	      return;
 	    } else {
 	      // combine with the smaller of the two
 	      if (prev_p->shard_info->bytes > n->shard_info->bytes) {
@@ -1846,7 +1847,6 @@ void BlueStore::ExtentMap::update(KeyValueDB::Transaction t,
 		request_reshard(prev_p->offset, endoff);
 	      }
 	    }
-	    return;
 	  }
         }
 	assert(p->shard_info->offset == p->offset);
@@ -1859,6 +1859,9 @@ void BlueStore::ExtentMap::update(KeyValueDB::Transaction t,
       prev_p = p;
       p = n;
       ++pos;
+    }
+    if (needs_reshard()) {
+      return;
     }
 
     // schedule DB update for dirty shards
@@ -2136,6 +2139,7 @@ bool BlueStore::ExtentMap::encode_some(
   size_t bound = 0;
   denc(struct_v, bound);
   denc_varint(0, bound);
+  bool must_reshard = false;
   for (auto p = start;
        p != extent_map.end() && p->logical_offset < end;
        ++p, ++n) {
@@ -2145,7 +2149,7 @@ bool BlueStore::ExtentMap::encode_some(
       dout(30) << __func__ << " 0x" << std::hex << offset << "~" << length
 	       << std::dec << " hit new spanning blob " << *p << dendl;
       request_reshard(p->blob_start(), p->blob_end());
-      return true;
+      must_reshard = true;
     }
     denc_varint(0, bound); // blobid
     denc_varint(0, bound); // logical_offset
@@ -2157,6 +2161,9 @@ bool BlueStore::ExtentMap::encode_some(
       struct_v,
       p->blob->shared_blob->get_sbid(),
       false);
+  }
+  if (must_reshard) {
+    return true;
   }
 
   {
