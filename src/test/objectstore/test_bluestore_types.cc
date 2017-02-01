@@ -40,6 +40,8 @@ TEST(bluestore, sizeof) {
   P(boost::intrusive::unordered_set_base_hook<>);
   P(bufferlist);
   P(bufferptr);
+  P(BlueStore::ExtentMap::Shard);
+  P(bluestore_onode_t::shard_info);
   cout << "map<uint64_t,uint64_t>\t" << sizeof(map<uint64_t,uint64_t>) << std::endl;
   cout << "map<char,char>\t" << sizeof(map<char,char>) << std::endl;
 }
