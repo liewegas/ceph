@@ -1881,6 +1881,10 @@ public:
     int newprimary,
     const vector<int>& newacting,
     bool any_change=false);
+  bool is_pg_split(
+    pg_t pgid,
+    unsigned old_pg_num,
+    unsigned new_pg_num);
   enum recalc_op_target_result {
     RECALC_OP_TARGET_NO_ACTION = 0,
     RECALC_OP_TARGET_NEED_RESEND,
@@ -1892,7 +1896,7 @@ public:
   bool _osdmap_has_pool_full() const;
 
   bool target_should_be_paused(op_target_t *op);
-  int _calc_target(op_target_t *t,
+  int _calc_target(op_target_t *t, Connection *con,
 		   bool any_change = false);
   int _map_session(op_target_t *op, OSDSession **s,
 		   shunique_lock& lc);
