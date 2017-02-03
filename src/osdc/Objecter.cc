@@ -3052,9 +3052,6 @@ MOSDOp *Objecter::_prepare_osd_op(Op *op)
   m->set_mtime(op->mtime);
   m->set_retry_attempt(op->attempts++);
 
-  if (op->replay_version != eversion_t())
-    m->set_version(op->replay_version);  // we're replaying this op!
-
   if (op->priority)
     m->set_priority(op->priority);
   else
@@ -3212,8 +3209,7 @@ void Objecter::handle_osd_op_reply(MOSDOpReply *m)
   ldout(cct, 7) << "handle_osd_op_reply " << tid
 		<< (m->is_ondisk() ? " ondisk" :
 		    (m->is_onnvram() ? " onnvram" : " ack"))
-		<< " v " << m->get_replay_version() << " uv "
-		<< m->get_user_version()
+		<< " uv " << m->get_user_version()
 		<< " in " << m->get_pg()
 		<< " attempt " << m->get_retry_attempt()
 		<< dendl;
