@@ -1225,6 +1225,15 @@ public:
 
     op_target_t() = default;
 
+    hobject_t get_hobj() {
+      return hobject_t(target_oid,
+		       target_oloc.key,
+		       CEPH_NOSNAP,
+		       target_oloc.hash >= 0 ? target_oloc.hash : pgid.ps(),
+		       target_oloc.pool,
+		       target_oloc.nspace);
+    }
+
     void dump(Formatter *f) const;
   };
 
