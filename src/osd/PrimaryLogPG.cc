@@ -3442,13 +3442,18 @@ PrimaryLogPG::OpContextUPtr PrimaryLogPG::trim_object(bool first, const hobject_
   assert(snapset_obc);
 
   object_info_t &coi = obc->obs.oi;
-  set<snapid_t> old_snaps(coi.snaps.begin(), coi.snaps.end());
+
+  SnapSet& snapset = obc->ssc->snapset;
+  auto snp = snapset.clone_snaps.find(coid.snap);
+  if (snp == snapset.clone_snaps.end()) {
+    osd->clog->error() << __func__ << " No clone_snaps for " << coid << "\n";
+    return NULL;
+  }
+  set<snapid_t> old_snaps(snp->second.begin(), snp->second.end());
   if (old_snaps.empty()) {
     osd->clog->error() << __func__ << " No object info snaps for " << coid << "\n";
     return NULL;
   }
-
-  SnapSet& snapset = obc->ssc->snapset;
 
   dout(10) << coid << " old_snaps " << old_snaps
 	   << " old snapset " << snapset << dendl;
@@ -3544,6 +3549,7 @@ PrimaryLogPG::OpContextUPtr PrimaryLogPG::trim_object(bool first, const hobject_
     snapset.clones.erase(p);
     snapset.clone_overlap.erase(last);
     snapset.clone_size.erase(last);
+    snapset.clone_snaps.erase(last);
 	
     ctx->log.push_back(
       pg_log_entry_t(
@@ -3566,8 +3572,13 @@ PrimaryLogPG::OpContextUPtr PrimaryLogPG::trim_object(bool first, const hobject_
     // save adjusted snaps for this object
     dout(10) << coid << " snaps " << old_snaps
 	     << " -> " << new_snaps << dendl;
-    coi.snaps = vector<snapid_t>(new_snaps.rbegin(), new_snaps.rend());
+    // continue to update coid snaps for jewel compatibility
+    coid.snaps = vector<snapid_t>(new_snaps.rbegin(), new_snaps.rend());
 
+    // update snapset too!
+    snapset.clone_snaps[coid.snap] = coid.snaps;    
+
+    // we continue to update coid for jewel compatibility...
     coi.prior_version = coi.version;
     coi.version = ctx->at_version;
     bl.clear();

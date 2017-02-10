@@ -1088,6 +1088,10 @@ void ReplicatedBackend::sub_op_modify(OpRequestRef op)
   ::decode(log, p);
   rm->opt.set_fadvise_flag(CEPH_OSD_OP_FLAG_FADVISE_DONTNEED);
 
+  if (!m->get_connection()->have_features(CEPH_FEATUREMASK_SERVER_LUMINOUS)) {
+#warning we need to repair SnapSets here
+  }
+  
   bool update_snaps = false;
   if (!rm->opt.empty()) {
     // If the opt is non-empty, we infer we are before
@@ -1614,8 +1618,10 @@ void ReplicatedBackend::submit_push_data(
 
   if (!omap_entries.empty())
     t->omap_setkeys(coll, ghobject_t(target_oid), omap_entries);
-  if (!attrs.empty())
+  if (!attrs.empty()) {
+#warning need to repair snapset here
     t->setattrs(coll, ghobject_t(target_oid), attrs);
+  }
 
   if (complete) {
     if (!first) {
