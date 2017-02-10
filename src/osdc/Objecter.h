@@ -2287,7 +2287,8 @@ public:
     ObjectOperation& op, bufferlist *pbl, int flags,
     Context *onack, epoch_t *reply_epoch,
     int *ctx_budget) {
-    Op *o = prepare_pg_read_op(hash, oloc, op, pbl, flags,
+    Op *o = prepare_pg_read_op(hash, oloc, op, pbl,
+			       flags | CEPH_OSD_FLAG_IGNORE_OVERLAY,
 			       onack, reply_epoch, ctx_budget);
     ceph_tid_t tid;
     op_submit(o, &tid, ctx_budget);
