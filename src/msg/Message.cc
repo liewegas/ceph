@@ -79,6 +79,7 @@ using namespace std;
 #include "messages/MOSDPGTrim.h"
 #include "messages/MOSDScrub.h"
 #include "messages/MOSDRepScrub.h"
+#include "messages/MOSDRepScrubMap.h"
 #include "messages/MOSDPGScan.h"
 #include "messages/MOSDPGBackfill.h"
 #include "messages/MOSDBackoff.h"
@@ -503,6 +504,9 @@ Message *decode_message(CephContext *cct, int crcflags,
     break;
   case MSG_OSD_REP_SCRUB:
     m = new MOSDRepScrub;
+    break;
+  case MSG_OSD_REP_SCRUBMAP:
+    m = new MOSDRepScrubMap;
     break;
   case MSG_OSD_PG_SCAN:
     m = new MOSDPGScan;
