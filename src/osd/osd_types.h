@@ -3880,6 +3880,7 @@ struct SnapSet {
   vector<snapid_t> clones;   // ascending
   map<snapid_t, interval_set<uint64_t> > clone_overlap;  // overlap w/ next newest
   map<snapid_t, uint64_t> clone_size;
+  map<snapid_t, vector<snapid_t>> clone_snaps;  // descending
 
   SnapSet() : seq(0), head_exists(false) {}
   explicit SnapSet(bufferlist& bl) {

@@ -4353,25 +4353,29 @@ void OSDSuperblock::generate_test_instances(list<OSDSuperblock*>& o)
 
 void SnapSet::encode(bufferlist& bl) const
 {
-  ENCODE_START(2, 2, bl);
+  ENCODE_START(3, 2, bl);
   ::encode(seq, bl);
   ::encode(head_exists, bl);
   ::encode(snaps, bl);
   ::encode(clones, bl);
   ::encode(clone_overlap, bl);
   ::encode(clone_size, bl);
+  ::encode(clone_snaps, bl);
   ENCODE_FINISH(bl);
 }
 
 void SnapSet::decode(bufferlist::iterator& bl)
 {
-  DECODE_START_LEGACY_COMPAT_LEN(2, 2, 2, bl);
+  DECODE_START_LEGACY_COMPAT_LEN(3, 2, 2, bl);
   ::decode(seq, bl);
   ::decode(head_exists, bl);
   ::decode(snaps, bl);
   ::decode(clones, bl);
   ::decode(clone_overlap, bl);
   ::decode(clone_size, bl);
+  if (struct_v >= 3) {
+    ::decode(clone_snaps, bl);
+  }
   DECODE_FINISH(bl);
 }
 
@@ -4388,6 +4392,11 @@ void SnapSet::dump(Formatter *f) const
     f->dump_unsigned("snap", *p);
     f->dump_unsigned("size", clone_size.find(*p)->second);
     f->dump_stream("overlap") << clone_overlap.find(*p)->second;
+    f->open_array_section("snaps");
+    for (auto s : clone_snaps.at(*p)) {
+      f->dump_unsigned("snap", s);
+    }
+    f->close_section();
     f->close_section();
   }
   f->close_section();
@@ -4415,6 +4424,7 @@ ostream& operator<<(ostream& out, const SnapSet& cs)
 {
   return out << cs.seq << "=" << cs.snaps << ":"
 	     << cs.clones
+	     << ":" << cs.clone_snaps
 	     << (cs.head_exists ? "+head":"");
 }
 
