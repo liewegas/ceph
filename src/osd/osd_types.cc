@@ -4430,7 +4430,12 @@ ostream& operator<<(ostream& out, const SnapSet& cs)
 
 void SnapSet::from_snap_set(const librados::snap_set_t& ss)
 {
-  // NOTE: our reconstruction of snaps (and the snapc) is not strictly
+  // Notes and warnings:
+  //
+  // This method is currently *only* used to construct a partial SnapSet
+  // for the cache pool.
+  //
+  // Our reconstruction of snaps (and the snapc) is not strictly
   // correct: it will not include snaps that still logically exist
   // but for which there was no clone that is defined.  For all
   // practical purposes this doesn't matter, since we only use that
@@ -4451,6 +4456,7 @@ void SnapSet::from_snap_set(const librados::snap_set_t& ss)
       _snaps.insert(p->snaps.begin(), p->snaps.end());
       clone_size[p->cloneid] = p->size;
       clone_overlap[p->cloneid];  // the entry must exist, even if it's empty.
+      clone_snaps[p->cloneid] = p->snaps;
       for (vector<pair<uint64_t, uint64_t> >::const_iterator q =
 	     p->overlap.begin(); q != p->overlap.end(); ++q)
 	clone_overlap[p->cloneid].insert(q->first, q->second);
