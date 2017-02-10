@@ -1285,6 +1285,7 @@ public:
   void replica_scrub(
     OpRequestRef op,
     ThreadPool::TPHandle &handle);
+  void do_replica_scrub_map(OpRequestRef op);
   void sub_op_scrub_map(OpRequestRef op);
   void sub_op_scrub_reserve(OpRequestRef op);
   void sub_op_scrub_reserve_reply(OpRequestRef op);
