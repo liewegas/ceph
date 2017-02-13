@@ -37,6 +37,7 @@
 #include "messages/MOSDPGScan.h"
 #include "messages/MOSDRepScrub.h"
 #include "messages/MOSDPGBackfill.h"
+#include "messages/MOSDPGBackfillRemove.h"
 #include "messages/MOSDPGUpdateLogMissing.h"
 #include "messages/MOSDPGUpdateLogMissingReply.h"
 #include "messages/MCommandReply.h"
@@ -1719,6 +1720,10 @@ void PrimaryLogPG::do_request(
 
   case MSG_OSD_PG_BACKFILL:
     do_backfill(op);
+    break;
+
+  case MSG_OSD_PG_BACKFILL_REMOVE:
+    do_backfill_remove(op);
     break;
 
   case MSG_OSD_REP_SCRUB:
@@ -3466,6 +3471,22 @@ void PrimaryLogPG::do_backfill(OpRequestRef op)
     }
     break;
   }
+}
+
+void PrimaryLogPG::do_backfill_remove(OpRequestRef op)
+{
+  MOSDPGBackfillRemove *m = static_cast<MOSDPGBackfillRemove*>(op->get_req());
+  assert(m->get_type() == MSG_OSD_PG_BACKFILL_REMOVE);
+  dout(7) << __func__ << " " << m->ls << dendl;
+
+  op->mark_started();
+
+  ObjectStore::Transaction t;
+  for (auto& p : m->ls) {
+    remove_snap_mapped_object(t, p.first);
+  }
+  int r = osd->store->queue_transaction(osr.get(), std::move(t), NULL);
+  assert(r == 0);
 }
 
 PrimaryLogPG::OpContextUPtr PrimaryLogPG::trim_object(bool first, const hobject_t &coid)
@@ -11122,14 +11143,38 @@ uint64_t PrimaryLogPG::recover_backfill(
     add_object_context_to_pg_stat(obc, &stat);
     pending_backfill_updates[*i] = stat;
   }
-  for (unsigned i = 0; i < to_remove.size(); ++i) {
-    handle.reset_tp_timeout();
+  if (HAVE_FEATURE(get_min_upacting_features(), SERVER_LUMINOUS)) {
+    map<pg_shard_t,MOSDPGBackfillRemove*> reqs;
+    for (unsigned i = 0; i < to_remove.size(); ++i) {
+      handle.reset_tp_timeout();
+      pg_shard_t target = to_remove[i].get<2>();
+      MOSDPGBackfillRemove *m;
+      if (reqs.count(target)) {
+	m = reqs[target];
+      } else {
+	m = reqs[target] = new MOSDPGBackfillRemove(
+	  spg_t(info.pgid.pgid, target.shard),
+	  get_osdmap()->get_epoch());
+	m->ls.push_back(make_pair(to_remove[i].get<0>(), to_remove[i].get<1>()));
+      }
+      if (to_remove[i].get<0>() <= last_backfill_started)
+	pending_backfill_updates[to_remove[i].get<0>()]; // add empty stat!
+    }
+    for (auto p : reqs) {
+      osd->send_message_osd_cluster(p.first.osd, p.second,
+				    get_osdmap()->get_epoch());
+    }
+  } else {
+    // for jewel targets
+    for (unsigned i = 0; i < to_remove.size(); ++i) {
+      handle.reset_tp_timeout();
 
-    // ordered before any subsequent updates
-    send_remove_op(to_remove[i].get<0>(), to_remove[i].get<1>(), to_remove[i].get<2>());
+      // ordered before any subsequent updates
+      send_remove_op(to_remove[i].get<0>(), to_remove[i].get<1>(), to_remove[i].get<2>());
 
-    if (to_remove[i].get<0>() <= last_backfill_started)
-      pending_backfill_updates[to_remove[i].get<0>()]; // add empty stat!
+      if (to_remove[i].get<0>() <= last_backfill_started)
+	pending_backfill_updates[to_remove[i].get<0>()]; // add empty stat!
+    }
   }
 
   PGBackend::RecoveryHandle *h = pgbackend->open_recovery_op();
