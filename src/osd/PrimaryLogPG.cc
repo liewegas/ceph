@@ -41,6 +41,7 @@
 #include "messages/MOSDPGUpdateLogMissing.h"
 #include "messages/MOSDPGUpdateLogMissingReply.h"
 #include "messages/MCommandReply.h"
+#include "messages/MOSDScrubReserve.h"
 #include "mds/inode_backtrace.h" // Ugh
 #include "common/EventTrace.h"
 
@@ -1726,6 +1727,26 @@ void PrimaryLogPG::do_request(
     do_backfill_remove(op);
     break;
 
+  case MSG_OSD_SCRUB_RESERVE:
+    {
+      MOSDScrubReserve *m = static_cast<MOSDScrubReserve*>(op->get_req());
+      switch (m->type) {
+      case MOSDScrubReserve::REQUEST:
+	handle_scrub_reserve_request(op);
+	break;
+      case MOSDScrubReserve::GRANT:
+	handle_scrub_reserve_grant(op, m->from);
+	break;
+      case MOSDScrubReserve::REJECT:
+	handle_scrub_reserve_reject(op, m->from);
+	break;
+      case MOSDScrubReserve::RELEASE:
+	handle_scrub_reserve_release(op);
+	break;
+      }
+    }
+    break;
+
   case MSG_OSD_REP_SCRUB:
     replica_scrub(op, handle);
     break;
@@ -3318,10 +3339,10 @@ void PrimaryLogPG::do_sub_op(OpRequestRef op)
       sub_op_remove(op);
       return;
     case CEPH_OSD_OP_SCRUB_RESERVE:
-      sub_op_scrub_reserve(op);
+      handle_scrub_reserve_request(op);
       return;
     case CEPH_OSD_OP_SCRUB_UNRESERVE:
-      sub_op_scrub_unreserve(op);
+      handle_scrub_reserve_release(op);
       return;
     case CEPH_OSD_OP_SCRUB_MAP:
       sub_op_scrub_map(op);
@@ -3338,7 +3359,17 @@ void PrimaryLogPG::do_sub_op_reply(OpRequestRef op)
     OSDOp& first = r->ops[0];
     switch (first.op.op) {
     case CEPH_OSD_OP_SCRUB_RESERVE:
-      sub_op_scrub_reserve_reply(op);
+      {
+	pg_shard_t from = r->from;
+	bufferlist::iterator p = r->get_data().begin();
+	bool reserved;
+	::decode(reserved, p);
+	if (reserved) {
+	  handle_scrub_reserve_grant(op, from);
+	} else {
+	  handle_scrub_reserve_reject(op, from);
+	}
+      }
       return;
     }
   }

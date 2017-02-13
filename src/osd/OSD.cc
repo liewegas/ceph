@@ -97,6 +97,7 @@
 #include "messages/MOSDAlive.h"
 
 #include "messages/MOSDScrub.h"
+#include "messages/MOSDScrubReserve.h"
 #include "messages/MOSDRepScrub.h"
 #include "messages/MOSDRepScrubMap.h"
 
@@ -6347,6 +6348,8 @@ epoch_t op_required_epoch(OpRequestRef op)
     return replica_op_required_epoch<MOSDRepScrub, MSG_OSD_REP_SCRUB>(op);
   case MSG_OSD_REP_SCRUBMAP:
     return replica_op_required_epoch<MOSDRepScrubMap, MSG_OSD_REP_SCRUBMAP>(op);
+  case MSG_OSD_SCRUB_RESERVE:
+    return replica_op_required_epoch<MOSDScrubReserve, MSG_OSD_SCRUB_RESERVE>(op);
   case MSG_OSD_PG_UPDATE_LOG_MISSING:
     return replica_op_required_epoch<
       MOSDPGUpdateLogMissing, MSG_OSD_PG_UPDATE_LOG_MISSING>(
@@ -6471,6 +6474,9 @@ bool OSD::dispatch_op_fast(OpRequestRef op, OSDMapRef& osdmap)
     break;
   case MSG_OSD_REP_SCRUBMAP:
     handle_replica_op<MOSDRepScrubMap, MSG_OSD_REP_SCRUBMAP>(op, osdmap);
+    break;
+  case MSG_OSD_SCRUB_RESERVE:
+    handle_replica_op<MOSDScrubReserve, MSG_OSD_SCRUB_RESERVE>(op, osdmap);
     break;
   case MSG_OSD_PG_UPDATE_LOG_MISSING:
     handle_replica_op<MOSDPGUpdateLogMissing, MSG_OSD_PG_UPDATE_LOG_MISSING>(
