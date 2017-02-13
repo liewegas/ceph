@@ -79,6 +79,7 @@ using namespace std;
 #include "messages/MOSDPGCreate.h"
 #include "messages/MOSDPGTrim.h"
 #include "messages/MOSDScrub.h"
+#include "messages/MOSDScrubReserve.h"
 #include "messages/MOSDRepScrub.h"
 #include "messages/MOSDRepScrubMap.h"
 #include "messages/MOSDPGScan.h"
@@ -502,6 +503,9 @@ Message *decode_message(CephContext *cct, int crcflags,
 
   case MSG_OSD_SCRUB:
     m = new MOSDScrub;
+    break;
+  case MSG_OSD_SCRUB_RESERVE:
+    m = new MOSDScrubReserve;
     break;
   case MSG_REMOVE_SNAPS:
     m = new MRemoveSnaps;

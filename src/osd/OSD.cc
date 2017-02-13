@@ -98,6 +98,7 @@
 #include "messages/MOSDAlive.h"
 
 #include "messages/MOSDScrub.h"
+#include "messages/MOSDScrubReserve.h"
 #include "messages/MOSDRepScrub.h"
 
 #include "messages/MMonCommand.h"
