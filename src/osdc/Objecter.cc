@@ -2769,11 +2769,12 @@ int Objecter::_calc_target(op_target_t *t, Connection *con, bool any_change)
     t->paused = false;
     need_resend = true;
   }
-
   if (t->pgid != pgid ||
       is_pg_changed(
 	t->acting_primary, t->acting, acting_primary, acting,
 	t->used_replica || any_change) ||
+      (con && con->has_features(CEPH_FEATUREMASK_RESEND_ON_SPLIT) &&
+       is_pg_split(prev_pgid, t->pg_num, pg_num)) ||
       force_resend) {
     t->pgid = pgid;
     t->acting = acting;
@@ -2837,12 +2838,6 @@ int Objecter::_calc_target(op_target_t *t, Connection *con, bool any_change)
     need_resend = true;
   }
   if (need_resend) {
-    return RECALC_OP_TARGET_NEED_RESEND;
-  }
-  if (con &&
-      con->has_features(CEPH_FEATURE_RESEND_ON_SPLIT |
-			CEPH_FEATURE_SERVER_JEWEL) &&
-      is_pg_split(prev_pgid, t->pg_num, pg_num)) {
     return RECALC_OP_TARGET_NEED_RESEND;
   }
   return RECALC_OP_TARGET_NO_ACTION;
