@@ -11492,7 +11492,7 @@ void ReplicatedPG::hit_set_remove_all()
     assert(!is_degraded_or_backfilling_object(oid));
     ObjectContextRef obc = get_object_context(oid, false);
     if (!obc)
-      continue;
+      return;
     //assert(obc);
 
     OpContextUPtr ctx = simple_opc_create(obc);
