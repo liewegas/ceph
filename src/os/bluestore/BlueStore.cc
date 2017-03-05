@@ -7721,7 +7721,12 @@ int BlueStore::_wal_finish(TransContext *txc)
   txc->state = TransContext::STATE_WAL_CLEANUP;
   txc->osr->qcond.notify_all();
   wal_cleanup_queue.push_back(txc);
-  kv_cond.notify_one();
+  // NOTE: do not wake up kv thread here; we don't when the wal
+  // records get retired.  let that happen when the next batch is
+  // committing of its own accord.  (Unless we are in journal replay
+  // mode!)
+  if (wal_replaying)
+    kv_cond.notify_one();
   return 0;
 }
 
@@ -7755,6 +7760,7 @@ int BlueStore::_do_wal_op(TransContext *txc, bluestore_wal_op_t& wo)
 int BlueStore::_wal_replay()
 {
   dout(10) << __func__ << " start" << dendl;
+  wal_replaying = true;
   OpSequencerRef osr = new OpSequencer(cct);
   int count = 0;
   KeyValueDB::Iterator it = db->get_iterator(PREFIX_WAL);
@@ -7780,6 +7786,7 @@ int BlueStore::_wal_replay()
   dout(20) << __func__ << " flushing osr" << dendl;
   osr->flush();
   dout(10) << __func__ << " completed " << count << " events" << dendl;
+  wal_replaying = false;
   return 0;
 }
 

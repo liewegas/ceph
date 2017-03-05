@@ -1718,6 +1718,7 @@ private:
   std::atomic<uint64_t> wal_seq = {0};
   ThreadPool wal_tp;
   WALWQ wal_wq;
+  bool wal_replaying = false;
 
   int m_finisher_num;
   vector<Finisher*> finishers;
