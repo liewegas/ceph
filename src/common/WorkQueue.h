@@ -140,7 +140,8 @@ public:
     bool queue(T *item) {
       pool->_lock.Lock();
       bool r = _enqueue(item);
-      pool->_cond.SignalOne();
+      if (r)
+	pool->_cond.SignalOne();
       pool->_lock.Unlock();
       return r;
     }
@@ -301,7 +302,8 @@ public:
     bool queue(T *item) {
       pool->_lock.Lock();
       bool r = _enqueue(item);
-      pool->_cond.SignalOne();
+      if (r)
+	pool->_cond.SignalOne();
       pool->_lock.Unlock();
       return r;
     }
