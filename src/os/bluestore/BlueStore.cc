@@ -7426,8 +7426,6 @@ void BlueStore::_txc_finish(TransContext *txc)
     txc->removed_collections.pop_front();
   }
 
-  _op_queue_release_wal_throttle(txc);
-
   OpSequencerRef osr = txc->osr;
   {
     std::lock_guard<std::mutex> l(osr->qlock);
@@ -7743,6 +7741,9 @@ int BlueStore::_wal_finish(TransContext *txc)
   txc->state = TransContext::STATE_WAL_CLEANUP;
   txc->osr->qcond.notify_all();
   wal_cleanup_queue.push_back(txc);
+
+  _op_queue_release_wal_throttle(txc);
+
   // NOTE: do not wake up kv thread here; we don't when the wal
   // records get retired.  let that happen when the next batch is
   // committing of its own accord.  (Unless we are in journal replay
