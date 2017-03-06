@@ -1716,6 +1716,9 @@ private:
 
   vector<Cache*> cache_shards;
 
+  std::mutex osr_lock;            ///< protect osd_set
+  std::set<OpSequencer*> osr_set; ///< set of all OpSequencers
+
   std::atomic<uint64_t> nid_last = {0};
   std::atomic<uint64_t> nid_max = {0};
   std::atomic<uint64_t> blobid_last = {0};
@@ -1993,6 +1996,15 @@ public:
     f->open_object_section("perf_counters");
     logger->dump_formatted(f, false);
     f->close_section();
+  }
+
+  void register_osr(OpSequencer *osr) {
+    std::lock_guard<std::mutex> l(osr_lock);
+    osr_set.insert(osr);
+  }
+  void unregister_osr(OpSequencer *osr) {
+    std::lock_guard<std::mutex> l(osr_lock);
+    osr_set.erase(osr);
   }
 
 public:

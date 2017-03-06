@@ -7784,7 +7784,7 @@ int BlueStore::_wal_replay()
 {
   dout(10) << __func__ << " start" << dendl;
   wal_replaying = true;
-  OpSequencerRef osr = new OpSequencer(cct);
+  OpSequencerRef osr = new OpSequencer(cct, this);
   int count = 0;
   KeyValueDB::Iterator it = db->get_iterator(PREFIX_WAL);
   for (it->lower_bound(string()); it->valid(); it->next(), ++count) {
@@ -7845,7 +7845,7 @@ int BlueStore::queue_transactions(
     osr = static_cast<OpSequencer *>(posr->p.get());
     dout(10) << __func__ << " existing " << osr << " " << *osr << dendl;
   } else {
-    osr = new OpSequencer(cct);
+    osr = new OpSequencer(cct, this);
     osr->parent = posr;
     posr->p = osr;
     dout(10) << __func__ << " new " << osr << " " << *osr << dendl;
