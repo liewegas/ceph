@@ -1755,7 +1755,7 @@ private:
 
   uint64_t max_alloc_size = 0; ///< maximum allocation unit (power of 2)
 
-  bool sync_wal_apply;	  ///< see config option bluestore_sync_wal_apply
+  bool sync_wal_apply = false; ///< see config option bluestore_sync_wal_apply
 
   std::atomic<Compressor::CompressionMode> comp_mode = {Compressor::COMP_NONE}; ///< compression mode
   CompressorRef compressor;
@@ -1815,6 +1815,7 @@ private:
   int _write_fsid();
   void _close_fsid();
   void _set_alloc_sizes();
+  void _set_sync_wal_apply();
   int _open_bdev(bool create);
   void _close_bdev();
   int _open_db(bool create);

@@ -3140,7 +3140,7 @@ BlueStore::BlueStore(CephContext *cct, const string& path)
     wal_tp(cct,
 	   "BlueStore::wal_tp",
            "tp_wal",
-	   cct->_conf->bluestore_sync_wal_apply ? 0 : cct->_conf->bluestore_wal_threads,
+	   cct->_conf->bluestore_wal_threads,
 	   "bluestore_wal_threads"),
     wal_wq(this,
 	     cct->_conf->bluestore_wal_thread_timeout,
@@ -3152,7 +3152,6 @@ BlueStore::BlueStore(CephContext *cct, const string& path)
     logger(NULL),
     debug_read_error_lock("BlueStore::debug_read_error_lock"),
     csum_type(Checksummer::CSUM_CRC32C),
-    sync_wal_apply(cct->_conf->bluestore_sync_wal_apply),
     mempool_thread(this)
 {
   _init_logger();
@@ -3196,7 +3195,7 @@ BlueStore::BlueStore(CephContext *cct,
     wal_tp(cct,
 	   "BlueStore::wal_tp",
            "tp_wal",
-	   cct->_conf->bluestore_sync_wal_apply ? 0 : cct->_conf->bluestore_wal_threads,
+	   cct->_conf->bluestore_wal_threads,
 	   "bluestore_wal_threads"),
     wal_wq(this,
 	     cct->_conf->bluestore_wal_thread_timeout,
@@ -3210,7 +3209,6 @@ BlueStore::BlueStore(CephContext *cct,
     csum_type(Checksummer::CSUM_CRC32C),
     min_alloc_size(_min_alloc_size),
     min_alloc_size_order(ctz(_min_alloc_size)),
-    sync_wal_apply(cct->_conf->bluestore_sync_wal_apply),
     mempool_thread(this)
 {
   _init_logger();
@@ -3259,6 +3257,8 @@ const char **BlueStore::get_tracked_conf_keys() const
     "bluestore_compression_max_blob_size",
     "bluestore_max_alloc_size",
     "bluestore_prefer_wal_size",
+    "bluestore_sync_wal_apply_ssd",
+    "bluestore_sync_wal_apply_hdd",
     NULL
   };
   return KEYS;
@@ -3281,6 +3281,13 @@ void BlueStore::handle_conf_change(const struct md_config_t *conf,
     if (bdev) {
       // only after startup
       _set_alloc_sizes();
+    }
+  }
+  if (changed.count("bluestore_sync_wal_apply_hdd") ||
+      changed.count("bluestore_sync_wal_apply_ssd")) {
+    if (bdev) {
+      // only after startup
+      _set_sync_wal_apply();
     }
   }
 }
@@ -3633,6 +3640,16 @@ void BlueStore::_set_alloc_sizes(void)
 	   << std::dec << " order " << min_alloc_size_order
 	   << " max_alloc_size 0x" << std::hex << max_alloc_size
 	   << std::dec << dendl;
+}
+
+void BlueStore::_set_sync_wal_apply()
+{
+  if (bdev->is_rotational()) {
+    sync_wal_apply = cct->_conf->bluestore_sync_wal_apply_hdd;
+  } else {
+    sync_wal_apply = cct->_conf->bluestore_sync_wal_apply_ssd;
+  }
+  dout(10) << __func__ << " sync_wal_apply = " << (int)sync_wal_apply << dendl;
 }
 
 int BlueStore::_open_bdev(bool create)
@@ -4622,6 +4639,7 @@ int BlueStore::mkfs()
       }
     }
     _set_alloc_sizes();
+    _set_sync_wal_apply();
     {
       bufferlist bl;
       ::encode((uint64_t)min_alloc_size, bl);
@@ -6999,6 +7017,7 @@ int BlueStore::_open_super_meta()
 	     << std::dec << dendl;
   }
   _set_alloc_sizes();
+  _set_sync_wal_apply();
 
   return 0;
 }
