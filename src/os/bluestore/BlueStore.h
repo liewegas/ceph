@@ -1618,7 +1618,9 @@ public:
 	wal_queue.push_back(*i->osr);
       }
       i->osr->wal_q.push_back(*i);
-      return true;
+      return
+	store->wal_replaying ||
+	(int)wal_queue.size() >= g_conf->bluestore_wal_thread_batch;
     }
     void _dequeue(TransContext *p) {
       assert(0 == "not needed, not implemented");

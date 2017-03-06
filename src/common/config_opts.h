@@ -1103,6 +1103,7 @@ OPTION(bluestore_sync_submit_transaction, OPT_BOOL, false) // submit kv txn in q
 OPTION(bluestore_sync_wal_apply_hdd, OPT_BOOL, false)  // submit wal aios from kv thread (hdd)
 OPTION(bluestore_sync_wal_apply_ssd, OPT_BOOL, true) // submit wal aios from kv thread (ssd)
 OPTION(bluestore_wal_threads, OPT_INT, 1)
+OPTION(bluestore_wal_thread_batch, OPT_INT, 4)
 OPTION(bluestore_wal_thread_timeout, OPT_INT, 30)
 OPTION(bluestore_wal_thread_suicide_timeout, OPT_INT, 120)
 OPTION(bluestore_max_ops, OPT_U64, 512)

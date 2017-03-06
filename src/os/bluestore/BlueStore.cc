@@ -2900,6 +2900,9 @@ BlueStore::BlobRef BlueStore::ExtentMap::split_blob(
 void BlueStore::Onode::flush()
 {
   if (flushing_count) {
+    // make sure wal thread is awake (it may be batching)
+    c->store->wal_wq.wake();
+
     std::unique_lock<std::mutex> l(flush_lock);
     ldout(c->store->cct, 20) << __func__ << " " << flush_txns << dendl;
     while (!flush_txns.empty())
