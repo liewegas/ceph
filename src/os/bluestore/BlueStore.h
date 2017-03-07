@@ -1628,7 +1628,7 @@ public:
       }
       i->osr->wal_q.push_back(*i);
       return
-	store->wal_replaying ||
+	store->wal_force_cleanup ||
 	(int)wal_queue.size() >= g_conf->bluestore_wal_thread_batch;
     }
     void _dequeue(TransContext *p) {
@@ -1734,7 +1734,7 @@ private:
   std::atomic<uint64_t> wal_seq = {0};
   ThreadPool wal_tp;
   WALWQ wal_wq;
-  bool wal_replaying = false;
+  bool wal_force_cleanup = false;
 
   int m_finisher_num;
   vector<Finisher*> finishers;
@@ -1971,7 +1971,8 @@ public:
 
   int mount() override;
   int umount() override;
-  void _sync();
+
+  void _flush_all();
 
   int fsck(bool deep) override;
 

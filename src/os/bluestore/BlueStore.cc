@@ -4846,7 +4846,7 @@ int BlueStore::umount()
   assert(mounted);
   dout(1) << __func__ << dendl;
 
-  _sync();
+  _flush_all();
 
   mempool_thread.shutdown();
 
@@ -5440,19 +5440,24 @@ int BlueStore::fsck(bool deep)
   return errors;
 }
 
-void BlueStore::_sync()
+void BlueStore::_flush_all()
 {
   dout(10) << __func__ << dendl;
 
-  // flush aios in flight
-  bdev->flush();
-
-  std::unique_lock<std::mutex> l(kv_lock);
-  while (!kv_committing.empty() ||
-	 !kv_queue.empty()) {
-    dout(20) << " waiting for kv to commit" << dendl;
-    kv_sync_cond.wait(l);
+  // WARNING: we make a (somewhat sloppy) assumption here that
+  // no OpSequencers will be created or destroyed for the duration
+  // of this method.
+  set<OpSequencer*> s;
+  {
+    std::lock_guard<std::mutex> l(osr_lock);
+    s = osr_set;
   }
+  wal_force_cleanup = true;
+  for (auto osr : s) {
+    dout(20) << __func__ << " flush " << osr << dendl;
+    osr->drain();
+  }
+  wal_force_cleanup = false;
 
   dout(10) << __func__ << " done" << dendl;
 }
@@ -7748,7 +7753,7 @@ int BlueStore::_wal_finish(TransContext *txc)
   // records get retired.  let that happen when the next batch is
   // committing of its own accord.  (Unless we are in journal replay
   // mode!)
-  if (wal_replaying)
+  if (wal_force_cleanup)
     kv_cond.notify_one();
   return 0;
 }
@@ -7783,7 +7788,7 @@ int BlueStore::_do_wal_op(TransContext *txc, bluestore_wal_op_t& wo)
 int BlueStore::_wal_replay()
 {
   dout(10) << __func__ << " start" << dendl;
-  wal_replaying = true;
+  wal_force_cleanup = true;
   OpSequencerRef osr = new OpSequencer(cct, this);
   int count = 0;
   KeyValueDB::Iterator it = db->get_iterator(PREFIX_WAL);
@@ -7809,7 +7814,7 @@ int BlueStore::_wal_replay()
   dout(20) << __func__ << " draining osr" << dendl;
   osr->drain();
   dout(10) << __func__ << " completed " << count << " events" << dendl;
-  wal_replaying = false;
+  wal_force_cleanup = false;
   return 0;
 }
 
