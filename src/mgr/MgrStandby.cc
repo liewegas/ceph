@@ -134,7 +134,7 @@ int MgrStandby::init()
   client.init();
   timer.init();
 
-  send_beacon();
+  tick();
 
   dout(4) << "Complete." << dendl;
   return 0;
@@ -154,10 +154,16 @@ void MgrStandby::send_beacon()
                                  addr,
                                  available);
                                  
-  monc.send_mon_message(m);
-  timer.add_event_after(g_conf->mgr_beacon_period, new FunctionContext(
+  monc->send_mon_message(m);
+}
+
+void MgrStandby::tick()
+{
+  send_beacon();
+
+  timer.add_event_after(g_conf->mgr_tick_period, new FunctionContext(
         [this](int r){
-          send_beacon();
+          tick();
         }
   )); 
 }
