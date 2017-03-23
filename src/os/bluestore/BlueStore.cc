@@ -3214,6 +3214,7 @@ BlueStore::BlueStore(CephContext *cct, const string& path)
 		       cct->_conf->bluestore_max_bytes +
 		       cct->_conf->bluestore_deferred_max_bytes),
     kv_sync_thread(this),
+    kv_finalize_thread(this),
     mempool_thread(this)
 {
   _init_logger();
@@ -3245,6 +3246,7 @@ BlueStore::BlueStore(CephContext *cct,
 		       cct->_conf->bluestore_max_bytes +
 		       cct->_conf->bluestore_deferred_max_bytes),
     kv_sync_thread(this),
+    kv_finalize_thread(this),
     min_alloc_size(_min_alloc_size),
     min_alloc_size_order(ctz(_min_alloc_size)),
     mempool_thread(this)
@@ -4844,6 +4846,7 @@ int BlueStore::mount()
     f->start();
   }
   kv_sync_thread.create("bstore_kv_sync");
+  kv_finalize_thread.create("bstore_kv_final");
 
   r = _deferred_replay();
   if (r < 0)
@@ -7583,6 +7586,10 @@ void BlueStore::_osr_drain_all()
     std::lock_guard<std::mutex> l(kv_lock);
     kv_cond.notify_one();
   }
+  {
+    std::lock_guard<std::mutex> l(kv_finalize_lock);
+    kv_finalize_cond.notify_one();
+  }
   for (auto osr : s) {
     dout(20) << __func__ << " drain " << osr << dendl;
     osr->drain();
@@ -7799,11 +7806,83 @@ void BlueStore::_kv_sync_thread()
 	logger->tinc(l_bluestore_kv_commit_lat, dur_kv);
 	logger->tinc(l_bluestore_kv_lat, dur);
       }
-      while (!kv_committing.empty()) {
-	TransContext *txc = kv_committing.front();
+
+      if (bluefs) {
+	if (!bluefs_gift_extents.empty()) {
+	  _commit_bluefs_freespace(bluefs_gift_extents);
+	}
+	for (auto p = bluefs_extents_reclaiming.begin();
+	     p != bluefs_extents_reclaiming.end();
+	     ++p) {
+	  dout(20) << __func__ << " releasing old bluefs 0x" << std::hex
+		   << p.get_start() << "~" << p.get_len() << std::dec
+		   << dendl;
+	  alloc->release(p.get_start(), p.get_len());
+	}
+	bluefs_extents_reclaiming.clear();
+      }
+
+      {
+	std::unique_lock<std::mutex> m(kv_finalize_lock);
+	if (kv_committing_to_finalize.empty()) {
+	  kv_committing_to_finalize.swap(kv_committing);
+	} else {
+	  kv_committing_to_finalize.insert(
+	    kv_committing_to_finalize.end(),
+	    kv_committing.begin(),
+	    kv_committing.end());
+	  kv_committing.clear();
+	}
+	if (deferred_stable_to_finalize.empty()) {
+	  deferred_stable_to_finalize.swap(deferred_stable);
+	} else {
+	  deferred_stable_to_finalize.insert(
+	    deferred_stable_to_finalize.end(),
+	    deferred_stable.begin(),
+	    deferred_stable.end());
+          deferred_stable.clear();
+	}
+	kv_finalize_cond.notify_one();
+      }
+
+      l.lock();
+      // previously deferred "done" are now "stable" by virtue of this
+      // commit cycle.
+      deferred_stable_queue.swap(deferred_done);
+    }
+  }
+  dout(10) << __func__ << " finish" << dendl;
+}
+
+void BlueStore::_kv_finalize_thread()
+{
+  deque<TransContext*> deferred_stable, kv_committed;
+  dout(10) << __func__ << " start" << dendl;
+  std::unique_lock<std::mutex> l(kv_finalize_lock);
+  while (true) {
+    assert(kv_committed.empty());
+    assert(deferred_stable.empty());
+    if (kv_committing_to_finalize.empty() &&
+	deferred_stable_to_finalize.empty()) {
+      if (kv_stop)
+	break;
+      dout(20) << __func__ << " sleep" << dendl;
+      kv_sync_cond.notify_all();
+      kv_finalize_cond.wait(l);
+      dout(20) << __func__ << " wake" << dendl;
+    } else {
+      kv_committed.swap(kv_committing_to_finalize);
+      deferred_stable.swap(deferred_stable_to_finalize);
+      kv_finalize_cond.notify_one();
+      l.unlock();
+      dout(20) << __func__ << " kv_committed " << kv_committed << dendl;
+      dout(20) << __func__ << " deferred_stable " << deferred_stable << dendl;
+
+      while (!kv_committed.empty()) {
+	TransContext *txc = kv_committed.front();
 	assert(txc->state == TransContext::STATE_KV_SUBMITTED);
 	_txc_state_proc(txc);
-	kv_committing.pop_front();
+	kv_committed.pop_front();
       }
       while (!deferred_stable.empty()) {
 	TransContext *txc = deferred_stable.front();
@@ -7823,25 +7902,7 @@ void BlueStore::_kv_sync_thread()
       // this is as good a place as any ...
       _reap_collections();
 
-      if (bluefs) {
-	if (!bluefs_gift_extents.empty()) {
-	  _commit_bluefs_freespace(bluefs_gift_extents);
-	}
-	for (auto p = bluefs_extents_reclaiming.begin();
-	     p != bluefs_extents_reclaiming.end();
-	     ++p) {
-	  dout(20) << __func__ << " releasing old bluefs 0x" << std::hex
-		   << p.get_start() << "~" << p.get_len() << std::dec
-		   << dendl;
-	  alloc->release(p.get_start(), p.get_len());
-	}
-	bluefs_extents_reclaiming.clear();
-      }
-
       l.lock();
-      // previously deferred "done" are now "stable" by virtue of this
-      // commit cycle.
-      deferred_stable_queue.swap(deferred_done);
     }
   }
   dout(10) << __func__ << " finish" << dendl;
