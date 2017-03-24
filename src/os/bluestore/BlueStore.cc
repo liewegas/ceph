@@ -7509,20 +7509,20 @@ void BlueStore::_txc_committed_kv(TransContext *txc)
     txc->onreadable_sync->complete(0);
     txc->onreadable_sync = NULL;
   }
-  unsigned n = txc->osr->parent->shard_hint.hash_to_shard(m_finisher_num);
   if (txc->oncommit) {
     logger->tinc(l_bluestore_commit_lat, ceph_clock_now() - txc->start);
-    finishers[n]->queue(txc->oncommit);
+    txc->oncommit->complete(0);
     txc->oncommit = NULL;
   }
   if (txc->onreadable) {
-    finishers[n]->queue(txc->onreadable);
+    txc->onreadable->complete(0);
     txc->onreadable = NULL;
   }
-
-  if (!txc->oncommits.empty()) {
-    finishers[n]->queue(txc->oncommits);
+  for (auto c : txc->oncommits) {
+    c->complete(0);
   }
+  txc->oncommits.clear();
+
   throttle_ops.put(txc->ops);
   throttle_bytes.put(txc->bytes);
 }
