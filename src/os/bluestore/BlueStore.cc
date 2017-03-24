@@ -7522,9 +7522,6 @@ void BlueStore::_txc_committed_kv(TransContext *txc)
     c->complete(0);
   }
   txc->oncommits.clear();
-
-  throttle_ops.put(txc->ops);
-  throttle_bytes.put(txc->bytes);
 }
 
 void BlueStore::_txc_finish(TransContext *txc)
@@ -7816,11 +7813,12 @@ void BlueStore::_kv_sync_thread()
 	  }
 	}
       }
-      if (num_aios) {
-	for (auto txc : kv_committing) {
-	  if (txc->had_ios) {
-	    --txc->osr->txc_with_unstable_io;
-	  }
+      uint64_t ops = 0, bytes = 0;
+      for (auto txc : kv_committing) {
+	ops += txc->ops;
+	bytes += txc->bytes;
+	if (txc->had_ios) {
+	  --txc->osr->txc_with_unstable_io;
 	}
       }
 
@@ -7898,6 +7896,10 @@ void BlueStore::_kv_sync_thread()
 	}
 	bluefs_extents_reclaiming.clear();
       }
+
+      // release throttle now that they are committed
+      throttle_ops.put(ops);
+      throttle_bytes.put(bytes);
 
       {
 	std::unique_lock<std::mutex> m(kv_finalize_lock);
