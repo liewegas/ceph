@@ -215,12 +215,12 @@ bool ReplicatedBackend::handle_message(
   }
 
   case MSG_OSD_REPOP: {
-    sub_op_modify(op);
+    do_repop(op);
     return true;
   }
 
   case MSG_OSD_REPOPREPLY: {
-    sub_op_modify_reply(op);
+    do_repop_reply(op);
     return true;
   }
 
@@ -621,7 +621,7 @@ void ReplicatedBackend::op_commit(
   }
 }
 
-void ReplicatedBackend::sub_op_modify_reply(OpRequestRef op)
+void ReplicatedBackend::do_repop_reply(OpRequestRef op)
 {
   static_cast<MOSDRepOpReply*>(op->get_nonconst_req())->finish_decode();
   const MOSDRepOpReply *r = static_cast<const MOSDRepOpReply *>(op->get_req());
@@ -1045,7 +1045,7 @@ void ReplicatedBackend::issue_op(
 }
 
 // sub op modify
-void ReplicatedBackend::sub_op_modify(OpRequestRef op)
+void ReplicatedBackend::do_repop(OpRequestRef op)
 {
   static_cast<MOSDRepOp*>(op->get_nonconst_req())->finish_decode();
   const MOSDRepOp *m = static_cast<const MOSDRepOp *>(op->get_req());

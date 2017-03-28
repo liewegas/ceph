@@ -403,8 +403,8 @@ private:
     ObjectStore::Transaction &op_t);
   void op_applied(InProgressOp *op);
   void op_commit(InProgressOp *op);
-  void sub_op_modify_reply(OpRequestRef op);
-  void sub_op_modify(OpRequestRef op);
+  void do_repop_reply(OpRequestRef op);
+  void do_repop(OpRequestRef op);
 
   struct RepModify {
     OpRequestRef op;
