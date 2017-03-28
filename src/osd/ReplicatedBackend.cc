@@ -66,7 +66,7 @@ struct ReplicatedBackend::C_OSD_RepModifyApply : public Context {
   C_OSD_RepModifyApply(ReplicatedBackend *pg, RepModifyRef r)
     : pg(pg), rm(r) {}
   void finish(int r) override {
-    pg->sub_op_modify_applied(rm);
+    pg->repop_applied(rm);
   }
 };
 
@@ -76,7 +76,7 @@ struct ReplicatedBackend::C_OSD_RepModifyCommit : public Context {
   C_OSD_RepModifyCommit(ReplicatedBackend *pg, RepModifyRef r)
     : pg(pg), rm(r) {}
   void finish(int r) override {
-    pg->sub_op_modify_commit(rm);
+    pg->repop_commit(rm);
   }
 };
 
@@ -1132,7 +1132,7 @@ void ReplicatedBackend::do_repop(OpRequestRef op)
   // op is cleaned up by oncommit/onapply when both are executed
 }
 
-void ReplicatedBackend::sub_op_modify_applied(RepModifyRef rm)
+void ReplicatedBackend::repop_applied(RepModifyRef rm)
 {
   rm->op->mark_event("sub_op_applied");
   rm->applied = true;
@@ -1173,7 +1173,7 @@ void ReplicatedBackend::sub_op_modify_applied(RepModifyRef rm)
   parent->op_applied(version);
 }
 
-void ReplicatedBackend::sub_op_modify_commit(RepModifyRef rm)
+void ReplicatedBackend::repop_commit(RepModifyRef rm)
 {
   rm->op->mark_commit_sent();
   rm->committed = true;

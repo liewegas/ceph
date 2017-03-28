@@ -423,8 +423,8 @@ private:
   struct C_OSD_RepModifyApply;
   struct C_OSD_RepModifyCommit;
 
-  void sub_op_modify_applied(RepModifyRef rm);
-  void sub_op_modify_commit(RepModifyRef rm);
+  void repop_applied(RepModifyRef rm);
+  void repop_commit(RepModifyRef rm);
   bool scrub_supported() override { return true; }
   bool auto_repair_supported() const override { return false; }
 
