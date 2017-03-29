@@ -58,7 +58,7 @@ extern "C" {
 #include <vector>
 #include <iostream>
 #include <iomanip>
-
+#include <boost/intrusive/list.hpp>
 using namespace std;
 
 #include "include/unordered_map.h"
@@ -107,6 +107,17 @@ inline ostream& operator<<(ostream& out, const vector<A,Alloc>& v) {
 }
 template<class A, class Alloc>
 inline ostream& operator<<(ostream& out, const deque<A,Alloc>& v) {
+  out << "<";
+  for (auto p = v.begin(); p != v.end(); ++p) {
+    if (p != v.begin()) out << ",";
+    out << *p;
+  }
+  out << ">";
+  return out;
+}
+
+template<class A, class H>
+inline ostream& operator<<(ostream& out, const boost::intrusive::list<A,H>& v) {
   out << "<";
   for (auto p = v.begin(); p != v.end(); ++p) {
     if (p != v.begin()) out << ",";
