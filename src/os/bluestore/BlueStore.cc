@@ -7209,10 +7209,10 @@ void BlueStore::_txc_state_proc(TransContext *txc)
       }
       {
 	std::lock_guard<std::mutex> l(kv_lock);
-	kv_queue.push_back(txc);
+	kv_queue.push_back(*txc);
 	kv_cond.notify_one();
 	if (txc->state != TransContext::STATE_KV_SUBMITTED) {
-	  kv_queue_unsubmitted.push_back(txc);
+	  kv_queue_unsubmitted.push_back(*txc);
 	  ++txc->osr->kv_committing_serially;
 	}
       }
@@ -7658,8 +7658,16 @@ void BlueStore::_osr_unregister_all()
   }
 }
 
+ostream& operator<<(ostream& out, const BlueStore::TransContext& tc) {
+  out << &tc;
+  return out;
+}
+
 void BlueStore::_kv_sync_thread()
 {
+  commit_queue_t kv_committing; 	  // currently syncing
+  deferred_queue_t deferred_stable_queue; // deferred ios done + stable
+
   dout(10) << __func__ << " start" << dendl;
   std::unique_lock<std::mutex> l(kv_lock);
   while (true) {
@@ -7674,8 +7682,8 @@ void BlueStore::_kv_sync_thread()
       kv_cond.wait(l);
       dout(20) << __func__ << " wake" << dendl;
     } else {
-      deque<TransContext*> kv_submitting;
-      deque<TransContext*> deferred_done, deferred_stable;
+      submit_queue_t kv_submitting;
+      deferred_queue_t deferred_done, deferred_stable;
       dout(20) << __func__ << " committing " << kv_queue.size()
 	       << " submitting " << kv_queue_unsubmitted.size()
 	       << " deferred done " << deferred_done_queue.size()
@@ -7694,8 +7702,8 @@ void BlueStore::_kv_sync_thread()
       dout(30) << __func__ << " deferred_stable " << deferred_stable << dendl;
 
       int num_aios = 0;
-      for (auto txc : kv_committing) {
-	if (txc->had_ios) {
+      for (auto& txc : kv_committing) {
+	if (txc.had_ios) {
 	  ++num_aios;
 	}
       }
@@ -7725,9 +7733,10 @@ void BlueStore::_kv_sync_thread()
 	bdev->flush();
 
 	// if we flush then deferred done are now deferred stable
-	deferred_stable.insert(deferred_stable.end(), deferred_done.begin(),
+	deferred_stable.splice(deferred_stable.end(),
+			       deferred_done,
+			       deferred_done.begin(),
 			       deferred_done.end());
-	deferred_done.clear();
       }
       utime_t after_flush = ceph_clock_now();
 
@@ -7741,7 +7750,7 @@ void BlueStore::_kv_sync_thread()
       uint64_t new_nid_max = 0, new_blobid_max = 0;
       if (nid_last + cct->_conf->bluestore_nid_prealloc/2 > nid_max) {
 	KeyValueDB::Transaction t =
-	  kv_submitting.empty() ? synct : kv_submitting.front()->t;
+	  kv_submitting.empty() ? synct : kv_submitting.front().t;
 	new_nid_max = nid_last + cct->_conf->bluestore_nid_prealloc;
 	bufferlist bl;
 	::encode(new_nid_max, bl);
@@ -7750,35 +7759,37 @@ void BlueStore::_kv_sync_thread()
       }
       if (blobid_last + cct->_conf->bluestore_blobid_prealloc/2 > blobid_max) {
 	KeyValueDB::Transaction t =
-	  kv_submitting.empty() ? synct : kv_submitting.front()->t;
+	  kv_submitting.empty() ? synct : kv_submitting.front().t;
 	new_blobid_max = blobid_last + cct->_conf->bluestore_blobid_prealloc;
 	bufferlist bl;
 	::encode(new_blobid_max, bl);
 	t->set(PREFIX_SUPER, "blobid_max", bl);
 	dout(10) << __func__ << " new_blobid_max " << new_blobid_max << dendl;
       }
-      for (auto txc : kv_submitting) {
-	assert(txc->state == TransContext::STATE_KV_QUEUED);
-	_txc_finalize_kv(txc, txc->t);
-	txc->log_state_latency(logger, l_bluestore_state_kv_queued_lat);
-	int r = db->submit_transaction(txc->t);
+      for (auto& txc : kv_submitting) {
+	assert(txc.state == TransContext::STATE_KV_QUEUED);
+	_txc_finalize_kv(&txc, txc.t);
+	txc.log_state_latency(logger, l_bluestore_state_kv_queued_lat);
+	int r = db->submit_transaction(txc.t);
 	assert(r == 0);
-	_txc_applied_kv(txc);
-	--txc->osr->kv_committing_serially;
-	txc->state = TransContext::STATE_KV_SUBMITTED;
-	if (txc->osr->kv_submitted_waiters) {
-	  std::lock_guard<std::mutex> l(txc->osr->qlock);
-	  if (txc->osr->_is_all_kv_submitted()) {
-	    txc->osr->qcond.notify_all();
+	_txc_applied_kv(&txc);
+	--txc.osr->kv_committing_serially;
+	txc.state = TransContext::STATE_KV_SUBMITTED;
+	if (txc.osr->kv_submitted_waiters) {
+	  std::lock_guard<std::mutex> l(txc.osr->qlock);
+	  if (txc.osr->_is_all_kv_submitted()) {
+	    txc.osr->qcond.notify_all();
 	  }
 	}
       }
+      // Required for clean TransContext release triggered from txc_state_proc
+      kv_submitting.clear(); 
       uint64_t ops = 0, bytes = 0;
-      for (auto txc : kv_committing) {
-	ops += txc->ops;
-	bytes += txc->bytes;
-	if (txc->had_ios) {
-	  --txc->osr->txc_with_unstable_io;
+      for (auto& txc : kv_committing) {
+	ops += txc.ops;
+	bytes += txc.bytes;
+	if (txc.had_ios) {
+	  --txc.osr->txc_with_unstable_io;
 	}
       }
 
@@ -7799,14 +7810,14 @@ void BlueStore::_kv_sync_thread()
       }
 
       // cleanup sync deferred keys
-      for (auto txc : deferred_stable) {
-	bluestore_deferred_transaction_t& wt = *txc->deferred_txn;
+      for (auto &txc : deferred_stable) {
+	bluestore_deferred_transaction_t& wt = *txc.deferred_txn;
 	if (!wt.released.empty()) {
 	  // kraken replay compat only
-	  txc->released = wt.released;
-	  dout(10) << __func__ << " deferred txn has released " << txc->released
-		   << " (we just upgraded from kraken) on " << txc << dendl;
-	  _txc_finalize_kv(txc, synct);
+	  txc.released = wt.released;
+	  dout(10) << __func__ << " deferred txn has released " << txc.released
+		   << " (we just upgraded from kraken) on " << &txc << dendl;
+	  _txc_finalize_kv(&txc, synct);
 	}
 	// cleanup the deferred
 	string key;
@@ -7863,24 +7874,16 @@ void BlueStore::_kv_sync_thread()
 
       {
 	std::unique_lock<std::mutex> m(kv_finalize_lock);
-	if (kv_committing_to_finalize.empty()) {
-	  kv_committing_to_finalize.swap(kv_committing);
-	} else {
-	  kv_committing_to_finalize.insert(
-	    kv_committing_to_finalize.end(),
-	    kv_committing.begin(),
-	    kv_committing.end());
-	  kv_committing.clear();
-	}
-	if (deferred_stable_to_finalize.empty()) {
-	  deferred_stable_to_finalize.swap(deferred_stable);
-	} else {
-	  deferred_stable_to_finalize.insert(
-	    deferred_stable_to_finalize.end(),
-	    deferred_stable.begin(),
-	    deferred_stable.end());
-          deferred_stable.clear();
-	}
+	kv_committing_to_finalize.splice(
+	  kv_committing_to_finalize.end(),
+	  kv_committing,
+	  kv_committing.begin(),
+	  kv_committing.end());
+	deferred_stable_to_finalize.splice(
+	  deferred_stable_to_finalize.end(),
+	  deferred_stable,
+	  deferred_stable.begin(),
+	  deferred_stable.end());
 	kv_finalize_cond.notify_one();
       }
 
@@ -7895,7 +7898,8 @@ void BlueStore::_kv_sync_thread()
 
 void BlueStore::_kv_finalize_thread()
 {
-  deque<TransContext*> deferred_stable, kv_committed;
+  deferred_queue_t deferred_stable;
+  commit_queue_t kv_committed;
   dout(10) << __func__ << " start" << dendl;
   std::unique_lock<std::mutex> l(kv_finalize_lock);
   while (true) {
@@ -7918,15 +7922,15 @@ void BlueStore::_kv_finalize_thread()
       dout(20) << __func__ << " deferred_stable " << deferred_stable << dendl;
 
       while (!kv_committed.empty()) {
-	TransContext *txc = kv_committed.front();
-	assert(txc->state == TransContext::STATE_KV_SUBMITTED);
-	_txc_state_proc(txc);
+	TransContext &txc = kv_committed.front();
+	assert(txc.state == TransContext::STATE_KV_SUBMITTED);
 	kv_committed.pop_front();
+	_txc_state_proc(&txc);
       }
       while (!deferred_stable.empty()) {
-	TransContext *txc = deferred_stable.front();
-	_txc_state_proc(txc);
+	TransContext &txc = deferred_stable.front();
 	deferred_stable.pop_front();
+	_txc_state_proc(&txc);
       }
 
       if (!deferred_aggressive) {
@@ -8047,7 +8051,7 @@ int BlueStore::_deferred_finish(TransContext *txc)
   bluestore_deferred_transaction_t& wt = *txc->deferred_txn;
   dout(20) << __func__ << " txc " << txc << " seq " << wt.seq << dendl;
 
-  OpSequencer::deferred_queue_t finished;
+  deferred_queue_t finished;
   {
     std::lock_guard<std::mutex> l(deferred_lock);
     assert(txc->osr->deferred_txc == txc);
@@ -8069,9 +8073,11 @@ int BlueStore::_deferred_finish(TransContext *txc)
     txc->osr->qcond.notify_all();
     throttle_deferred_ops.put(txc->ops);
     throttle_deferred_bytes.put(txc->bytes);
-    deferred_done_queue.push_back(txc);
   }
-  finished.clear();
+  deferred_done_queue.splice(deferred_done_queue.end(),
+			     finished,
+			     finished.begin(),
+			     finished.end());
 
   // in the normal case, do not bother waking up the kv thread; it will
   // catch us on the next commit anyway.
