@@ -3391,6 +3391,14 @@ void BlueStore::_init_logger()
 		 "Average kv_thread flush latency", "kflat");
   b.add_time_avg(l_bluestore_kv_commit_lat, "kv_commit_lat",
 		 "Average kv_thread commit latency");
+  b.add_time_avg(l_bluestore_kv_synct_lat, "kv_synct_lat",
+		 "Average kv_thread synct latency", "kv_synct_lat");
+  b.add_time_avg(l_bluestore_kv_finisher_lat, "kv_finisher_lat",
+		 "Average kv_thread finisher latency", "kv_finisher_lat");
+  b.add_time_avg(l_bluestore_kv_finisher_deferred_lat, "kv_finisher_deferred_lat",
+		 "Average kv_thread finisher deferred latency", "kv_finisher_deferred_lat");
+  b.add_time_avg(l_bluestore_kv_reap_lat, "kv_reap_lat",
+		 "Average kv_thread reap latency", "kv_reap_lat");
   b.add_time_avg(l_bluestore_kv_lat, "kv_lat",
 		 "Average kv_thread sync latency", "klat");
   b.add_time_avg(l_bluestore_state_prepare_lat, "state_prepare_lat",
@@ -3421,6 +3429,12 @@ void BlueStore::_init_logger()
 		 "Average submit latency", "slat");
   b.add_time_avg(l_bluestore_commit_lat, "commit_lat",
 		 "Average commit latency", "clat");
+  b.add_time_avg(l_bluestore_commit_finisher_lat, "commit_finisher_lat",
+		 "Average commit finisher latency", "cflat");
+  b.add_time_avg(l_bluestore_commit_throttle_lat, "commit_throttle_lat",
+		 "Average commit throttle latency", "ctlat");
+  b.add_time_avg(l_bluestore_txc_finish_lat, "txc_finish_lat",
+		 "Average txc finish latency", "tflat");
   b.add_time_avg(l_bluestore_read_lat, "read_lat",
 		 "Average read latency", "rlat");
   b.add_time_avg(l_bluestore_read_onode_meta_lat, "read_onode_meta_lat",
@@ -7460,6 +7474,7 @@ void BlueStore::_txc_committed_kv(TransContext *txc)
     txc->onreadable_sync->complete(0);
     txc->onreadable_sync = NULL;
   }
+  utime_t start = ceph_clock_now();
   if (txc->oncommit) {
     logger->tinc(l_bluestore_commit_lat, ceph_clock_now() - txc->start);
     txc->oncommit->complete(0);
@@ -7473,10 +7488,12 @@ void BlueStore::_txc_committed_kv(TransContext *txc)
     c->complete(0);
   }
   txc->oncommits.clear();
+  logger->tinc(l_bluestore_commit_finisher_lat, ceph_clock_now() - start);
 }
 
 void BlueStore::_txc_finish(TransContext *txc)
 {
+  utime_t start = ceph_clock_now();
   dout(20) << __func__ << " " << txc << " onodes " << txc->onodes << dendl;
   assert(txc->state == TransContext::STATE_FINISHING);
 
@@ -7501,6 +7518,8 @@ void BlueStore::_txc_finish(TransContext *txc)
     dout(10) << __func__ << " reaping empty zombie osr " << osr << dendl;
     osr->_unregister();
   }
+  logger->tinc(l_bluestore_txc_finish_lat, ceph_clock_now() - start);
+
 }
 
 void BlueStore::_txc_release_alloc(TransContext *txc)
@@ -7777,9 +7796,11 @@ void BlueStore::_kv_sync_thread()
 	synct->rm_single_key(PREFIX_DEFERRED, key);
       }
 
+      utime_t synct_start = ceph_clock_now();
       // submit synct synchronously (block and wait for it to commit)
       int r = db->submit_transaction_sync(synct);
       assert(r == 0);
+      logger->tinc(l_bluestore_kv_synct_lat, ceph_clock_now() - synct_start);
 
       if (new_nid_max) {
 	nid_max = new_nid_max;
@@ -7821,8 +7842,10 @@ void BlueStore::_kv_sync_thread()
       }
 
       // release throttle now that they are committed
+      utime_t throttle_start = ceph_clock_now();
       throttle_ops.put(ops);
       throttle_bytes.put(bytes);
+      logger->tinc(l_bluestore_commit_throttle_lat, ceph_clock_now() - throttle_start);
 
       {
 	std::unique_lock<std::mutex> m(kv_finalize_lock);
@@ -7880,12 +7903,16 @@ void BlueStore::_kv_finalize_thread()
       dout(20) << __func__ << " kv_committed " << kv_committed << dendl;
       dout(20) << __func__ << " deferred_stable " << deferred_stable << dendl;
 
+      utime_t finisher_start = ceph_clock_now();
       while (!kv_committed.empty()) {
 	TransContext *txc = kv_committed.front();
 	assert(txc->state == TransContext::STATE_KV_SUBMITTED);
 	_txc_state_proc(txc);
 	kv_committed.pop_front();
       }
+      logger->tinc(l_bluestore_kv_finisher_lat, ceph_clock_now() - finisher_start);
+
+      utime_t finisher_deferred_start = ceph_clock_now();
       while (!deferred_stable.empty()) {
 	TransContext *txc = deferred_stable.front();
 	_txc_state_proc(txc);
@@ -7900,9 +7927,13 @@ void BlueStore::_kv_finalize_thread()
 	  _deferred_try_submit();
 	}
       }
+      logger->tinc(l_bluestore_kv_finisher_deferred_lat, ceph_clock_now() - finisher_deferred_start);
+
+      utime_t reap_start = ceph_clock_now();
 
       // this is as good a place as any ...
       _reap_collections();
+      logger->tinc(l_bluestore_kv_reap_lat, ceph_clock_now() - reap_start);
 
       l.lock();
     }
