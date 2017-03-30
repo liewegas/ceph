@@ -33,7 +33,6 @@
 #include "include/unordered_map.h"
 #include "include/memory.h"
 #include "include/mempool.h"
-#include "common/Finisher.h"
 #include "common/perf_counters.h"
 #include "compressor/Compressor.h"
 #include "os/ObjectStore.h"
@@ -1764,9 +1763,6 @@ private:
   deferred_osr_queue_t deferred_queue; ///< osr's with deferred io pending
   int deferred_queue_size = 0;         ///< num txc's queued across all osrs
   atomic_bool deferred_aggressive = {false}; ///< aggressive wakeup of kv thread
-
-  int m_finisher_num = 1;
-  vector<Finisher*> finishers;
 
   KVSyncThread kv_sync_thread;
   std::mutex kv_lock;
