@@ -1,6 +1,10 @@
 // -*- mode:C++; tab-width:8; c-basic-offset:2; indent-tabs-mode:t -*-
 // vim: ts=8 sw=2 smarttab
-#include "gtest/gtest.h"
+
+#include <errno.h>
+#include <map>
+#include <sstream>
+#include <string>
 
 #include "mds/mdstypes.h"
 #include "include/buffer.h"
@@ -15,14 +19,9 @@
 #include "common/common_init.h"
 #include "common/Cond.h"
 #include "json_spirit/json_spirit.h"
-
-#include <errno.h>
-#include <map>
-#include <sstream>
-#include <string>
+#include "gtest/gtest.h"
 
 using namespace librados;
-using ceph::buffer;
 using std::map;
 using std::ostringstream;
 using std::string;
@@ -164,8 +163,10 @@ TEST(OSD, StaleRead) {
 int main(int argc, char **argv) {
   vector<const char*> args;
   argv_to_vec(argc, (const char **)argv, args);
+  env_to_vec(args);
 
-  global_init(NULL, args, CEPH_ENTITY_TYPE_CLIENT, CODE_ENVIRONMENT_UTILITY, 0);
+  auto cct = global_init(NULL, args, CEPH_ENTITY_TYPE_CLIENT,
+			 CODE_ENVIRONMENT_UTILITY, 0);
   common_init_finish(g_ceph_context);
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();

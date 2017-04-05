@@ -21,13 +21,15 @@ install(TARGETS
 add_executable(ceph_test_osd_stale_read
   ceph_test_osd_stale_read.cc
   )
+set_target_properties(ceph_test_osd_stale_read PROPERTIES COMPILE_FLAGS
+  ${UNITTEST_CXX_FLAGS})
 target_link_libraries(ceph_test_osd_stale_read
   librados
   global
   ${CMAKE_DL_LIBS}
   ${EXTRALIBS}
   ${CMAKE_DL_LIBS}
-  )
+  ${UNITTEST_LIBS})
 install(TARGETS
   ceph_test_osd_stale_read
   DESTINATION ${CMAKE_INSTALL_BINDIR})
