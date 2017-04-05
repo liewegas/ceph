@@ -285,8 +285,7 @@ OSDService::OSDService(OSD *osd) :
   epoch_lock("OSDService::epoch_lock"),
   boot_epoch(0), up_epoch(0), bind_epoch(0),
   hb_stamp_lock("OSDService::hb_stamp_lock"),
-  is_stopping_lock("OSDService::is_stopping_lock"),
-  state(NOT_STOPPING)
+  is_stopping_lock("OSDService::is_stopping_lock")
 #ifdef PG_DEBUG_REFS
   , pgid_lock("OSDService::pgid_lock")
 #endif
