@@ -1453,6 +1453,9 @@ public:
     list<CollectionRef> removed_collections; ///< colls we removed
 
     boost::intrusive::list_member_hook<> deferred_queue_item;
+    boost::intrusive::list_member_hook<> commit_item;
+    boost::intrusive::list_member_hook<> submit_item;
+
     bluestore_deferred_transaction_t *deferred_txn = nullptr; ///< if any
 
     interval_set<uint64_t> allocated, released;
@@ -1546,6 +1549,26 @@ public:
       modified_objects.erase(o);
     }
   };
+  typedef boost::intrusive::list<
+    TransContext,
+    boost::intrusive::member_hook<
+      TransContext,
+        boost::intrusive::list_member_hook<>,
+        &TransContext::deferred_queue_item> > deferred_queue_t;
+
+  typedef boost::intrusive::list<
+    TransContext,
+    boost::intrusive::member_hook<
+    TransContext,
+    boost::intrusive::list_member_hook<>,
+    &TransContext::commit_item> > commit_queue_t;
+
+  typedef boost::intrusive::list<
+    TransContext,
+    boost::intrusive::member_hook<
+    TransContext,
+    boost::intrusive::list_member_hook<>,
+    &TransContext::submit_item> > submit_queue_t;
 
   class OpSequencer : public Sequencer_impl {
   public:
@@ -1559,12 +1582,6 @@ public:
 	&TransContext::sequencer_item> > q_list_t;
     q_list_t q;  ///< transactions
 
-    typedef boost::intrusive::list<
-      TransContext,
-      boost::intrusive::member_hook<
-	TransContext,
-	boost::intrusive::list_member_hook<>,
-	&TransContext::deferred_queue_item> > deferred_queue_t;
     deferred_queue_t deferred_pending;      ///< waiting
     deferred_queue_t deferred_running;      ///< in flight ios
     interval_set<uint64_t> deferred_blocks; ///< blocks in flight
@@ -1762,23 +1779,23 @@ private:
   std::atomic<uint64_t> deferred_seq = {0};
   deferred_osr_queue_t deferred_queue; ///< osr's with deferred io pending
   int deferred_queue_size = 0;         ///< num txc's queued across all osrs
-  atomic_bool deferred_aggressive = {false}; ///< aggressive wakeup of kv thread
+  bool deferred_aggressive = false;    ///< aggressive wakeup of kv thread
 
   KVSyncThread kv_sync_thread;
   std::mutex kv_lock;
   std::condition_variable kv_cond, kv_sync_cond;
   bool kv_stop = false;
-  deque<TransContext*> kv_queue;             ///< ready, already submitted
-  deque<TransContext*> kv_queue_unsubmitted; ///< ready, need submit by kv thread
-  deque<TransContext*> kv_committing;        ///< currently syncing
-  deque<TransContext*> deferred_done_queue;    ///< deferred ios done
-  deque<TransContext*> deferred_stable_queue;  ///< deferred ios done + stable
+
+
+  commit_queue_t kv_queue;		///< ready, already submitted
+  submit_queue_t kv_queue_unsubmitted;	///< ready, need submit by kv thread
+  deferred_queue_t deferred_done_queue;    	///< deferred ios done
 
   KVFinalizeThread kv_finalize_thread;
   std::mutex kv_finalize_lock;
   std::condition_variable kv_finalize_cond;
-  deque<TransContext*> kv_committing_to_finalize;   ///< pending finalization
-  deque<TransContext*> deferred_stable_to_finalize; ///< pending finalization
+  commit_queue_t kv_committing_to_finalize;   	    ///< pending finalization
+  deferred_queue_t deferred_stable_to_finalize;	    ///< pending finalization
 
   PerfCounters *logger = nullptr;
 
