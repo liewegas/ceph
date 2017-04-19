@@ -1979,7 +1979,9 @@ class Prepare(object):
             formatter_class=argparse.RawDescriptionHelpFormatter,
             description=textwrap.fill(textwrap.dedent("""\
             If the --bluestore argument is given, a bluestore objectstore
-            will be used instead of the legacy filestore objectstore.
+            will be created.  If --filestore is provided, a legacy FileStore
+            objectstore will be created.  If neither is specified, we default
+            to BlueStore.
 
             When an entire device is prepared for bluestore, two
             partitions are created. The first partition is for metadata,
@@ -2032,8 +2034,11 @@ class Prepare(object):
     def factory(args):
         if args.bluestore:
             return PrepareBluestore(args)
-        else:
+        else if args.filestore:
             return PrepareFilestore(args)
+        else:
+            # default to bluestore
+            return PrepareBluestore(args)
 
     @staticmethod
     def main(args):
@@ -2079,6 +2084,11 @@ class PrepareBluestore(Prepare):
             '--bluestore',
             action='store_true', default=None,
             help='bluestore objectstore',
+        )
+        parser.add_argument(
+            '--filestore',
+            action='store_true', default=None,
+            help='filestore objectstore',
         )
         return parser
 
@@ -3072,7 +3082,7 @@ def mkfs(
                 '--setgroup', get_ceph_group(),
             ],
         )
-    else:
+    else if osd_type == 'filestore':
         ceph_osd_mkfs(
             [
                 'ceph-osd',
@@ -3089,6 +3099,8 @@ def mkfs(
                 '--setgroup', get_ceph_group(),
             ],
         )
+    else:
+        raise Error('unrecognized objectstore type %s' % osd_type)
 
 
 def auth_key(
