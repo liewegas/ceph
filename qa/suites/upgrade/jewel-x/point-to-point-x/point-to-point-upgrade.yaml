@@ -47,6 +47,10 @@ tasks:
 - print: "**** done v10.2.0 install"
 - ceph:
    fs: xfs
+   conf:
+     client:
+       debug ms: 1
+       debug objecter: 20
 - print: "**** done ceph xfs"
 - sequential:
    - workload
