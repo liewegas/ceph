@@ -137,7 +137,7 @@ class DaemonWatcher(object):
     BOLD_SEQ = "\033[1m"
     UNDERLINE_SEQ = "\033[4m"
 
-    def __init__(self, asok, statpats=None, min_prio=0):
+    def __init__(self, asok, statpats=None, min_prio=1):
         self.asok_path = asok
         self._colored = False
 
