@@ -1188,19 +1188,14 @@ static std::atomic_flag buffer_debug_lock = ATOMIC_FLAG_INIT;
   void buffer::list::iterator_impl<is_const>::copy_shallow(unsigned len,
 							   ptr &dest)
   {
-    if (!len) {
-      return;
-    }
-    if (p == ls->end())
-      throw end_of_buffer();
-    assert(p->length() > 0);
-    unsigned howmuch = p->length() - p_off;
-    if (howmuch < len) {
-      dest = create(len);
-      copy(len, dest.c_str());
-    } else {
-      dest = ptr(*p, p_off, len);
-      advance(len);
+    while (len) {
+      if (p == ls->end())
+	throw end_of_buffer();
+      assert(p->length() > 0);
+      unsigned l = MIN(p->length() - p_off, len);
+      dest = ptr(*p, p_off, l);
+      advance(l);
+      len -= l;
     }
   }
 
