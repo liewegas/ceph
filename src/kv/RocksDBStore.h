@@ -250,6 +250,7 @@ public:
   class RocksDBTransactionImpl : public KeyValueDB::TransactionImpl {
   public:
     rocksdb::WriteBatch bat;
+    string strBat;
     RocksDBStore *db;
 
     explicit RocksDBTransactionImpl(RocksDBStore *_db);
@@ -283,12 +284,16 @@ public:
       const string& prefix,
       const string& k,
       const bufferlist &bl) override;
+
+    void merge_from(KeyValueDB::Transaction) override;
+    void flush_batch();
   };
 
   KeyValueDB::Transaction get_transaction() override {
     return std::make_shared<RocksDBTransactionImpl>(this);
   }
 
+  int submit_transaction(const string& stransact);
   int submit_transaction(KeyValueDB::Transaction t) override;
   int submit_transaction_sync(KeyValueDB::Transaction t) override;
   int get(

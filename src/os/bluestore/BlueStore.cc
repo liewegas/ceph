@@ -7766,22 +7766,47 @@ void BlueStore::_kv_sync_thread()
 	t->set(PREFIX_SUPER, "blobid_max", bl);
 	dout(10) << __func__ << " new_blobid_max " << new_blobid_max << dendl;
       }
-      for (auto& txc : kv_submitting) {
-	assert(txc.state == TransContext::STATE_KV_QUEUED);
-	_txc_finalize_kv(&txc, txc.t);
-	txc.log_state_latency(logger, l_bluestore_state_kv_queued_lat);
-	int r = db->submit_transaction(txc.t);
+      auto end = kv_submitting.end();
+      int max_batch = cct->_conf->bluestore_max_contexts_per_kv_batch;
+      for (auto it = kv_submitting.begin(); it != end; ) {
+        auto iit = it;
+        auto& txc0 = *iit;
+
+	// handle txc0 out of the loop to prevent from merge_from() call
+        assert(txc0.state == TransContext::STATE_KV_QUEUED);
+        _txc_finalize_kv(&txc0, txc0.t);
+        txc0.log_state_latency(logger, l_bluestore_state_kv_queued_lat);
+        iit = it;
+        ++iit;
+
+        int pos = 1;
+	for(; pos < max_batch && iit != end; iit++ ) {
+          auto& txc = *iit;
+
+	  assert(txc.state == TransContext::STATE_KV_QUEUED);
+	  _txc_finalize_kv(&txc, txc.t);
+	  txc.log_state_latency(logger, l_bluestore_state_kv_queued_lat);
+
+	  txc0.t->merge_from(txc.t);
+          ++pos;
+        }
+	int r = db->submit_transaction(txc0.t);
 	assert(r == 0);
-	_txc_applied_kv(&txc);
-	--txc.osr->kv_committing_serially;
-	txc.state = TransContext::STATE_KV_SUBMITTED;
-	if (txc.osr->kv_submitted_waiters) {
-	  std::lock_guard<std::mutex> l(txc.osr->qlock);
-	  if (txc.osr->_is_all_kv_submitted()) {
-	    txc.osr->qcond.notify_all();
-	  }
+        for( auto iit2 = it; iit2 != iit; iit2++ ) {
+          auto& txc = *iit2;
+	  _txc_applied_kv(&txc);
+	  --txc.osr->kv_committing_serially;
+	  txc.state = TransContext::STATE_KV_SUBMITTED;
+	  if (txc.osr->kv_submitted_waiters) {
+	    std::lock_guard<std::mutex> l(txc.osr->qlock);
+	    if (txc.osr->_is_all_kv_submitted()) {
+	      txc.osr->qcond.notify_all();
+	    }
+          }
 	}
+	it = iit;
       }
+
       // Required for clean TransContext release triggered from txc_state_proc
       kv_submitting.clear(); 
       uint64_t ops = 0, bytes = 0;

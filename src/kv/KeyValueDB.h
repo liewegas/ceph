@@ -21,6 +21,8 @@ using std::string;
  */
 class KeyValueDB {
 public:
+  class TransactionImpl;
+  typedef ceph::shared_ptr< TransactionImpl > Transaction;
   class TransactionImpl {
   public:
     /// Set Keys
@@ -130,9 +132,12 @@ public:
       const bufferlist  &value     ///< [in] value to be merged into key
     ) { assert(0 == "Not implemented"); }
 
+    virtual void merge_from(KeyValueDB::Transaction) {
+      assert("Not implemented");
+    }
+
     virtual ~TransactionImpl() {}
   };
-  typedef ceph::shared_ptr< TransactionImpl > Transaction;
 
   /// create a new instance
   static KeyValueDB *create(CephContext *cct, const std::string& type,

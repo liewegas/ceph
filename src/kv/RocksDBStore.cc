@@ -16,6 +16,7 @@
 #include "rocksdb/slice.h"
 #include "rocksdb/cache.h"
 #include "rocksdb/filter_policy.h"
+//#include "rocksdb/write_batch_internal.h"
 #include "rocksdb/utilities/convenience.h"
 #include "rocksdb/merge_operator.h"
 using std::string;
@@ -450,6 +451,7 @@ int RocksDBStore::submit_transaction(KeyValueDB::Transaction t)
   _t->bat.Iterate(&bat_txc);
   *_dout << " Rocksdb transaction: " << bat_txc.seen << dendl;
   
+  _t->flush_batch();
   rocksdb::Status s = db->Write(woptions, &_t->bat);
   if (!s.ok()) {
     RocksWBHandler rocks_txc;
@@ -504,6 +506,7 @@ int RocksDBStore::submit_transaction_sync(KeyValueDB::Transaction t)
   _t->bat.Iterate(&bat_txc);
   *_dout << " Rocksdb transaction: " << bat_txc.seen << dendl;
 
+  _t->flush_batch();
   rocksdb::Status s = db->Write(woptions, &_t->bat);
   if (!s.ok()) {
     RocksWBHandler rocks_txc;
@@ -584,6 +587,7 @@ void RocksDBStore::RocksDBTransactionImpl::set(
   }
 }
 
+
 void RocksDBStore::RocksDBTransactionImpl::rmkey(const string &prefix,
 					         const string &k)
 {
@@ -652,6 +656,50 @@ void RocksDBStore::RocksDBTransactionImpl::merge(
     bat.Merge(rocksdb::Slice(key),
 	     rocksdb::Slice(val.c_str(), val.length()));
   }
+}
+
+//FIXME: ust a POC implementations, need proper handling for endianess
+inline uint32_t DecodeFixed32(const char* ptr)
+{
+  uint32_t result;
+  memcpy(&result, ptr, sizeof(result));  // gcc optimizes this to a plain load
+  return result;
+}
+
+inline void EncodeFixed32(char* buf, uint32_t value) {
+  memcpy(buf, &value, sizeof(value));
+}
+
+void RocksDBStore::RocksDBTransactionImpl::flush_batch()
+{
+  if (!strBat.empty()) {
+    bat = rocksdb::WriteBatch(strBat);
+    strBat.clear();
+  }
+}
+
+void RocksDBStore::RocksDBTransactionImpl::merge_from(
+  KeyValueDB::Transaction t)
+{
+  const int kHeader = 12;
+  const int kCountPos = 8;
+  const int preallocateSize = 1024 * 1024;
+  RocksDBTransactionImpl * _t =
+    static_cast<RocksDBTransactionImpl *>(t.get());
+
+  assert(strBat.size() == 0 || strBat.size() >= kHeader);
+  const string& s = _t->bat.Data();
+  if (s.empty()) {
+    return;
+  }
+  if (strBat.empty()) {
+    strBat.reserve(preallocateSize);
+    strBat = bat.Data();
+  }
+  int cnt = DecodeFixed32(s.c_str() + kCountPos);
+  cnt += DecodeFixed32(strBat.c_str() + kCountPos);
+  EncodeFixed32(&strBat.at(kCountPos), cnt);
+  strBat.append(s.c_str() + kHeader, s.size() - kHeader );
 }
 
 //gets will bypass RocksDB row cache, since it uses iterator

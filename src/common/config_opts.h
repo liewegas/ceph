@@ -1123,6 +1123,7 @@ OPTION(bluestore_debug_prefragment_max, OPT_INT, 1048576)
 OPTION(bluestore_debug_inject_read_err, OPT_BOOL, false)
 OPTION(bluestore_debug_randomize_serial_transaction, OPT_INT, 0)
 OPTION(bluestore_debug_omit_block_device_write, OPT_BOOL, false)
+OPTION(bluestore_max_contexts_per_kv_batch, OPT_INT, 64)
 
 OPTION(kstore_max_ops, OPT_U64, 512)
 OPTION(kstore_max_bytes, OPT_U64, 64*1024*1024)
