@@ -7879,7 +7879,6 @@ void BlueStore::_kv_finalize_thread()
     } else {
       kv_committed.swap(kv_committing_to_finalize);
       deferred_stable.swap(deferred_stable_to_finalize);
-      kv_finalize_cond.notify_one();
       l.unlock();
       dout(20) << __func__ << " kv_committed " << kv_committed << dendl;
       dout(20) << __func__ << " deferred_stable " << deferred_stable << dendl;
