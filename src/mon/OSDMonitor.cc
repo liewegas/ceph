@@ -873,7 +873,8 @@ void OSDMonitor::create_pending()
     dout(1) << __func__ << " setting backfillfull_ratio = "
 	    << pending_inc.new_backfillfull_ratio << dendl;
   }
-  if (!osdmap.test_flag(CEPH_OSDMAP_REQUIRE_LUMINOUS)) {
+  if (osdmap.get_epoch() > 0 &&
+      !osdmap.test_flag(CEPH_OSDMAP_REQUIRE_LUMINOUS)) {
     // transition full ratios from PGMap to OSDMap (on upgrade)
     float full_ratio = mon->pgservice->get_full_ratio();
     float nearfull_ratio = mon->pgservice->get_nearfull_ratio();
@@ -922,7 +923,8 @@ OSDMonitor::update_pending_pgs(const OSDMap::Incremental& inc)
     pending_creatings.pgs.erase(pg);
   }
   pending_created_pgs.clear();
-  if (!osdmap.test_flag(CEPH_OSDMAP_REQUIRE_LUMINOUS)) {
+  if (osdmap.get_epoch() &&
+      !osdmap.test_flag(CEPH_OSDMAP_REQUIRE_LUMINOUS)) {
     // PAXOS_PGMAP is less than PAXOS_OSDMAP, so PGMonitor::update_from_paxos()
     // should have prepared the latest pgmap if any
     mon->pgservice->maybe_add_creating_pgs(creating_pgs.last_scan_epoch,
@@ -1274,7 +1276,8 @@ void OSDMonitor::encode_pending(MonitorDBStore::TransactionRef t)
   if (mon->monmap->get_required_features().contains_all(
 	ceph::features::mon::FEATURE_LUMINOUS)) {
     auto pending_creatings = update_pending_pgs(pending_inc);
-    if (!osdmap.test_flag(CEPH_OSDMAP_REQUIRE_LUMINOUS)) {
+    if (osdmap.get_epoch() &&
+	!osdmap.test_flag(CEPH_OSDMAP_REQUIRE_LUMINOUS)) {
       dout(7) << __func__ << " in the middle of upgrading, "
 	      << " trimming pending creating_pgs using pgmap" << dendl;
       trim_creating_pgs(&pending_creatings, *mon->pgservice->get_pg_stat());
