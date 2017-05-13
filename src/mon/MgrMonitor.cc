@@ -36,11 +36,14 @@ static ostream& _prefix(std::ostream *_dout, Monitor *mon,
 
 
 class MgrPGStatService : public PGMap, public PGStatService {
-  PGMapDigest digest;
+  PGMap& parent;
 public:
-  void decode_digest(bufferlist& bl) {
-    auto p = bl.begin();
-    ::decode(digest, p);
+  MgrPGStatService() : PGMap(), PGStatService(),
+		    parent(*static_cast<PGMap*>(this)) {}
+  MgrPGStatService(const PGMap& o) : PGMap(o), PGStatService(),
+				  parent(*static_cast<PGMap*>(this)) {}
+  void reset(const PGMap& o) {
+    parent = o;
   }
 
   const pool_stat_t* get_pool_stat(int poolid) const {
@@ -343,7 +346,7 @@ bool MgrMonitor::preprocess_report(MonOpRequestRef op) { return false; }
 bool MgrMonitor::prepare_report(MonOpRequestRef op)
 {
   MMonMgrReport *m = static_cast<MMonMgrReport*>(op->get_req());
-  pgservice->decode_digest(m->get_data());
+  pgservice->reset(m->pg_map);
   return true;
 }
 

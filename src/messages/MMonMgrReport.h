@@ -35,6 +35,7 @@ private:
 
 public:
   bool needs_send = false;
+  PGMap pg_map;
   const char *get_type_name() const override { return "monmgrreport"; }
 
   void print(ostream& out) const override {
@@ -43,10 +44,14 @@ public:
 
   void encode_payload(uint64_t features) override {
     paxos_encode();
+    bufferlist pmb;
+    pg_map.encode(pmb);
+    payload.append(pmb);
   }
   void decode_payload() override {
     bufferlist::iterator p = payload.begin();
     paxos_decode(p);
+    ::decode(pg_map, p);
   }
 };
 
