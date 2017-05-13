@@ -96,6 +96,14 @@ void PGMapDigest::generate_test_instances(list<PGMapDigest*>& ls)
   ls.push_back(new PGMapDigest);
 }
 
+inline std::string percentify(const float& a) {
+  std::stringstream ss;
+  if (a < 0.01)
+    ss << "0";
+  else
+    ss << std::fixed << std::setprecision(2) << a;
+  return ss.str();
+}
 
 void PGMapDigest::print_summary(Formatter *f, ostream *out) const
 {
@@ -538,6 +546,256 @@ void PGMapDigest::pool_cache_io_rate_summary(Formatter *f, ostream *out,
     per_pool_sum_deltas_stamps.find(p->first);
   assert(ts != per_pool_sum_deltas_stamps.end());
   cache_io_rate_summary(f, out, p->second.first, ts->second);
+}
+
+void PGMapDigest::dump_pool_stats_full(
+  const OSDMap &osd_map,
+  stringstream *ss,
+  Formatter *f,
+  bool verbose) const
+{
+  TextTable tbl;
+
+  if (f) {
+    f->open_array_section("pools");
+  } else {
+    tbl.define_column("NAME", TextTable::LEFT, TextTable::LEFT);
+    tbl.define_column("ID", TextTable::LEFT, TextTable::LEFT);
+    if (verbose) {
+      tbl.define_column("QUOTA OBJECTS", TextTable::LEFT, TextTable::LEFT);
+      tbl.define_column("QUOTA BYTES", TextTable::LEFT, TextTable::LEFT);
+    }
+
+    tbl.define_column("USED", TextTable::LEFT, TextTable::RIGHT);
+    tbl.define_column("%USED", TextTable::LEFT, TextTable::RIGHT);
+    tbl.define_column("MAX AVAIL", TextTable::LEFT, TextTable::RIGHT);
+    tbl.define_column("OBJECTS", TextTable::LEFT, TextTable::RIGHT);
+    if (verbose) {
+      tbl.define_column("DIRTY", TextTable::LEFT, TextTable::RIGHT);
+      tbl.define_column("READ", TextTable::LEFT, TextTable::RIGHT);
+      tbl.define_column("WRITE", TextTable::LEFT, TextTable::RIGHT);
+      tbl.define_column("RAW USED", TextTable::LEFT, TextTable::RIGHT);
+    }
+  }
+
+  map<int,uint64_t> avail_by_rule;
+  for (map<int64_t,pg_pool_t>::const_iterator p = osd_map.get_pools().begin();
+       p != osd_map.get_pools().end(); ++p) {
+    int64_t pool_id = p->first;
+    if ((pool_id < 0) || (pg_pool_sum.count(pool_id) == 0))
+      continue;
+    const string& pool_name = osd_map.get_pool_name(pool_id);
+    const pool_stat_t &stat = pg_pool_sum.at(pool_id);
+
+    const pg_pool_t *pool = osd_map.get_pg_pool(pool_id);
+    int ruleno = osd_map.crush->find_rule(pool->get_crush_ruleset(),
+                                         pool->get_type(),
+                                         pool->get_size());
+    int64_t avail;
+    float raw_used_rate;
+    if (avail_by_rule.count(ruleno) == 0) {
+      avail = get_rule_avail(osd_map, ruleno);
+      if (avail < 0)
+	avail = 0;
+      avail_by_rule[ruleno] = avail;
+    } else {
+      avail = avail_by_rule[ruleno];
+    }
+    switch (pool->get_type()) {
+    case pg_pool_t::TYPE_REPLICATED:
+      avail /= pool->get_size();
+      raw_used_rate = pool->get_size();
+      break;
+    case pg_pool_t::TYPE_ERASURE:
+    {
+      auto& ecp =
+        osd_map.get_erasure_code_profile(pool->erasure_code_profile);
+      auto pm = ecp.find("m");
+      auto pk = ecp.find("k");
+      if (pm != ecp.end() && pk != ecp.end()) {
+	int k = atoi(pk->second.c_str());
+	int m = atoi(pm->second.c_str());
+	avail = avail * k / (m + k);
+	raw_used_rate = (float)(m + k) / k;
+      } else {
+	raw_used_rate = 0.0;
+      }
+    }
+    break;
+    default:
+      assert(0 == "unrecognized pool type");
+    }
+
+    if (f) {
+      f->open_object_section("pool");
+      f->dump_string("name", pool_name);
+      f->dump_int("id", pool_id);
+      f->open_object_section("stats");
+    } else {
+      tbl << pool_name
+          << pool_id;
+      if (verbose) {
+        if (pool->quota_max_objects == 0)
+          tbl << "N/A";
+        else
+          tbl << si_t(pool->quota_max_objects);
+
+        if (pool->quota_max_bytes == 0)
+          tbl << "N/A";
+        else
+          tbl << si_t(pool->quota_max_bytes);
+      }
+
+    }
+    dump_object_stat_sum(tbl, f, stat.stats.sum, avail, raw_used_rate, verbose, pool);
+    if (f)
+      f->close_section();  // stats
+    else
+      tbl << TextTable::endrow;
+
+    if (f)
+      f->close_section();  // pool
+  }
+  if (f)
+    f->close_section();
+  else {
+    assert(ss != nullptr);
+    *ss << "POOLS:\n";
+    tbl.set_indent(4);
+    *ss << tbl;
+  }
+}
+
+void PGMapDigest::dump_fs_stats(stringstream *ss, Formatter *f, bool verbose) const
+{
+  if (f) {
+    f->open_object_section("stats");
+    f->dump_int("total_bytes", osd_sum.kb * 1024ull);
+    f->dump_int("total_used_bytes", osd_sum.kb_used * 1024ull);
+    f->dump_int("total_avail_bytes", osd_sum.kb_avail * 1024ull);
+    if (verbose) {
+      f->dump_int("total_objects", pg_sum.stats.sum.num_objects);
+    }
+    f->close_section();
+  } else {
+    assert(ss != nullptr);
+    TextTable tbl;
+    tbl.define_column("SIZE", TextTable::LEFT, TextTable::RIGHT);
+    tbl.define_column("AVAIL", TextTable::LEFT, TextTable::RIGHT);
+    tbl.define_column("RAW USED", TextTable::LEFT, TextTable::RIGHT);
+    tbl.define_column("%RAW USED", TextTable::LEFT, TextTable::RIGHT);
+    if (verbose) {
+      tbl.define_column("OBJECTS", TextTable::LEFT, TextTable::RIGHT);
+    }
+    tbl << stringify(si_t(osd_sum.kb*1024))
+        << stringify(si_t(osd_sum.kb_avail*1024))
+        << stringify(si_t(osd_sum.kb_used*1024));
+    float used = 0.0;
+    if (osd_sum.kb > 0) {
+      used = ((float)osd_sum.kb_used / osd_sum.kb);
+    }
+    tbl << percentify(used*100);
+    if (verbose) {
+      tbl << stringify(si_t(pg_sum.stats.sum.num_objects));
+    }
+    tbl << TextTable::endrow;
+
+    *ss << "GLOBAL:\n";
+    tbl.set_indent(4);
+    *ss << tbl;
+  }
+}
+
+void PGMapDigest::dump_object_stat_sum(
+  TextTable &tbl, Formatter *f,
+  const object_stat_sum_t &sum, uint64_t avail,
+  float raw_used_rate, bool verbose,
+  const pg_pool_t *pool)
+{
+  float curr_object_copies_rate = 0.0;
+  if (sum.num_object_copies > 0)
+    curr_object_copies_rate = (float)(sum.num_object_copies - sum.num_objects_degraded) / sum.num_object_copies;
+
+  if (f) {
+    f->dump_int("kb_used", SHIFT_ROUND_UP(sum.num_bytes, 10));
+    f->dump_int("bytes_used", sum.num_bytes);
+    f->dump_unsigned("max_avail", avail);
+    f->dump_int("objects", sum.num_objects);
+    if (verbose) {
+      f->dump_int("quota_objects", pool->quota_max_objects);
+      f->dump_int("quota_bytes", pool->quota_max_bytes);
+      f->dump_int("dirty", sum.num_objects_dirty);
+      f->dump_int("rd", sum.num_rd);
+      f->dump_int("rd_bytes", sum.num_rd_kb * 1024ull);
+      f->dump_int("wr", sum.num_wr);
+      f->dump_int("wr_bytes", sum.num_wr_kb * 1024ull);
+      f->dump_int("raw_bytes_used", sum.num_bytes * raw_used_rate * curr_object_copies_rate);
+    }
+  } else {
+    tbl << stringify(si_t(sum.num_bytes));
+    float used = 0.0;
+    if (avail) {
+      used = sum.num_bytes * curr_object_copies_rate;
+      used /= used + avail;
+    } else if (sum.num_bytes) {
+      used = 1.0;
+    }
+    tbl << percentify(used*100);
+    tbl << si_t(avail);
+    tbl << sum.num_objects;
+    if (verbose) {
+      tbl << stringify(si_t(sum.num_objects_dirty))
+          << stringify(si_t(sum.num_rd))
+          << stringify(si_t(sum.num_wr))
+          << stringify(si_t(sum.num_bytes * raw_used_rate * curr_object_copies_rate));
+    }
+  }
+}
+
+int64_t PGMapDigest::get_rule_avail(const OSDMap& osdmap, int ruleno) const
+{
+  map<int,float> wm;
+  int r = osdmap.crush->get_rule_weight_osd_map(ruleno, &wm);
+  if (r < 0) {
+    return r;
+  }
+  if (wm.empty()) {
+    return 0;
+  }
+
+  float fratio;
+  if (osdmap.test_flag(CEPH_OSDMAP_REQUIRE_LUMINOUS) && osdmap.get_full_ratio() > 0) {
+    fratio = osdmap.get_full_ratio();
+  } else {
+    fratio = get_fallback_full_ratio();
+  }
+
+  int64_t min = -1;
+  for (map<int,float>::iterator p = wm.begin(); p != wm.end(); ++p) {
+    ceph::unordered_map<int32_t,osd_stat_t>::const_iterator osd_info =
+      osd_stat.find(p->first);
+    if (osd_info != osd_stat.end()) {
+      if (osd_info->second.kb == 0 || p->second == 0) {
+	// osd must be out, hence its stats have been zeroed
+	// (unless we somehow managed to have a disk with size 0...)
+	//
+	// (p->second == 0), if osd weight is 0, no need to
+	// calculate proj below.
+	continue;
+      }
+      double unusable = (double)osd_info->second.kb *
+	(1.0 - fratio);
+      double avail = MAX(0.0, (double)osd_info->second.kb_avail - unusable);
+      avail *= 1024.0;
+      int64_t proj = (int64_t)(avail / (double)p->second);
+      if (min < 0 || proj < min) {
+	min = proj;
+      }
+    } else {
+      dout(0) << "Cannot get stat of OSD " << p->first << dendl;
+    }
+  }
+  return min;
 }
 
 
@@ -2005,267 +2263,6 @@ void PGMap::dump_filtered_pg_stats(ostream& ss, set<pg_t>& pgs) const
 
   ss << tab;
 }
-
-int64_t PGMap::get_rule_avail(const OSDMap& osdmap, int ruleno) const
-{
-  map<int,float> wm;
-  int r = osdmap.crush->get_rule_weight_osd_map(ruleno, &wm);
-  if (r < 0) {
-    return r;
-  }
-  if (wm.empty()) {
-    return 0;
-  }
-
-  float fratio;
-  if (osdmap.test_flag(CEPH_OSDMAP_REQUIRE_LUMINOUS) && osdmap.get_full_ratio() > 0) {
-    fratio = osdmap.get_full_ratio();
-  } else if (full_ratio > 0) {
-    fratio = full_ratio;
-  } else {
-    // this shouldn't really happen
-    fratio = g_conf->mon_osd_full_ratio;
-    if (fratio > 1.0) fratio /= 100;
-  }
-
-  int64_t min = -1;
-  for (map<int,float>::iterator p = wm.begin(); p != wm.end(); ++p) {
-    ceph::unordered_map<int32_t,osd_stat_t>::const_iterator osd_info =
-      osd_stat.find(p->first);
-    if (osd_info != osd_stat.end()) {
-      if (osd_info->second.kb == 0 || p->second == 0) {
-	// osd must be out, hence its stats have been zeroed
-	// (unless we somehow managed to have a disk with size 0...)
-	//
-	// (p->second == 0), if osd weight is 0, no need to
-	// calculate proj below.
-	continue;
-      }
-      double unusable = (double)osd_info->second.kb *
-	(1.0 - fratio);
-      double avail = MAX(0.0, (double)osd_info->second.kb_avail - unusable);
-      avail *= 1024.0;
-      int64_t proj = (int64_t)(avail / (double)p->second);
-      if (min < 0 || proj < min) {
-	min = proj;
-      }
-    } else {
-      dout(0) << "Cannot get stat of OSD " << p->first << dendl;
-    }
-  }
-  return min;
-}
-
-inline std::string percentify(const float& a) {
-  std::stringstream ss;
-  if (a < 0.01)
-    ss << "0";
-  else
-    ss << std::fixed << std::setprecision(2) << a;
-  return ss.str();
-}
-
-void PGMap::dump_pool_stats(const OSDMap &osd_map, stringstream *ss,
-    Formatter *f, bool verbose) const
-{
-  TextTable tbl;
-
-  if (f) {
-    f->open_array_section("pools");
-  } else {
-    tbl.define_column("NAME", TextTable::LEFT, TextTable::LEFT);
-    tbl.define_column("ID", TextTable::LEFT, TextTable::LEFT);
-    if (verbose) {
-      tbl.define_column("QUOTA OBJECTS", TextTable::LEFT, TextTable::LEFT);
-      tbl.define_column("QUOTA BYTES", TextTable::LEFT, TextTable::LEFT);
-    }
-
-    tbl.define_column("USED", TextTable::LEFT, TextTable::RIGHT);
-    tbl.define_column("%USED", TextTable::LEFT, TextTable::RIGHT);
-    tbl.define_column("MAX AVAIL", TextTable::LEFT, TextTable::RIGHT);
-    tbl.define_column("OBJECTS", TextTable::LEFT, TextTable::RIGHT);
-    if (verbose) {
-      tbl.define_column("DIRTY", TextTable::LEFT, TextTable::RIGHT);
-      tbl.define_column("READ", TextTable::LEFT, TextTable::RIGHT);
-      tbl.define_column("WRITE", TextTable::LEFT, TextTable::RIGHT);
-      tbl.define_column("RAW USED", TextTable::LEFT, TextTable::RIGHT);
-    }
-  }
-
-  map<int,uint64_t> avail_by_rule;
-  for (map<int64_t,pg_pool_t>::const_iterator p = osd_map.get_pools().begin();
-       p != osd_map.get_pools().end(); ++p) {
-    int64_t pool_id = p->first;
-    if ((pool_id < 0) || (pg_pool_sum.count(pool_id) == 0))
-      continue;
-    const string& pool_name = osd_map.get_pool_name(pool_id);
-    const pool_stat_t &stat = pg_pool_sum.at(pool_id);
-
-    const pg_pool_t *pool = osd_map.get_pg_pool(pool_id);
-    int ruleno = osd_map.crush->find_rule(pool->get_crush_ruleset(),
-                                         pool->get_type(),
-                                         pool->get_size());
-    int64_t avail;
-    float raw_used_rate;
-    if (avail_by_rule.count(ruleno) == 0) {
-      avail = get_rule_avail(osd_map, ruleno);
-      if (avail < 0)
-	avail = 0;
-      avail_by_rule[ruleno] = avail;
-    } else {
-      avail = avail_by_rule[ruleno];
-    }
-    switch (pool->get_type()) {
-    case pg_pool_t::TYPE_REPLICATED:
-      avail /= pool->get_size();
-      raw_used_rate = pool->get_size();
-      break;
-    case pg_pool_t::TYPE_ERASURE:
-    {
-      auto& ecp =
-        osd_map.get_erasure_code_profile(pool->erasure_code_profile);
-      auto pm = ecp.find("m");
-      auto pk = ecp.find("k");
-      if (pm != ecp.end() && pk != ecp.end()) {
-	int k = atoi(pk->second.c_str());
-	int m = atoi(pm->second.c_str());
-	avail = avail * k / (m + k);
-	raw_used_rate = (float)(m + k) / k;
-      } else {
-	raw_used_rate = 0.0;
-      }
-    }
-    break;
-    default:
-      assert(0 == "unrecognized pool type");
-    }
-
-    if (f) {
-      f->open_object_section("pool");
-      f->dump_string("name", pool_name);
-      f->dump_int("id", pool_id);
-      f->open_object_section("stats");
-    } else {
-      tbl << pool_name
-          << pool_id;
-      if (verbose) {
-        if (pool->quota_max_objects == 0)
-          tbl << "N/A";
-        else
-          tbl << si_t(pool->quota_max_objects);
-
-        if (pool->quota_max_bytes == 0)
-          tbl << "N/A";
-        else
-          tbl << si_t(pool->quota_max_bytes);
-      }
-
-    }
-    dump_object_stat_sum(tbl, f, stat.stats.sum, avail, raw_used_rate, verbose, pool);
-    if (f)
-      f->close_section();  // stats
-    else
-      tbl << TextTable::endrow;
-
-    if (f)
-      f->close_section();  // pool
-  }
-  if (f)
-    f->close_section();
-  else {
-    assert(ss != nullptr);
-    *ss << "POOLS:\n";
-    tbl.set_indent(4);
-    *ss << tbl;
-  }
-}
-
-void PGMap::dump_fs_stats(
-    stringstream *ss, Formatter *f, bool verbose) const
-{
-  if (f) {
-    f->open_object_section("stats");
-    f->dump_int("total_bytes", osd_sum.kb * 1024ull);
-    f->dump_int("total_used_bytes", osd_sum.kb_used * 1024ull);
-    f->dump_int("total_avail_bytes", osd_sum.kb_avail * 1024ull);
-    if (verbose) {
-      f->dump_int("total_objects", pg_sum.stats.sum.num_objects);
-    }
-    f->close_section();
-  } else {
-    assert(ss != nullptr);
-    TextTable tbl;
-    tbl.define_column("SIZE", TextTable::LEFT, TextTable::RIGHT);
-    tbl.define_column("AVAIL", TextTable::LEFT, TextTable::RIGHT);
-    tbl.define_column("RAW USED", TextTable::LEFT, TextTable::RIGHT);
-    tbl.define_column("%RAW USED", TextTable::LEFT, TextTable::RIGHT);
-    if (verbose) {
-      tbl.define_column("OBJECTS", TextTable::LEFT, TextTable::RIGHT);
-    }
-    tbl << stringify(si_t(osd_sum.kb*1024))
-        << stringify(si_t(osd_sum.kb_avail*1024))
-        << stringify(si_t(osd_sum.kb_used*1024));
-    float used = 0.0;
-    if (osd_sum.kb > 0) {
-      used = ((float)osd_sum.kb_used / osd_sum.kb);
-    }
-    tbl << percentify(used*100);
-    if (verbose) {
-      tbl << stringify(si_t(pg_sum.stats.sum.num_objects));
-    }
-    tbl << TextTable::endrow;
-
-    *ss << "GLOBAL:\n";
-    tbl.set_indent(4);
-    *ss << tbl;
-  }
-}
-
-void PGMap::dump_object_stat_sum(TextTable &tbl, Formatter *f,
-                                 const object_stat_sum_t &sum, uint64_t avail,
-                                 float raw_used_rate, bool verbose,
-                                 const pg_pool_t *pool)
-{
-  float curr_object_copies_rate = 0.0;
-  if (sum.num_object_copies > 0)
-    curr_object_copies_rate = (float)(sum.num_object_copies - sum.num_objects_degraded) / sum.num_object_copies;
-
-  if (f) {
-    f->dump_int("kb_used", SHIFT_ROUND_UP(sum.num_bytes, 10));
-    f->dump_int("bytes_used", sum.num_bytes);
-    f->dump_unsigned("max_avail", avail);
-    f->dump_int("objects", sum.num_objects);
-    if (verbose) {
-      f->dump_int("quota_objects", pool->quota_max_objects);
-      f->dump_int("quota_bytes", pool->quota_max_bytes);
-      f->dump_int("dirty", sum.num_objects_dirty);
-      f->dump_int("rd", sum.num_rd);
-      f->dump_int("rd_bytes", sum.num_rd_kb * 1024ull);
-      f->dump_int("wr", sum.num_wr);
-      f->dump_int("wr_bytes", sum.num_wr_kb * 1024ull);
-      f->dump_int("raw_bytes_used", sum.num_bytes * raw_used_rate * curr_object_copies_rate);
-    }
-  } else {
-    tbl << stringify(si_t(sum.num_bytes));
-    float used = 0.0;
-    if (avail) {
-      used = sum.num_bytes * curr_object_copies_rate;
-      used /= used + avail;
-    } else if (sum.num_bytes) {
-      used = 1.0;
-    }
-    tbl << percentify(used*100);
-    tbl << si_t(avail);
-    tbl << sum.num_objects;
-    if (verbose) {
-      tbl << stringify(si_t(sum.num_objects_dirty))
-          << stringify(si_t(sum.num_rd))
-          << stringify(si_t(sum.num_wr))
-          << stringify(si_t(sum.num_bytes * raw_used_rate * curr_object_copies_rate));
-    }
-  }
-}
-
 
 int process_pg_map_command(
   const string& orig_prefix,
