@@ -117,6 +117,6 @@ void ClusterState::notify_osdmap(const OSDMap &osd_map)
 void ClusterState::tick(MMonMgrReport *m)
 {
   dout(0) << __func__ << dendl;
-  pg_map.encode_digest(m->get_data());
+  m->pg_map = pg_map;
   m->needs_send = true;
 }
