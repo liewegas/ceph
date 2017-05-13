@@ -154,7 +154,7 @@ void MgrStandby::send_beacon()
                                  addr,
                                  available);
                                  
-  monc->send_mon_message(m);
+  monc.send_mon_message(m);
 }
 
 void MgrStandby::tick()
