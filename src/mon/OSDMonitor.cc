@@ -931,10 +931,12 @@ OSDMonitor::update_pending_pgs(const OSDMap::Incremental& inc)
     pending_creatings.pgs.erase(pg);
   }
   pending_created_pgs.clear();
-  // PAXOS_PGMAP is less than PAXOS_OSDMAP, so PGMonitor::update_from_paxos()
-  // should have prepared the latest pgmap if any
-  mon->pgservice->maybe_add_creating_pgs(creating_pgs.last_scan_epoch,
-					 &pending_creatings);
+  if (!osdmap.test_flag(CEPH_OSDMAP_REQUIRE_LUMINOUS)) {
+    // PAXOS_PGMAP is less than PAXOS_OSDMAP, so PGMonitor::update_from_paxos()
+    // should have prepared the latest pgmap if any
+    mon->pgservice->maybe_add_creating_pgs(creating_pgs.last_scan_epoch,
+					   &pending_creatings);
+  }
   for (auto old_pool : inc.old_pools) {
     pending_creatings.created_pools.erase(old_pool);
     const auto removed_pool = (uint64_t)old_pool;
