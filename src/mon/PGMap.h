@@ -34,6 +34,8 @@ namespace ceph { class Formatter; }
 
 class PGMapDigest {
 public:
+  virtual ~PGMapDigest() {}
+
   ceph::unordered_map<int32_t,osd_stat_t> osd_stat;
 
   // aggregate state, populated by PGMap child
@@ -137,6 +139,36 @@ public:
   void pool_cache_io_rate_summary(Formatter *f, ostream *out,
                                   uint64_t poolid) const;
 
+  void dump_pool_stats_full(const OSDMap &osd_map, stringstream *ss, Formatter *f,
+      bool verbose) const;
+  void dump_fs_stats(stringstream *ss, Formatter *f, bool verbose) const;
+  static void dump_object_stat_sum(TextTable &tbl, Formatter *f,
+			    const object_stat_sum_t &sum,
+			    uint64_t avail,
+			    float raw_used_rate,
+			    bool verbose, const pg_pool_t *pool);
+
+  size_t get_num_pg_by_osd(int osd) const {
+    auto p = num_pg_by_osd.find(osd);
+    if (p == num_pg_by_osd.end())
+      return 0;
+    else
+      return p->second.acting;
+  }
+  int get_num_primary_pg_by_osd(int osd) const {
+    auto p = num_pg_by_osd.find(osd);
+    if (p == num_pg_by_osd.end())
+      return 0;
+    else
+      return p->second.primary;
+  }
+
+  int64_t get_rule_avail(const OSDMap& osdmap, int ruleno) const;
+
+  // kill me post-luminous:
+  virtual float get_fallback_full_ratio() const {
+    return .95;
+  }
 
   void encode(bufferlist& bl, uint64_t features) const;
   void decode(bufferlist::iterator& p);
@@ -144,6 +176,7 @@ public:
   static void generate_test_instances(list<PGMapDigest*>& ls);
 };
 WRITE_CLASS_ENCODER(PGMapDigest::pg_count);
+WRITE_CLASS_ENCODER_FEATURES(PGMapDigest);
 
 class PGMap : public PGMapDigest {
 public:
@@ -265,8 +298,6 @@ public:
 
   epoch_t calc_min_last_epoch_clean() const;
 
-  int64_t get_rule_avail(const OSDMap& osdmap, int ruleno) const;
-
  public:
 
   set<pg_t> creating_pgs;
@@ -318,21 +349,6 @@ public:
     stamp = s;
   }
 
-  size_t get_num_pg_by_osd(int osd) const {
-    auto p = num_pg_by_osd.find(osd);
-    if (p == num_pg_by_osd.end())
-      return 0;
-    else
-      return p->second.acting;
-  }
-  int get_num_primary_pg_by_osd(int osd) const {
-    auto p = num_pg_by_osd.find(osd);
-    if (p == num_pg_by_osd.end())
-      return 0;
-    else
-      return p->second.primary;
-  }
-
   pool_stat_t get_pg_pool_sum_stat(int64_t pool) const {
     ceph::unordered_map<int,pool_stat_t>::const_iterator p =
       pg_pool_sum.find(pool);
@@ -368,14 +384,6 @@ public:
   void dirty_all(Incremental& inc);
 
   void dump(Formatter *f) const; 
-  void dump_pool_stats(const OSDMap &osd_map, stringstream *ss, Formatter *f,
-      bool verbose) const;
-  void dump_fs_stats(stringstream *ss, Formatter *f, bool verbose) const;
-  static void dump_object_stat_sum(TextTable &tbl, Formatter *f,
-			    const object_stat_sum_t &sum,
-			    uint64_t avail,
-			    float raw_used_rate,
-			    bool verbose, const pg_pool_t *pool);
   void dump_basic(Formatter *f) const;
   void dump_pg_stats(Formatter *f, bool brief) const;
   void dump_pool_stats(Formatter *f) const;
@@ -417,6 +425,13 @@ public:
     if (!min_last_epoch_clean)
       min_last_epoch_clean = calc_min_last_epoch_clean();
     return min_last_epoch_clean;
+  }
+
+  float get_fallback_full_ratio() const override {
+    if (full_ratio > 0) {
+      return full_ratio;
+    }
+    return .95;
   }
 
   static void generate_test_instances(list<PGMap*>& o);
