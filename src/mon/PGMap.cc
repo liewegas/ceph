@@ -1743,16 +1743,14 @@ void PGMap::print_oneline_summary(Formatter *f, ostream *out) const
 
   string states = ss.str();
   if (out)
-    *out << "v" << version << ": "
-         << pg_stat.size() << " pgs: "
+    *out << num_pg << " pgs: "
          << states << "; "
          << prettybyte_t(pg_sum.stats.sum.num_bytes) << " data, "
          << kb_t(osd_sum.kb_used) << " used, "
          << kb_t(osd_sum.kb_avail) << " / "
          << kb_t(osd_sum.kb) << " avail";
   if (f) {
-    f->dump_unsigned("version", version);
-    f->dump_unsigned("num_pgs", pg_stat.size());
+    f->dump_unsigned("num_pgs", num_pg);
     f->dump_unsigned("num_bytes", pg_sum.stats.sum.num_bytes);
     f->dump_unsigned("raw_bytes_used", osd_sum.kb_used << 10);
     f->dump_unsigned("raw_bytes_avail", osd_sum.kb_avail << 10);
