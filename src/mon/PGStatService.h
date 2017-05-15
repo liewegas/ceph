@@ -42,8 +42,6 @@ public:
   virtual const pool_stat_t& get_pg_sum() const = 0;
   virtual const osd_stat_t& get_osd_sum() const = 0;
 
-  virtual version_t get_version() const = 0;
-  
   virtual const osd_stat_t *get_osd_stat(int osd) const = 0;
   virtual const ceph::unordered_map<int32_t,osd_stat_t> *get_osd_stat() const = 0;
   virtual const ceph::unordered_map<pg_t,pg_stat_t> *get_pg_stat() const {
