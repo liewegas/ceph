@@ -23,6 +23,7 @@
 #include "Monitor.h"
 #include "MDSMonitor.h"
 #include "PGMonitor.h"
+#include "MgrMonitor.h"
 
 #include "MonitorDBStore.h"
 #include "Session.h"
@@ -325,6 +326,13 @@ void OSDMonitor::update_from_paxos(bool *need_bootstrap)
     }
   }
 
+  // make sure we're using the right pg service.. remove me post-luminous!
+  if (osdmap.test_flag(CEPH_OSDMAP_REQUIRE_LUMINOUS)) {
+    mon->pgservice = mon->mgrmon()->get_pg_stat_service();
+  } else {
+    mon->pgservice = mon->pgmon()->get_pg_stat_service();
+  }
+
   // walk through incrementals
   MonitorDBStore::TransactionRef t;
   size_t tx_size = 0;
@@ -384,6 +392,13 @@ void OSDMonitor::update_from_paxos(bool *need_bootstrap)
 
     if (osdmap.epoch == 1) {
       t->erase("mkfs", "osdmap");
+    }
+
+    // make sure we're using the right pg service.. remove me post-luminous!
+    if (osdmap.test_flag(CEPH_OSDMAP_REQUIRE_LUMINOUS)) {
+      mon->pgservice = mon->mgrmon()->get_pg_stat_service();
+    } else {
+      mon->pgservice = mon->pgmon()->get_pg_stat_service();
     }
 
     if (tx_size > g_conf->mon_sync_max_payload_size*2) {
