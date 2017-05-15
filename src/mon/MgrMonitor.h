@@ -28,7 +28,7 @@ class MgrMonitor: public PaxosService
 
   utime_t first_seen_inactive;
 
-  MgrPGStatService *pgservice;
+  std::unique_ptr<MgrPGStatService> pgservice;
 
   std::map<uint64_t, utime_t> last_beacon;
 
@@ -47,10 +47,7 @@ class MgrMonitor: public PaxosService
   bool check_caps(MonOpRequestRef op, const uuid_d& fsid);
 
 public:
-  MgrMonitor(Monitor *mn, Paxos *p, const string& service_name)
-    : PaxosService(mn, p, service_name), pgservice(nullptr),
-      digest_callback(nullptr)
-  {}
+  MgrMonitor(Monitor *mn, Paxos *p, const string& service_name);
   ~MgrMonitor() override;
 
   void init() override;
