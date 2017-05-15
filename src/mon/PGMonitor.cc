@@ -1691,6 +1691,10 @@ public:
 
   bool is_readable() const { return pgmon->is_readable(); }
 
+  version_t get_version() const {
+    return parent.version;
+  }
+
   const pool_stat_t* get_pool_stat(int poolid) const {
     auto i = parent.pg_pool_sum.find(poolid);
     if (i != parent.pg_pool_sum.end()) {
