@@ -16,7 +16,6 @@
 #include "messages/MMgrDigest.h"
 #include "messages/MMonMgrReport.h"
 
-#include "PGMap.h"
 #include "PGStatService.h"
 #include "include/stringify.h"
 #include "mgr/MgrContext.h"
@@ -35,7 +34,7 @@ static ostream& _prefix(std::ostream *_dout, Monitor *mon,
 }
 
 
-class MgrPGStatService : public PGMap, public PGStatService {
+class MgrPGStatService : public PGStatService {
   PGMapDigest digest;
 public:
   void decode_digest(bufferlist& bl) {
@@ -613,15 +612,17 @@ void MgrMonitor::on_shutdown()
   }
 }
 
-MgrMonitor::~MgrMonitor()
-{
-  delete pgservice;
-}
+MgrMonitor::MgrMonitor(Monitor *mn, Paxos *p, const string& service_name)
+  : PaxosService(mn, p, service_name),
+    digest_callback(nullptr)
+{}
+
+MgrMonitor::~MgrMonitor() = default;
 
 PGStatService *MgrMonitor::get_pg_stat_service()
 {
   if (!pgservice) {
-    pgservice = new MgrPGStatService();
+    pgservice.reset(new MgrPGStatService());
   }
-  return pgservice;
+  return pgservice.get();
 }
