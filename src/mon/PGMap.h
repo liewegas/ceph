@@ -36,6 +36,7 @@ class PGMapDigest {
 public:
   virtual ~PGMapDigest() {}
 
+  version_t version = 0;
   ceph::unordered_map<int32_t,osd_stat_t> osd_stat;
 
   // aggregate state, populated by PGMap child
@@ -181,7 +182,6 @@ WRITE_CLASS_ENCODER_FEATURES(PGMapDigest);
 class PGMap : public PGMapDigest {
 public:
   // the map
-  version_t version;
   epoch_t last_osdmap_epoch;   // last osdmap epoch i applied to the pgmap
   epoch_t last_pg_scan;  // osdmap epoch
   ceph::unordered_map<pg_t,pg_stat_t> pg_stat;
@@ -311,8 +311,7 @@ public:
   static const int STUCK_STALE = (1<<4);
   
   PGMap()
-    : version(0),
-      last_osdmap_epoch(0), last_pg_scan(0),
+    : last_osdmap_epoch(0), last_pg_scan(0),
       full_ratio(0), nearfull_ratio(0)
   {}
 
@@ -324,9 +323,6 @@ public:
     redo_full_sets();
   }
 
-  version_t get_version() const {
-    return version;
-  }
   void set_version(version_t v) {
     version = v;
   }
