@@ -23,7 +23,7 @@
 #include "Monitor.h"
 #include "MDSMonitor.h"
 #include "PGMonitor.h"
-#include "MgrMonitor.h"
+#include "MgrStatMonitor.h"
 
 #include "MonitorDBStore.h"
 #include "Session.h"
@@ -337,8 +337,10 @@ void OSDMonitor::update_from_paxos(bool *need_bootstrap)
 
   // make sure we're using the right pg service.. remove me post-luminous!
   if (osdmap.require_osd_release >= CEPH_RELEASE_LUMINOUS) {
-    mon->pgservice = mon->mgrmon()->get_pg_stat_service();
+    dout(10) << __func__ << " pgservice is mgrstat" << dendl;
+    mon->pgservice = mon->mgrstatmon()->get_pg_stat_service();
   } else {
+    dout(10) << __func__ << " pgservice is pg" << dendl;
     mon->pgservice = mon->pgmon()->get_pg_stat_service();
   }
 
@@ -405,8 +407,10 @@ void OSDMonitor::update_from_paxos(bool *need_bootstrap)
 
     // make sure we're using the right pg service.. remove me post-luminous!
     if (osdmap.require_osd_release >= CEPH_RELEASE_LUMINOUS) {
-      mon->pgservice = mon->mgrmon()->get_pg_stat_service();
+      dout(10) << __func__ << " pgservice is mgrstat" << dendl;
+      mon->pgservice = mon->mgrstatmon()->get_pg_stat_service();
     } else {
+      dout(10) << __func__ << " pgservice is pg" << dendl;
       mon->pgservice = mon->pgmon()->get_pg_stat_service();
     }
 
