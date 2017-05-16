@@ -19,7 +19,6 @@
 #include "PaxosService.h"
 
 class PGStatService;
-class MgrPGStatService;
 
 class MgrMonitor: public PaxosService
 {
@@ -27,8 +26,6 @@ class MgrMonitor: public PaxosService
   MgrMap pending_map;
 
   utime_t first_seen_inactive;
-
-  std::unique_ptr<MgrPGStatService> pgservice;
 
   std::map<uint64_t, utime_t> last_beacon;
 
@@ -73,9 +70,6 @@ public:
   bool preprocess_beacon(MonOpRequestRef op);
   bool prepare_beacon(MonOpRequestRef op);
 
-  bool preprocess_report(MonOpRequestRef op);
-  bool prepare_report(MonOpRequestRef op);
-
   void check_sub(Subscription *sub);
   void check_subs();
   void send_digests();
@@ -87,8 +81,6 @@ public:
   void tick() override;
 
   void print_summary(Formatter *f, std::ostream *ss) const;
-
-  PGStatService *get_pg_stat_service();
 
   friend class C_Updated;
 };
