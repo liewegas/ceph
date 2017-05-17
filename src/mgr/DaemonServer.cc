@@ -19,6 +19,7 @@
 
 #include "messages/MMgrOpen.h"
 #include "messages/MMgrConfigure.h"
+#include "messages/MMonMgrReport.h"
 #include "messages/MCommand.h"
 #include "messages/MCommandReply.h"
 #include "messages/MPGStats.h"
@@ -678,6 +679,10 @@ bool DaemonServer::handle_command(MCommand *m)
 			      &on_finish->from_mon, &on_finish->outs, on_finish);
       return true;
     }
+  } else if (prefix == "mgr report-mon") {
+    send_report();
+    cmdctx->reply(0, "report sent");
+    return true;
   } else {
     r = cluster_state.with_pgmap([&](const PGMap& pg_map) {
 	return cluster_state.with_osdmap([&](const OSDMap& osdmap) {
@@ -723,4 +728,24 @@ bool DaemonServer::handle_command(MCommand *m)
     }));
     return true;
   }
+}
+
+void DaemonServer::send_report()
+{
+  auto m = new MMonMgrReport();
+  cluster_state.with_pgmap([&](const PGMap& pg_map) {
+      // FIXME: no easy way to get mon features here.  this will do for
+      // now, though, as long as we don't make a backward-incompat change.
+      pg_map.encode_digest(m->get_data(), CEPH_FEATURES_ALL);
+      // FIXME: reporting health detail here might be a bad idea?
+      cluster_state.with_osdmap([&](const OSDMap& osdmap) {
+	  pg_map.get_health(g_ceph_context, osdmap,
+			    m->health_summary,
+			    &m->health_detail);
+	});
+    });
+  // TODO? We currently do not notify the PyModules
+  // TODO: respect needs_send, so we send the report only if we are asked to do
+  //       so, or the state is updated.
+  monc->send_mon_message(m);
 }
