@@ -320,6 +320,7 @@ function test_tiering()
   # tier pool currently set to 'writeback'
   rados -p cache put /etc/passwd /etc/passwd
   ceph tell osd.\* flush_pg_stats || true
+  ceph tell mgr mgr report-mon
   # 1 dirty object in pool 'cache'
   ceph osd tier cache-mode cache proxy
   expect_false ceph osd tier cache-mode cache none
@@ -329,6 +330,7 @@ function test_tiering()
   rados -p cache rm /etc/passwd
   rados -p cache cache-flush-evict-all
   ceph tell osd.\* flush_pg_stats || true
+  ceph tell mgr mgr report-mon
   # no dirty objects in pool 'cache'
   ceph osd tier cache-mode cache proxy
   ceph osd tier cache-mode cache none
@@ -456,6 +458,7 @@ function test_tiering()
   rados -p cache4 put foo2 $tmpfile
   rm -f $tmpfile
   ceph tell osd.\* flush_pg_stats || true
+  ceph tell mgr mgr report-mon
   ceph df | grep datapool | grep ' 2 '
   ceph osd tier remove-overlay datapool
   ceph osd tier remove datapool cache4
