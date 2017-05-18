@@ -29,6 +29,7 @@ void PGMapDigest::encode(bufferlist& bl, uint64_t features) const
   ::encode(num_pg, bl);
   ::encode(num_pg_active, bl);
   ::encode(num_osd, bl);
+  ::encode(osd_last_seq, bl);
   ::encode(osd_stat, bl);
   ::encode(pg_pool_sum, bl, features);
   ::encode(osd_sum, bl);
@@ -44,6 +45,7 @@ void PGMapDigest::decode(bufferlist::iterator& p)
   ::decode(num_pg, p);
   ::decode(num_pg_active, p);
   ::decode(num_osd, p);
+  ::decode(osd_last_seq, p);
   ::decode(osd_stat, p);
   ::decode(pg_pool_sum, p);
   ::decode(osd_sum, p);
@@ -72,6 +74,7 @@ void PGMapDigest::dump(Formatter *f) const
   for (auto& p : osd_stat) {
     f->open_object_section("osd_stat");
     f->dump_int("osd", p.first);
+    f->dump_unsigned("seq", osd_last_seq[p.first]);
     p.second.dump(f);
     f->close_section();
   }
@@ -1010,7 +1013,7 @@ void PGMap::apply_incremental(CephContext *cct, const Incremental& inc)
     if (t == osd_stat.end()) {
       osd_stat.insert(make_pair(osd, new_stats));
     } else {
-      stat_osd_sub(t->second);
+      stat_osd_sub(t->first, t->second);
       t->second = new_stats;
     }
     auto i = osd_epochs.find(osd);
@@ -1022,7 +1025,7 @@ void PGMap::apply_incremental(CephContext *cct, const Incremental& inc)
     else
       i->second = j->second;
 
-    stat_osd_add(new_stats);
+    stat_osd_add(osd, new_stats);
 
     // adjust [near]full status
     register_nearfull_status(osd, new_stats);
@@ -1052,7 +1055,7 @@ void PGMap::apply_incremental(CephContext *cct, const Incremental& inc)
        ++p) {
     auto t = osd_stat.find(*p);
     if (t != osd_stat.end()) {
-      stat_osd_sub(t->second);
+      stat_osd_sub(t->first, t->second);
       osd_stat.erase(t);
     }
 
@@ -1134,7 +1137,7 @@ void PGMap::calc_stats()
   for (auto p = osd_stat.begin();
        p != osd_stat.end();
        ++p)
-    stat_osd_add(p->second);
+    stat_osd_add(p->first, p->second);
 
   redo_full_sets();
 
@@ -1186,11 +1189,11 @@ void PGMap::update_osd(int osd, bufferlist& bl)
     auto i = osd_epochs.find(osd);
     if (i != osd_epochs.end())
       old_lec = i->second;
-    stat_osd_sub(o->second);
+    stat_osd_sub(osd, o->second);
   }
   osd_stat_t& r = osd_stat[osd];
   ::decode(r, p);
-  stat_osd_add(r);
+  stat_osd_add(osd, r);
 
   // adjust [near]full status
   register_nearfull_status(osd, r);
@@ -1214,7 +1217,7 @@ void PGMap::remove_osd(int osd)
 {
   auto o = osd_stat.find(osd);
   if (o != osd_stat.end()) {
-    stat_osd_sub(o->second);
+    stat_osd_sub(osd, o->second);
     osd_stat.erase(o);
 
     // remove these old osds from full/nearfull set(s), too
@@ -1361,16 +1364,22 @@ void PGMap::stat_pg_update(const pg_t pgid, pg_stat_t& s,
   stat_pg_add(pgid, n, sameosds);
 }
 
-void PGMap::stat_osd_add(const osd_stat_t &s)
+void PGMap::stat_osd_add(int osd, const osd_stat_t &s)
 {
   num_osd++;
   osd_sum.add(s);
+  if (osd >= (int)osd_last_seq.size()) {
+    osd_last_seq.resize(osd + 1);
+  }
+  osd_last_seq[osd] = s.seq;
 }
 
-void PGMap::stat_osd_sub(const osd_stat_t &s)
+void PGMap::stat_osd_sub(int osd, const osd_stat_t &s)
 {
   num_osd--;
   osd_sum.sub(s);
+  assert(osd < (int)osd_last_seq.size());
+  osd_last_seq[osd] = 0;
 }
 
 epoch_t PGMap::calc_min_last_epoch_clean() const
