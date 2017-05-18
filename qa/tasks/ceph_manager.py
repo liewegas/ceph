@@ -1153,6 +1153,24 @@ class CephManager:
                   "-w"],
             wait=False, stdout=StringIO(), stdin=run.PIPE)
 
+    def flush_pg_stats(self, osds):
+        """
+        Flush pg stats from a list of OSD ids, ensuring they are reflected
+        all the way to the monitor.  Luminous and later only.
+        """
+        seq = []
+        for i in osds:
+            s = raw_cluster_cmd('tell', 'osd.%d' % i, 'flush_pg_stats')
+            seq.append(s);
+        for i in osds:
+            need = seq.pop(0)
+            while True:
+                got = raw_cluster_cmd('osd', 'last-stat-seq', 'osd.%d' % i)
+                self.log('need seq %d got %d for osd.%d' % (need, got, i)
+                if got >= need:
+                    break
+                time.sleep(1)
+
     def do_rados(self, remote, cmd, check_status=True):
         """
         Execute a remote rados command.
