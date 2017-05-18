@@ -292,6 +292,24 @@ function test_tiering_agent()
   ceph osd pool delete $slow $slow --yes-i-really-really-mean-it
 }
 
+function flush_pg_stats()
+{
+    ids=`ceph osd ls`
+    seqs=''
+    for osd in $ids
+    do
+	seq=`ceph tell osd.$osd flush_pg_stats`
+	seqs="$seqs $osd-$seq"
+    done
+    for s in $seqs
+    do
+	osd=`echo $s | cut -d - -f 1`
+	seq=`echo $s | cut -d - -f 2`
+	echo "waiting osd.$osd seq $seq"
+	while test $(ceph osd last-stat-seq $osd) -lt $seq; do sleep 1 ; done
+    done
+}
+
 function test_tiering()
 {
   # tiering
@@ -319,7 +337,7 @@ function test_tiering()
   # test with dirty objects in the tier pool
   # tier pool currently set to 'writeback'
   rados -p cache put /etc/passwd /etc/passwd
-  ceph tell osd.\* flush_pg_stats || true
+  flush_pg_stats
   ceph tell mgr mgr report-mon
   # 1 dirty object in pool 'cache'
   ceph osd tier cache-mode cache proxy
@@ -329,7 +347,7 @@ function test_tiering()
   # remove object from tier pool
   rados -p cache rm /etc/passwd
   rados -p cache cache-flush-evict-all
-  ceph tell osd.\* flush_pg_stats || true
+  flush_pg_stats
   ceph tell mgr mgr report-mon
   # no dirty objects in pool 'cache'
   ceph osd tier cache-mode cache proxy
@@ -457,7 +475,7 @@ function test_tiering()
   rados -p cache4 put foo1 $tmpfile
   rados -p cache4 put foo2 $tmpfile
   rm -f $tmpfile
-  ceph tell osd.\* flush_pg_stats || true
+  flush_pg_stats
   ceph tell mgr mgr report-mon
   ceph df | grep datapool | grep ' 2 '
   ceph osd tier remove-overlay datapool
