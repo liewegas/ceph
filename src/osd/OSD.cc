@@ -6437,6 +6437,7 @@ void OSD::do_command(Connection *con, ceph_tid_t tid, vector<string>& cmd, buffe
   else if (prefix == "flush_pg_stats") {
     if (osdmap->test_flag(CEPH_OSDMAP_REQUIRE_LUMINOUS)) {
       mgrc.send_pgstats();
+      ds << service.get_osd_stat_seq() << "\n";
     } else {
       flush_pg_stats();
     }
