@@ -53,6 +53,9 @@ COMMAND("pg deep-scrub name=pgid,type=CephPgid", "start deep-scrub on <pgid>", \
 COMMAND("pg repair name=pgid,type=CephPgid", "start repair on <pgid>", \
 	"pg", "rw", "cli,rest")
 
+COMMAND("mgr report-mon", "send a report to mon immediately",
+	"pg", "rw", "cli,rest")
+
 // stuff in osd namespace
 COMMAND("osd perf", \
         "print dump of OSD perf summary stats", \
