@@ -175,6 +175,14 @@ void PGMonitor::update_from_paxos(bool *need_bootstrap)
   if (version == pg_map.version)
     return;
 
+  if (did_delete || get_value("deleted")) {
+    did_delete = true;
+    dout(10) << __func__ << " deleted, clearing in-memory PGMap" << dendl;
+    pg_map = PGMap();
+    pg_map.version = version;
+    return;
+  }
+
   assert(version >= pg_map.version);
   if (format_version < 1) {
     derr << __func__ << "unsupported monitor protocol: "
@@ -240,6 +248,8 @@ void PGMonitor::upgrade_format()
 
 void PGMonitor::post_paxos_update()
 {
+  if (did_delete)
+    return;
   dout(10) << __func__ << dendl;
   OSDMap& osdmap = mon->osdmon()->osdmap;
   if (mon->monmap->get_required_features().contains_all(
@@ -259,6 +269,8 @@ void PGMonitor::handle_osd_timeouts()
 {
   if (!mon->is_leader())
     return;
+  if (did_delete)
+    return;
 
   utime_t now(ceph_clock_now());
   utime_t timeo(g_conf->mon_osd_report_timeout, 0);
@@ -273,6 +285,7 @@ void PGMonitor::handle_osd_timeouts()
 
 void PGMonitor::create_pending()
 {
+  do_delete = false;
   pending_inc = PGMap::Incremental();
   pending_inc.version = pg_map.version + 1;
   if (pg_map.version == 0) {
@@ -438,14 +451,23 @@ void PGMonitor::apply_pgmap_delta(bufferlist& bl)
 
 void PGMonitor::encode_pending(MonitorDBStore::TransactionRef t)
 {
+  string prefix = pgmap_meta_prefix;
+  if (do_delete) {
+    dout(1) << __func__ << " clearing pgmap data at v" << pending_inc.version
+	    << dendl;
+    do_delete = false;
+    t->erase_prefix(prefix);
+    put_last_committed(t, pending_inc.version);
+    put_value(t, "deleted", 1);
+    return;
+  }
+
   version_t version = pending_inc.version;
   dout(10) << __func__ << " v " << version << dendl;
   assert(get_last_committed() + 1 == version);
   pending_inc.stamp = ceph_clock_now();
 
   uint64_t features = mon->get_quorum_con_features();
-
-  string prefix = pgmap_meta_prefix;
 
   t->put(prefix, "version", pending_inc.version);
   {
@@ -861,6 +883,9 @@ void PGMonitor::check_osd_map(epoch_t epoch)
   if (mon->is_peon())
     return;  // whatever.
 
+  if (did_delete)
+    return;
+
   if (pg_map.last_osdmap_epoch >= epoch) {
     dout(10) << __func__ << " already seen " << pg_map.last_osdmap_epoch
              << " >= " << epoch << dendl;
@@ -879,11 +904,19 @@ void PGMonitor::check_osd_map(epoch_t epoch)
     return;
   }
 
+  const OSDMap& osdmap = mon->osdmon()->osdmap;
+  if (!did_delete && osdmap.test_flag(CEPH_OSDMAP_REQUIRE_LUMINOUS)) {
+    // delete all my data
+    dout(1) << __func__ << " will clear pg_map data" << dendl;
+    do_delete = true;
+    propose_pending();
+    return;
+  }
+
   // osds that went up or down
   set<int> need_check_down_pg_osds;
 
   // apply latest map(s)
-  const OSDMap& osdmap = mon->osdmon()->osdmap;
   epoch = std::max(epoch, osdmap.get_epoch());
   for (epoch_t e = pg_map.last_osdmap_epoch+1;
        e <= epoch;
