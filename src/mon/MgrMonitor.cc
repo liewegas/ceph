@@ -612,10 +612,4 @@ void MgrMonitor::on_shutdown()
   cancel_timer();
 }
 
-MgrMonitor::MgrMonitor(Monitor *mn, Paxos *p, const string& service_name)
-  : PaxosService(mn, p, service_name),
-    digest_callback(nullptr)
-{}
-
-MgrMonitor::~MgrMonitor() = default;
 

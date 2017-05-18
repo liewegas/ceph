@@ -48,7 +48,7 @@ public:
   MgrMonitor(Monitor *mn, Paxos *p, const string& service_name)
     : PaxosService(mn, p, service_name)
   {}
-  ~MgrMonitor() override;
+  ~MgrMonitor() override {}
 
   void init() override;
   void on_shutdown() override;
