@@ -679,10 +679,6 @@ bool DaemonServer::handle_command(MCommand *m)
 			      &on_finish->from_mon, &on_finish->outs, on_finish);
       return true;
     }
-  } else if (prefix == "mgr report-mon") {
-    send_report();
-    cmdctx->reply(0, "report sent");
-    return true;
   } else {
     r = cluster_state.with_pgmap([&](const PGMap& pg_map) {
 	return cluster_state.with_osdmap([&](const OSDMap& osdmap) {
