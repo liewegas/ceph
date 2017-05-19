@@ -121,7 +121,7 @@ void PGMonitor::update_logger()
 void PGMonitor::tick()
 {
   if (!is_active()) return;
-  if (!mon->osdmon()->osdmap.test_flag(CEPH_OSDMAP_REQUIRE_LUMINOUS)) {
+  if (mon->osdmon()->osdmap.test_flag(CEPH_OSDMAP_REQUIRE_LUMINOUS)) {
     return;
   }
 
