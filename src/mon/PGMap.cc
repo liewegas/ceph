@@ -1057,14 +1057,7 @@ void PGMap::apply_incremental(CephContext *cct, const Incremental& inc)
       stat_pg_sub(removed_pg, s->second);
       pg_stat.erase(s);
     }
-    if (removed_pg.ps() == 0)
-      deleted_pools.insert(removed_pg.pool());
-  }
-  for (auto p = deleted_pools.begin();
-       p != deleted_pools.end();
-       ++p) {
-    dout(20) << " deleted pool " << *p << dendl;
-    deleted_pool(*p);
+    deleted_pools.insert(removed_pg.pool());
   }
 
   for (auto p = inc.get_osd_stat_rm().begin();
@@ -1095,6 +1088,13 @@ void PGMap::apply_incremental(CephContext *cct, const Incremental& inc)
   }
 
   update_pool_deltas(cct, inc.stamp, pg_pool_sum_old);
+
+  for (auto p = deleted_pools.begin();
+       p != deleted_pools.end();
+       ++p) {
+    dout(20) << " deleted pool " << *p << dendl;
+    deleted_pool(*p);
+  }
 
   if (inc.osdmap_epoch)
     last_osdmap_epoch = inc.osdmap_epoch;
