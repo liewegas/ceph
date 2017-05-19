@@ -357,10 +357,10 @@ void osd_stat_t::decode(bufferlist::iterator &bl)
     ::decode(op_queue_age_hist, bl);
   if (struct_v >= 4)
     ::decode(os_perf_stat, bl);
-  if (struct_v >= 5)
+  if (struct_v >= 6) {
     ::decode(up_from, bl);
-  if (struct_v >= 6)
     ::decode(seq, bl);
+  }
   DECODE_FINISH(bl);
 }
 
