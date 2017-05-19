@@ -171,17 +171,19 @@ void PGMonitor::create_initial()
 
 void PGMonitor::update_from_paxos(bool *need_bootstrap)
 {
-  version_t version = get_last_committed();
-  if (version == pg_map.version)
+  if (did_delete)
     return;
 
-  if (did_delete || get_value("deleted")) {
+  if (get_value("deleted")) {
     did_delete = true;
     dout(10) << __func__ << " deleted, clearing in-memory PGMap" << dendl;
     pg_map = PGMap();
-    pg_map.version = version;
     return;
   }
+
+  version_t version = get_last_committed();
+  if (version == pg_map.version)
+    return;
 
   assert(version >= pg_map.version);
   if (format_version < 1) {
