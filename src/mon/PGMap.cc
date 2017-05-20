@@ -1089,11 +1089,10 @@ void PGMap::apply_incremental(CephContext *cct, const Incremental& inc)
 
   update_pool_deltas(cct, inc.stamp, pg_pool_sum_old);
 
-  for (auto p = deleted_pools.begin();
-       p != deleted_pools.end();
-       ++p) {
-    dout(20) << " deleted pool " << *p << dendl;
-    deleted_pool(*p);
+  for (auto p : deleted_pools) {
+    if (cct)
+      dout(20) << " deleted pool " << p << dendl;
+    deleted_pool(p);
   }
 
   if (inc.osdmap_epoch)
