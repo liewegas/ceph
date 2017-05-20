@@ -1162,7 +1162,7 @@ class CephManager:
         :param wait_for_mon: wait for mon to be synced with mgr. 0 to disable
                              it. (3 * mon_mgr_digest_period, by default)
         """
-        seq = {osd: self.raw_cluster_cmd('tell', 'osd.%d' % i, 'flush_pg_stats')
+        seq = {osd: self.raw_cluster_cmd('tell', 'osd.%d' % osd, 'flush_pg_stats')
                for osd in osds}
         if not wait_for_mon:
             return
