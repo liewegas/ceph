@@ -3285,7 +3285,7 @@ void PGMapUpdater::check_osd_map(
 	pg_t pgid(ps, poolid);
 	if (pending_inc->pg_stat_updates.count(pgid) == 0) {
 	  pg_stat_t &stats = pending_inc->pg_stat_updates[pgid];
-	  stats.state = PG_STATE_CREATING | PG_STATE_STALE;
+	  stats.state = PG_STATE_STALE;
 	  stats.last_fresh = osdmap.get_modified();
 	  stats.last_active = osdmap.get_modified();
 	  stats.last_change = osdmap.get_modified();
