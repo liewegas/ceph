@@ -396,8 +396,6 @@ public:
   /// encode subset of our data to a PGMapDigest
   void encode_digest(bufferlist& bl, uint64_t features) const;
 
-  void dirty_all(Incremental& inc);
-
   void dump(Formatter *f) const; 
   void dump_basic(Formatter *f) const;
   void dump_pg_stats(Formatter *f, bool brief) const;
