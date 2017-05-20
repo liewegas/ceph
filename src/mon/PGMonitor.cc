@@ -456,7 +456,16 @@ void PGMonitor::encode_pending(MonitorDBStore::TransactionRef t)
     dout(1) << __func__ << " clearing pgmap data at v" << pending_inc.version
 	    << dendl;
     do_delete = false;
-    t->erase_prefix(prefix);
+    for (auto key : { "version", "stamp", "last_osdmap_epoch",
+	  "last_pg_scan", "full_ratio", "nearfull_ratio" }) {
+      t->erase(prefix, key);
+    }
+    for (auto& p : pg_map.pg_stat) {
+      t->erase(prefix, stringify(p.first));
+    }
+    for (auto& p : pg_map.osd_stat) {
+      t->erase(prefix, stringify(p.first));
+    }
     put_last_committed(t, pending_inc.version);
     put_value(t, "deleted", 1);
     return;
