@@ -56,8 +56,6 @@ class MonitorDBStore
 
     Op()
       : type(0) { }
-    Op(int t, string p)
-      : type(t), prefix(p) { }
     Op(int t, string p, string k)
       : type(t), prefix(p), key(k) { }
     Op(int t, const string& p, string k, bufferlist& b)
@@ -112,7 +110,6 @@ class MonitorDBStore
       OP_PUT	= 1,
       OP_ERASE	= 2,
       OP_COMPACT = 3,
-      OP_ERASE_PREFIX = 4,
     };
 
     void put(string prefix, string key, bufferlist& bl) {
@@ -143,10 +140,6 @@ class MonitorDBStore
       ostringstream os;
       os << ver;
       erase(prefix, os.str());
-    }
-
-    void erase_prefix(string prefix) {
-      ops.push_back(Op(OP_ERASE_PREFIX, prefix));
     }
 
     void compact_prefix(string prefix) {
@@ -243,12 +236,6 @@ class MonitorDBStore
 	    f->dump_string("key", op.key);
 	  }
 	  break;
-	case OP_ERASE_PREFIX:
-	  {
-	    f->dump_string("type", "ERASE_PREFIX");
-	    f->dump_string("prefix", op.prefix);
-	  }
-	  break;
 	case OP_COMPACT:
 	  {
 	    f->dump_string("type", "COMPACT");
@@ -299,9 +286,6 @@ class MonitorDBStore
 	break;
       case Transaction::OP_ERASE:
 	dbt->rmkey(op.prefix, op.key);
-	break;
-      case Transaction::OP_ERASE_PREFIX:
-	dbt->rmkeys_by_prefix(op.prefix);
 	break;
       case Transaction::OP_COMPACT:
 	compact.push_back(make_pair(op.prefix, make_pair(op.key, op.endkey)));
