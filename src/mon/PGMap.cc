@@ -42,7 +42,7 @@ void PGMapDigest::encode(bufferlist& bl, uint64_t features) const
 
 void PGMapDigest::decode(bufferlist::iterator& p)
 {
-  DECODE_START(2, p);
+  DECODE_START(3, p);
   ::decode(num_pg, p);
   ::decode(num_pg_active, p);
   ::decode(num_osd, p);
