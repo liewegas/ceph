@@ -1135,14 +1135,15 @@ void PGMap::register_nearfull_status(int osd, const osd_stat_t& s)
 
 void PGMap::calc_stats()
 {
-  num_pg_by_state.clear();
   num_pg = 0;
   num_pg_active = 0;
   num_osd = 0;
   pg_pool_sum.clear();
+  num_pg_by_pool.clear();
+  pg_by_osd.clear();
   pg_sum = pool_stat_t();
   osd_sum = osd_stat_t();
-  pg_by_osd.clear();
+  num_pg_by_state.clear();
   num_pg_by_osd.clear();
 
   for (auto p = pg_stat.begin();
