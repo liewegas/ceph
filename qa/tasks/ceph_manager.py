@@ -1171,7 +1171,7 @@ class CephManager:
             while wait_for_mon > 0:
                 got = self.raw_cluster_cmd('osd', 'last-stat-seq', 'osd.%d' % osd)
                 self.log('need seq {need} got {got} for osd.{osd}'.format(
-                    need=need, got=got, i=osd))
+                    need=need, got=got, osd=osd))
                 if got >= need:
                     break
                 A_WHILE = 1
