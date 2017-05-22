@@ -48,6 +48,8 @@ public:
   void load_digest(MMgrDigest *m);
   void ingest_pgstats(MPGStats *stats);
 
+  void set_cached_pgmap(bufferlist& bl);
+
   const bufferlist &get_health() const {return health_json;}
   const bufferlist &get_mon_status() const {return mon_status_json;}
 

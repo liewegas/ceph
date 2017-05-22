@@ -39,6 +39,7 @@
 class MCommand;
 class MMgrDigest;
 class MLog;
+class MMonMgrGetCached;
 class Objecter;
 class Client;
 
@@ -57,6 +58,7 @@ protected:
   Finisher finisher;
 
   Cond fs_map_cond;
+  Cond pgmap_cond;
 
   PyModules py_modules;
   DaemonStateIndex daemon_state;
@@ -70,6 +72,7 @@ protected:
 
   bool initialized;
   bool initializing;
+  bool fetching_cached_pgmap = false;
 
 public:
   Mgr(MonClient *monc_, Messenger *clientm_, Objecter *objecter_,
@@ -83,6 +86,8 @@ public:
   void handle_fs_map(MFSMap* m);
   void handle_osd_map();
   void handle_log(MLog *m);
+  void handle_mgr_get_cached(MMonMgrGetCached* m);
+  void handle_mon_connect(Connection *con);
 
   bool ms_dispatch(Message *m);
 

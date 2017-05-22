@@ -30,6 +30,7 @@
 #include "messages/MCommand.h"
 #include "messages/MCommandReply.h"
 #include "messages/MLog.h"
+#include "messages/MMonMgrGetCached.h"
 
 #include "Mgr.h"
 
@@ -216,6 +217,14 @@ void Mgr::init()
   // operation, we we don't have to synchronize these later because
   // all sets will come via mgr)
   load_config();
+
+  fetching_cached_pgmap = true;
+  dout(4) << "fetching catched pgmap" << dendl;
+  monc->send_mon_message(new MMonMgrGetCached);
+  while (fetching_cached_pgmap) {
+    dout(10) << "waiting for cached pgmap" << dendl;
+    pgmap_cond.Wait(lock);
+  }
 
   // Wait for MgrDigest...?
   // TODO
@@ -487,6 +496,9 @@ bool Mgr::ms_dispatch(Message *m)
     case MSG_LOG:
       handle_log(static_cast<MLog *>(m));
       break;
+  case MSG_MON_MGR_GET_CACHED:
+    handle_mgr_get_cached(static_cast<MMonMgrGetCached*>(m));
+    break;
 
     default:
       return false;
@@ -494,6 +506,13 @@ bool Mgr::ms_dispatch(Message *m)
   return true;
 }
 
+void Mgr::handle_mon_connect(Connection *con)
+{
+  Mutex::Locker l(lock);
+  if (fetching_cached_pgmap) {
+    monc->send_mon_message(new MMonMgrGetCached);
+  }
+}
 
 void Mgr::handle_fs_map(MFSMap* m)
 {
@@ -581,6 +600,36 @@ void Mgr::handle_mgr_digest(MMgrDigest* m)
   dout(10) << "done." << dendl;
 
   m->put();
+}
+
+void Mgr::handle_mgr_get_cached(MMonMgrGetCached* m)
+{
+  dout(10) << " " << *m << dendl;
+  bufferlist bl = m->get_data();
+  if (bl.length()) {
+    auto p = bl.begin();
+    uint8_t ctype;
+    ::decode(ctype, p);
+    bufferlist compressed;
+    ::decode(compressed, p);
+    dout(10) << " ctype " << (int)ctype << " " << compressed.length()
+	     << " bytes compressed" << dendl;
+    CompressorRef c = Compressor::create(g_ceph_context, ctype);
+    if (c) {
+      bufferlist raw;
+      c->decompress(compressed, raw);
+      dout(10) << " " << c->get_type_name() << ": " << compressed.length()
+	       << " -> " << raw.length() << " bytes" << dendl;
+      cluster_state.set_cached_pgmap(raw);
+    } else {
+      derr << " unknown compression " << (int)ctype << dendl;
+    }
+  } else {
+    derr << " got 0 bytes" << dendl;
+  }
+  m->put();
+  fetching_cached_pgmap = false;
+  pgmap_cond.Signal();
 }
 
 void Mgr::tick()
