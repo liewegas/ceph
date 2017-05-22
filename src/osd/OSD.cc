@@ -1400,10 +1400,12 @@ bool OSDService::_get_map_bl(epoch_t e, bufferlist& bl)
   found = store->read(coll_t::meta(),
 		      OSD::get_osdmap_pobject_name(e), 0, 0, bl) >= 0;
   if (found) {
+    dout(10) << __func__ << " read " << bl << dendl;
     if (bl.get_num_buffers() > 1) {
       // bluestore may return a fragmented buffer, which will make the denc
       // decodes slow.
       bl.rebuild();
+      dout(10) << __func__ << " rebuilding" << dendl;
     }
     _add_map_bl(e, bl);
   }
@@ -7332,10 +7334,12 @@ void OSD::handle_osd_map(MOSDMap *m)
 	bufferlist obl;
         bool got = get_map_bl(e - 1, obl);
         assert(got);
+	dout(10) << " full buffer is " << obl << dendl;
 	o->decode(obl);
       }
 
       OSDMap::Incremental inc;
+      dout(10) << " inc buffer is " << bl << dendl;
       bufferlist::iterator p = bl.begin();
       inc.decode(p);
       if (o->apply_incremental(inc) < 0) {
