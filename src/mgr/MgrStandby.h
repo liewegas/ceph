@@ -66,6 +66,7 @@ public:
   ~MgrStandby() override;
 
   bool ms_dispatch(Message *m) override;
+  void ms_handle_connect(Connection *con) override;
   bool ms_handle_reset(Connection *con) override { return false; }
   void ms_handle_remote_reset(Connection *con) override {}
   bool ms_get_authorizer(int dest_type, AuthAuthorizer **authorizer,

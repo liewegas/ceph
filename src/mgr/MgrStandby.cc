@@ -296,6 +296,14 @@ bool MgrStandby::ms_get_authorizer(int dest_type, AuthAuthorizer **authorizer,
   return *authorizer != NULL;
 }
 
+void MgrStandby::ms_handle_connect(Connection *con)
+{
+  if (con->get_peer_type() == CEPH_ENTITY_TYPE_MON &&
+      active_mgr) {
+    active_mgr->handle_mon_connect(con);
+  }
+}
+
 bool MgrStandby::ms_handle_refused(Connection *con)
 {
   // do nothing for now

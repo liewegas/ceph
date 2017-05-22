@@ -16,6 +16,7 @@
 #include "include/str_list.h"
 #include "auth/RotatingKeyRing.h"
 #include "json_spirit/json_spirit_writer.h"
+#include "compressor/Compressor.h"
 
 #include "messages/MMgrOpen.h"
 #include "messages/MMgrConfigure.h"
@@ -820,7 +821,22 @@ void DaemonServer::send_report()
   cluster_state.with_pgmap([&](const PGMap& pg_map) {
       // FIXME: no easy way to get mon features here.  this will do for
       // now, though, as long as we don't make a backward-incompat change.
-      pg_map.encode_digest(m->get_data(), CEPH_FEATURES_ALL);
+      pg_map.encode_digest(m->digest_bl, CEPH_FEATURES_ALL);
+
+      bufferlist fullbl;
+      pg_map.encode(fullbl, CEPH_FEATURES_ALL);
+      CompressorRef c = Compressor::create(g_ceph_context,
+					   g_conf->mgr_compressor);
+      if (c) {
+	bufferlist compressed;
+	c->compress(fullbl, compressed);
+	uint8_t t = c->get_type();
+	::encode(t, m->full_bl_compressed);
+	::encode(compressed, m->full_bl_compressed);
+	dout(10) << c->get_type_name() << " " << fullbl.length() << " -> "
+		 << compressed.length() << dendl;
+      }
+
       // FIXME: reporting health detail here might be a bad idea?
       cluster_state.with_osdmap([&](const OSDMap& osdmap) {
 	  pg_map.get_health(g_ceph_context, osdmap,

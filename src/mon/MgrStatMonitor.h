@@ -21,6 +21,7 @@ class MgrStatMonitor : public PaxosService {
   PGMapDigest pending_digest;
   list<pair<health_status_t,string>> pending_health_summary;
   list<pair<health_status_t,string>> pending_health_detail;
+  bufferlist pending_full_compressed;
 
   std::unique_ptr<MgrPGStatService> pgservice;
 
@@ -41,6 +42,8 @@ public:
   bool prepare_update(MonOpRequestRef op) override;
 
   void encode_full(MonitorDBStore::TransactionRef t) override { }
+
+  bool preprocess_get_cached(MonOpRequestRef op);
 
   bool preprocess_report(MonOpRequestRef op);
   bool prepare_report(MonOpRequestRef op);

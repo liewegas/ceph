@@ -3813,6 +3813,7 @@ void Monitor::dispatch_op(MonOpRequestRef op)
       break;
 
     case MSG_MON_MGR_REPORT:
+    case MSG_MON_MGR_GET_CACHED:
       paxos_service[PAXOS_MGRSTAT]->dispatch(op);
       break;
 

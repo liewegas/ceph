@@ -46,6 +46,13 @@ void ClusterState::load_digest(MMgrDigest *m)
   mon_status_json = std::move(m->mon_status_json);
 }
 
+void ClusterState::set_cached_pgmap(bufferlist &bl)
+{
+  dout(10) << __func__ << " " << bl.length() << " bytes" << dendl;
+  auto p = bl.begin();
+  pg_map.decode(p);
+}
+
 void ClusterState::ingest_pgstats(MPGStats *stats)
 {
   Mutex::Locker l(lock);

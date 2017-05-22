@@ -4,6 +4,7 @@
 #include "MgrStatMonitor.h"
 #include "mon/PGMap.h"
 #include "messages/MMonMgrReport.h"
+#include "messages/MMonMgrGetCached.h"
 
 class MgrPGStatService : public PGStatService {
   PGMapDigest& digest;
@@ -117,6 +118,7 @@ void MgrStatMonitor::encode_pending(MonitorDBStore::TransactionRef t)
   ::encode(digestbl, bl);
   ::encode(pending_health_summary, bl);
   ::encode(pending_health_detail, bl);
+  t->put("mgrstat", "cached_pgmap", pending_full_compressed);
   put_version(t, version, bl);
   put_last_committed(t, version);
 }
@@ -159,6 +161,8 @@ bool MgrStatMonitor::preprocess_query(MonOpRequestRef op)
   switch (m->get_type()) {
   case MSG_MON_MGR_REPORT:
     return preprocess_report(op);
+  case MSG_MON_MGR_GET_CACHED:
+    return preprocess_get_cached(op);
   default:
     mon->no_reply(op);
     derr << "Unhandled message type " << m->get_type() << dendl;
@@ -179,6 +183,15 @@ bool MgrStatMonitor::prepare_update(MonOpRequestRef op)
   }
 }
 
+bool MgrStatMonitor::preprocess_get_cached(MonOpRequestRef op)
+{
+  auto r = new MMonMgrGetCached;
+  mon->store->get("mgrstat", "cached_pgmap", r->get_data());
+  dout(10) << " returning " << r->get_data().length() << " bytes" << dendl;
+  op->get_connection()->send_message(r);
+  return true;
+}
+
 bool MgrStatMonitor::preprocess_report(MonOpRequestRef op)
 {
   return false;
@@ -187,10 +200,10 @@ bool MgrStatMonitor::preprocess_report(MonOpRequestRef op)
 bool MgrStatMonitor::prepare_report(MonOpRequestRef op)
 {
   auto m = static_cast<MMonMgrReport*>(op->get_req());
-  bufferlist bl = m->get_data();
-  auto p = bl.begin();
+  auto p = m->digest_bl.begin();
   ::decode(pending_digest, p);
   pending_health_summary.swap(m->health_summary);
   pending_health_detail.swap(m->health_detail);
+  pending_full_compressed.claim(m->full_bl_compressed);
   return true;
 }
