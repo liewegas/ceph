@@ -3499,9 +3499,10 @@ bool OSDMonitor::handle_osd_timeouts(const utime_t &now,
     } else if (can_mark_down(i)) {
       utime_t diff = now - t->second;
       if (diff > timeo) {
-	mon->clog->info() << "osd." << i << " marked down after no pg stats for " << diff << "seconds";
-	derr << "no osd or pg stats from osd." << i << " since " << t->second << ", " << diff
-	     << " seconds ago.  marking down" << dendl;
+	mon->clog->info() << "osd." << i << " marked down after no beacon for "
+			  << diff << " seconds";
+	derr << "no beacon from osd." << i << " since " << t->second
+	     << ", " << diff << " seconds ago.  marking down" << dendl;
 	pending_inc.new_state[i] = CEPH_OSD_UP;
 	new_down = true;
       }
