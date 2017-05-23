@@ -414,7 +414,9 @@ void MonClient::shutdown()
     delete version_requests.begin()->second;
     version_requests.erase(version_requests.begin());
   }
-
+  for (const auto cmd : mon_commands) {
+    _cancel_mon_command(cmd.first);
+  }
   while (!waiting_for_session.empty()) {
     ldout(cct, 20) << __func__ << " discarding pending message " << *waiting_for_session.front() << dendl;
     waiting_for_session.front()->put();
