@@ -414,7 +414,9 @@ void MonClient::shutdown()
     delete version_requests.begin()->second;
     version_requests.erase(version_requests.begin());
   }
-
+  for (const auto cmd : mon_commands) {
+    _cancel_mon_command(cmd.first);
+  }
   while (!waiting_for_session.empty()) {
     ldout(cct, 20) << __func__ << " discarding pending message " << *waiting_for_session.front() << dendl;
     waiting_for_session.front()->put();
@@ -1009,7 +1011,7 @@ void MonClient::handle_mon_command_ack(MMonCommandAck *ack)
   ack->put();
 }
 
-int MonClient::_cancel_mon_command(uint64_t tid, int r)
+int MonClient::_cancel_mon_command(uint64_t tid)
 {
   assert(monc_lock.is_locked());
 
@@ -1059,7 +1061,7 @@ void MonClient::start_mon_command(const vector<string>& cmd,
       public:
       C_CancelMonCommand(uint64_t tid, MonClient *monc) : tid(tid), monc(monc) {}
       void finish(int r) override {
-	monc->_cancel_mon_command(tid, -ETIMEDOUT);
+	monc->_cancel_mon_command(tid);
       }
     };
     r->ontimeout = new C_CancelMonCommand(r->tid, this);
