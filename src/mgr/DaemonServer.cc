@@ -829,6 +829,10 @@ void DaemonServer::send_report()
 	  pg_map.get_health(g_ceph_context, osdmap,
 			    m->health_summary,
 			    &m->health_detail);
+
+	  if (osdmap.test_flag(CEPH_OSDMAP_REQUIRE_LUMINOUS)) {
+	    clog->info() << "pgmap v" << pg_map.version << ": " << pg_map;
+	  }
 	});
     });
   // TODO? We currently do not notify the PyModules
