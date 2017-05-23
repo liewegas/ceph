@@ -218,12 +218,14 @@ void Mgr::init()
   // all sets will come via mgr)
   load_config();
 
-  fetching_cached_pgmap = true;
-  dout(4) << "fetching catched pgmap" << dendl;
-  monc->send_mon_message(new MMonMgrGetCached);
-  while (fetching_cached_pgmap) {
-    dout(10) << "waiting for cached pgmap" << dendl;
-    pgmap_cond.Wait(lock);
+  if (g_conf->mgr_cache_pgmap) {
+    fetching_cached_pgmap = true;
+    dout(4) << "fetching catched pgmap" << dendl;
+    monc->send_mon_message(new MMonMgrGetCached);
+    while (fetching_cached_pgmap) {
+      dout(10) << "waiting for cached pgmap" << dendl;
+      pgmap_cond.Wait(lock);
+    }
   }
 
   // Wait for MgrDigest...?
