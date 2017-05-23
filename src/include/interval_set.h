@@ -259,6 +259,12 @@ class interval_set {
          i++)
       _size += i->second;
   }
+  void decode(bufferlist::iterator& p) {
+    denc_traits<std::map<T,T>>::decode(m, p);
+    _size = 0;
+    for (const auto& i : m)
+      _size += i.second;
+  }
 
   void encode_nohead(bufferlist::contiguous_appender& p) const {
     denc_traits<std::map<T,T>>::encode_nohead(m, p);
@@ -576,6 +582,7 @@ struct denc_traits<interval_set<T>> {
   static constexpr bool supported = true;
   static constexpr bool bounded = false;
   static constexpr bool featured = false;
+  static constexpr bool with_dencv = denc_traits<T>::with_dencv;
   static void bound_encode(const interval_set<T>& v, size_t& p) {
     v.bound_encode(p);
   }
@@ -584,6 +591,11 @@ struct denc_traits<interval_set<T>> {
     v.encode(p);
   }
   static void decode(interval_set<T>& v, bufferptr::iterator& p) {
+    v.decode(p);
+  }
+  template<typename U=T>
+    static typename std::enable_if<sizeof(U) && with_dencv>::type
+    decode(interval_set<T>& v, bufferlist::iterator& p) {
     v.decode(p);
   }
   static void encode_nohead(const interval_set<T>& v,
