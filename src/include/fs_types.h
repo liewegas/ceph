@@ -32,6 +32,7 @@ struct denc_traits<inodeno_t> {
   static constexpr bool supported = true;
   static constexpr bool featured = false;
   static constexpr bool bounded = true;
+  static constexpr bool with_dencv = false;
   static void bound_encode(const inodeno_t &o, size_t& p) {
     denc(o.val, p);
   }
