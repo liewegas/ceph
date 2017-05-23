@@ -1,7 +1,5 @@
 #include "include/buffer.h"
 #include "include/encoding.h"
-
-#include "include/types.h"
 #include "gtest/gtest.h"
 
 using namespace std;
@@ -288,109 +286,6 @@ TEST(EncodingRoundTrip, Integers) {
     ceph_le64 i;
     i = 42;
     test_encode_and_decode(i);
-  }
-  // vector
-  {
-    vector<uint8_t> v = {0, 1, 1, 2, 3, 5};
-    test_encode_and_decode(v);
-  }
-}
-
-
-struct Legacy {
-  static unsigned n_denc;
-  static unsigned n_decode;
-  uint8_t value = 0;
-  DENC(Legacy, v, p) {
-    n_denc++;
-    denc(v.value, p);
-  }
-  void decode(buffer::list::iterator& p) {
-    n_decode++;
-    ::decode(value, p);
-  }
-  static void reset() {
-    n_denc = n_decode = 0;
-  }
-  static bufferlist encode_n(unsigned n, unsigned segments);
-};
-WRITE_CLASS_DENC(Legacy)
-unsigned Legacy::n_denc = 0;
-unsigned Legacy::n_decode = 0;
-
-bufferlist Legacy::encode_n(unsigned n, unsigned segments) {
-  vector<Legacy> v;
-  for (unsigned i = 0; i < n; i++) {
-    v.push_back(Legacy());
-  }
-  bufferlist bl(n * sizeof(uint8_t));
-  ::encode(v, bl);
-  bufferlist segmented;
-  auto p = bl.begin();
-  for (unsigned i = 0; i < segments; i++) {
-    buffer::ptr seg;
-    p.copy_deep(bl.length() / segments, seg);
-      segmented.push_back(seg);
-  }
-  if (bl.length() % segments) {
-    buffer::ptr seg;
-    p.copy_deep(bl.length() % segments, seg);
-    segmented.push_back(seg);
-  }
-  return segmented;
-}
-
-TEST(EncodingRoundTrip, NoCopyIfSegmentedAndLengthy)
-{
-  static_assert(_denc::has_legacy_denc<Legacy>::value,
-                "Legacy do have legacy denc");
-  {
-    // use denc() which shallow_copy() if the buffer is small
-    constexpr unsigned N_COPIES = 42;
-    constexpr unsigned N_SEGS = 2;
-    bufferlist segmented = Legacy::encode_n(N_COPIES, N_SEGS);
-    ASSERT_GT(segmented.get_num_buffers(), 1u);
-    ASSERT_LT(segmented.length(), CEPH_PAGE_SIZE);
-    auto i(segmented.begin());
-    vector<Legacy> v;
-    // denc() is shared by encode() and decode(), so reset() right before
-    // decode()
-    Legacy::reset();
-    ::decode(v, i);
-    ASSERT_EQ(N_COPIES, v.size());
-    ASSERT_EQ(N_COPIES, Legacy::n_denc);
-    ASSERT_EQ(0u, Legacy::n_decode);
-  }
-  {
-    // use decode() which avoids deep copy if the buffer is segmented and large
-    const unsigned N_COPIES = CEPH_PAGE_SIZE * 2;
-    const unsigned N_SEGS = 2;
-    bufferlist segmented = Legacy::encode_n(N_COPIES, N_SEGS);
-    ASSERT_GT(segmented.get_num_buffers(), 1u);
-    ASSERT_GT(segmented.length(), CEPH_PAGE_SIZE);
-    auto i(segmented.begin());
-    vector<Legacy> v;
-    Legacy::reset();
-    ::decode(v, i);
-    ASSERT_EQ(N_COPIES, v.size());
-    ASSERT_EQ(0u, Legacy::n_denc);
-    ASSERT_EQ(N_COPIES, Legacy::n_decode);
-  }
-  {
-    // use denc() which shallow_copy() if the buffer is not segmented and large
-    const unsigned N_COPIES = CEPH_PAGE_SIZE * 2;
-    const unsigned N_SEGS = 1;
-    Legacy::reset();
-    bufferlist segmented = Legacy::encode_n(N_COPIES, N_SEGS);
-    ASSERT_EQ(segmented.get_num_buffers(), 1u);
-    ASSERT_GT(segmented.length(), CEPH_PAGE_SIZE);
-    auto i(segmented.begin());
-    vector<Legacy> v;
-    Legacy::reset();
-    ::decode(v, i);
-    ASSERT_EQ(N_COPIES, v.size());
-    ASSERT_EQ(N_COPIES, Legacy::n_denc);
-    ASSERT_EQ(0u, Legacy::n_decode);
   }
 }
 

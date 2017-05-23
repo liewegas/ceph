@@ -1599,9 +1599,10 @@ inline typename std::enable_if<traits::supported &&
   if (p.end())
     throw buffer::end_of_buffer();
   auto bl = p.get_bl();
-  auto remaining = bl.length() - p.get_off();
+  const auto remaining = bl.length() - p.get_off();
   // it is expensive to rebuild a contigous buffer and drop it, so avoid this.
-  if (bl.get_num_buffers() > 1 && remaining > CEPH_PAGE_SIZE) {
+  if (p.get_current_ptr().get_raw() != bl.back().get_raw() &&
+      remaining > CEPH_PAGE_SIZE) {
     traits::decode(o, p);
   } else {
     // ensure we get a contigous buffer... until the end of the
