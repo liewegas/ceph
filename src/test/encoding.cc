@@ -1,6 +1,5 @@
 #include "include/buffer.h"
 #include "include/encoding.h"
-
 #include "gtest/gtest.h"
 
 using namespace std;
