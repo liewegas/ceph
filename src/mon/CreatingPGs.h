@@ -41,7 +41,7 @@ struct creating_pgs_t {
   /// pools that exist in the osdmap for which at least one pg has been created
   std::set<int64_t> created_pools;
 
-  void create_pool(int64_t poolid,
+  bool create_pool(int64_t poolid,
 		   uint32_t pg_num,
 		   epoch_t created,
 		   utime_t modified) {
@@ -51,6 +51,9 @@ struct creating_pgs_t {
       c.modified = modified;
       c.end = pg_num;
       created_pools.insert(poolid);
+      return true;
+    } else {
+      return false;
     }
   }
 
