@@ -36,6 +36,10 @@ public:
     return digest.get_num_pg_by_osd(osd);
   }
 
+  ceph_statfs get_statfs() const override {
+    return digest.get_statfs();
+  }
+
   void print_summary(Formatter *f, ostream *out) const override {
     digest.print_summary(f, out);
   }

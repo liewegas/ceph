@@ -36,6 +36,7 @@
 #include "messages/MGenericMessage.h"
 #include "messages/MMonCommand.h"
 #include "messages/MMonCommandAck.h"
+#include "messages/MMonHealth.h"
 #include "messages/MMonMetadata.h"
 #include "messages/MMonSync.h"
 #include "messages/MMonScrub.h"
@@ -51,8 +52,9 @@
 #include "messages/MAuthReply.h"
 
 #include "messages/MTimeCheck.h"
-#include "messages/MMonHealth.h"
 #include "messages/MPing.h"
+#include "messages/MStatfs.h"
+#include "messages/MStatfsReply.h"
 
 #include "common/strtol.h"
 #include "common/ceph_argparse.h"
@@ -3818,6 +3820,8 @@ void Monitor::dispatch_op(MonOpRequestRef op)
 
     // pg
     case CEPH_MSG_STATFS:
+      handle_pg_statfs(op);
+      break;
     case MSG_PGSTATS:
     case MSG_GETPOOLSTATS:
       paxos_service[PAXOS_PGMAP]->dispatch(op);
@@ -4705,6 +4709,36 @@ int Monitor::print_nodes(Formatter *f, ostream& err)
 
   dump_services(f, mons, "mon");
   return 0;
+}
+
+void Monitor::handle_statfs(MonOpRequestRef op)
+{
+  op->mark_pgmon_event(__func__);
+  auto statfs = static_cast<MStatfs*>(op->get_req());
+  auto session = statfs->get_session();
+  if (!session)
+    return;
+  if (!session->is_capable("pg", MON_CAP_R)) {
+    dout(0) << "MStatfs received from entity with insufficient privileges "
+            << session->caps << dendl;
+    return;
+  }
+  if (statfs->fsid != monmap->fsid) {
+    dout(0) << __func__ << " on fsid " << statfs->fsid
+            << " != " << monmap->fsid << dendl;
+    return;
+  }
+  dout(10) << __func__ << " " << *statfs
+           << " from " << statfs->get_orig_source() << dendl;
+  epoch_t ver = 0;
+  if (pgservice == mgrstatmon()->get_pg_stat_service()) {
+    ver = mgrstatmon()->get_last_committed();
+  } else {
+    ver = pgmon()->get_last_committed();
+  }
+  auto reply = new MStatfsReply(monmap->fsid, statfs->get_tid(), ver);
+  reply->h.st = pgservice->get_statfs();
+  send_reply(op, reply);
 }
 
 // ----------------------------------------------
