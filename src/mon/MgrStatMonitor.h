@@ -46,6 +46,7 @@ public:
   bool prepare_report(MonOpRequestRef op);
 
   bool preprocess_getpoolstats(MonOpRequestRef op);
+  bool preprocess_statfs(MonOpRequestRef op);
 
   void check_sub(Subscription *sub);
   void check_subs();
