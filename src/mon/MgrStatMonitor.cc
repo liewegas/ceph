@@ -2,8 +2,14 @@
 // vim: ts=8 sw=2 smarttab
 
 #include "MgrStatMonitor.h"
+#include "mon/OSDMonitor.h"
 #include "mon/PGMap.h"
+#include "mon/PGMonitor.h"
+#include "messages/MGetPoolStats.h"
+#include "messages/MGetPoolStatsReply.h"
 #include "messages/MMonMgrReport.h"
+#include "messages/MStatfs.h"
+#include "messages/MStatfsReply.h"
 
 class MgrPGStatService : public PGStatService {
   PGMapDigest& digest;
@@ -161,8 +167,12 @@ bool MgrStatMonitor::preprocess_query(MonOpRequestRef op)
 {
   auto m = static_cast<PaxosServiceMessage*>(op->get_req());
   switch (m->get_type()) {
+  case CEPH_MSG_STATFS:
+    return preprocess_statfs(op);
   case MSG_MON_MGR_REPORT:
     return preprocess_report(op);
+  case MSG_GETPOOLSTATS:
+    return preprocess_getpoolstats(op);
   default:
     mon->no_reply(op);
     derr << "Unhandled message type " << m->get_type() << dendl;
@@ -196,5 +206,73 @@ bool MgrStatMonitor::prepare_report(MonOpRequestRef op)
   ::decode(pending_digest, p);
   pending_health_summary.swap(m->health_summary);
   pending_health_detail.swap(m->health_detail);
+  return true;
+}
+
+bool MgrStatMonitor::preprocess_getpoolstats(MonOpRequestRef op)
+{
+  op->mark_pgmon_event(__func__);
+  auto m = static_cast<MGetPoolStats*>(op->get_req());
+  auto session = m->get_session();
+  if (!session)
+    return true;
+  if (!session->is_capable("pg", MON_CAP_R)) {
+    dout(0) << "MGetPoolStats received from entity with insufficient caps "
+            << session->caps << dendl;
+    return true;
+  }
+  if (m->fsid != mon->monmap->fsid) {
+    dout(0) << __func__ << " on fsid "
+	    << m->fsid << " != " << mon->monmap->fsid << dendl;
+    return true;
+  }
+  epoch_t ver = 0;
+  if (mon->pgservice == get_pg_stat_service()) {
+    ver = get_last_committed();
+  } else {
+    ver = mon->pgmon()->get_last_committed();
+  }
+  auto reply = new MGetPoolStatsReply(m->fsid, m->get_tid(), ver);
+  for (const auto& pool_name : m->pools) {
+    const auto pool_id = mon->osdmon()->osdmap.lookup_pg_pool_name(pool_name);
+    if (pool_id == -ENOENT)
+      continue;
+    auto pool_stat = mon->pgservice->get_pool_stat(pool_id);
+    if (!pool_stat)
+      continue;
+    reply->pool_stats[pool_name] = *pool_stat;
+  }
+  mon->send_reply(op, reply);
+  return true;
+}
+
+bool MgrStatMonitor::preprocess_statfs(MonOpRequestRef op)
+{
+  op->mark_pgmon_event(__func__);
+  auto statfs = static_cast<MStatfs*>(op->get_req());
+  auto session = statfs->get_session();
+  if (!session)
+    return true;
+  if (!session->is_capable("pg", MON_CAP_R)) {
+    dout(0) << "MStatfs received from entity with insufficient privileges "
+            << session->caps << dendl;
+    return true;
+  }
+  if (statfs->fsid != mon->monmap->fsid) {
+    dout(0) << __func__ << " on fsid " << statfs->fsid
+            << " != " << mon->monmap->fsid << dendl;
+    return true;
+  }
+  dout(10) << __func__ << " " << *statfs
+           << " from " << statfs->get_orig_source() << dendl;
+  epoch_t ver = 0;
+  if (mon->pgservice == get_pg_stat_service()) {
+    ver = get_last_committed();
+  } else {
+    ver = mon->pgmon()->get_last_committed();
+  }
+  auto reply = new MStatfsReply(statfs->fsid, statfs->get_tid(), ver);
+  reply->h.st = mon->pgservice->get_statfs();
+  mon->send_reply(op, reply);
   return true;
 }

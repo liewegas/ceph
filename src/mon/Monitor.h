@@ -666,8 +666,6 @@ public:
   void handle_get_version(MonOpRequestRef op);
   void handle_subscribe(MonOpRequestRef op);
   void handle_mon_get_map(MonOpRequestRef op);
-  void handle_statfs(MonOpRequestRef op);
-  void handle_get_pool_stat(MonOpRequestRef op);
 
   static void _generate_command_map(map<string,cmd_vartype>& cmdmap,
                                     map<string,string> &param_str_map);
