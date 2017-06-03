@@ -45,7 +45,7 @@ test_mark_all_but_last_osds_down() {
   ceph osd set noup
   ceph osd down $(ceph osd ls | sed \$d)
   ceph health detail
-  ceph health | grep "1 rows"
+  ceph health | grep "1 row"
   ceph health | grep "2 racks"
   ceph health | grep "4 hosts"
   ceph health | grep "9 osds"
