@@ -4159,7 +4159,7 @@ bool OSDMonitor::preprocess_command(MonOpRequestRef op)
       ss << "got osdmap epoch " << p->get_epoch();
     } else if (prefix == "osd getcrushmap") {
       p->crush->encode(rdata, mon->get_quorum_con_features());
-      ss << "got crush map from osdmap epoch " << p->get_epoch();
+      ss << p->get_crush_version();
     }
     if (p != &osdmap)
       delete p;
@@ -7196,7 +7196,7 @@ bool OSDMonitor::prepare_command_impl(MonOpRequestRef op,
     dout(10) << " result " << ess.str() << dendl;
 
     pending_inc.crush = data;
-    ss << "set crush map";
+    ss << osdmap.get_crush_version() + 1;
     goto update;
 
   } else if (prefix == "osd crush set-device-class") {
