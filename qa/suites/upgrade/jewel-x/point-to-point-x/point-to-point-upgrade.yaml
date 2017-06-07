@@ -150,6 +150,9 @@ upgrade-sequence_jewel:
    - print: "**** done ceph.restart all jewel branch mds/osd/mon"
 workload_x:
    sequential:
+   - exec:
+       client.1:
+         - ceph_test_rados_api_stat --debug-ms 1
    - workunit:
        branch: jewel
        clients:
