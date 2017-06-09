@@ -467,6 +467,8 @@ void PGMonitor::encode_pending(MonitorDBStore::TransactionRef t)
     return;
   }
 
+  assert(mon->osdmon()->osdmap.require_osd_release < CEPH_RELEASE_LUMINOUS);
+
   version_t version = pending_inc.version;
   dout(10) << __func__ << " v " << version << dendl;
   assert(get_last_committed() + 1 == version);
