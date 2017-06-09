@@ -1445,9 +1445,24 @@ function test_mon_osd()
   ceph osd dump | grep ^osd.0 | grep 'weight 0.5'
 
   f=$TEMP_DIR/map.$$
-  ceph osd getcrushmap -o $f
+  ceph osd getcrushmap -o $f 2> $f.epoch
   [ -s $f ]
-  ceph osd setcrushmap -i $f
+  epoch=`cat $f.epoch`
+  nextepoch=$(( $epoch + 1 ))
+  echo epoch $epoch nextepoch $nextepoch
+  rm -f $f.epoch
+  expect_false ceph osd setcrushmap $nextepoch -i $f
+  ceph osd setcrushmap $epoch -i $f 2> $f.epoch
+  epoch=`cat $f.epoch`
+  echo epoch $epoch
+  rm -f $f.epoch
+  [ "$epoch" -eq "$nextepoch" ]
+  # should be idempotent
+  ceph osd setcrushmap $epoch -i $f 2> $f.epoch
+  epoch=`cat $f.epoch`
+  echo epoch $epoch
+  rm -f $f.epoch
+  [ "$epoch" -eq "$nextepoch" ]
   rm $f
   ceph osd getmap -o $f
   [ -s $f ]
