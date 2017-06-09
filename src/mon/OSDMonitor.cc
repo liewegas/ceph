@@ -4159,7 +4159,7 @@ bool OSDMonitor::preprocess_command(MonOpRequestRef op)
       ss << "got osdmap epoch " << p->get_epoch();
     } else if (prefix == "osd getcrushmap") {
       p->crush->encode(rdata, mon->get_quorum_con_features());
-      ss << "got crush map from osdmap epoch " << p->get_epoch();
+      ss << p->get_crush_version();
     }
     if (p != &osdmap)
       delete p;
@@ -7145,6 +7145,11 @@ bool OSDMonitor::prepare_command_impl(MonOpRequestRef op,
  
   if (prefix == "osd setcrushmap" ||
       (prefix == "osd crush set" && !osdid_present)) {
+    if (pending_inc.crush.length()) {
+      dout(10) << __func__ << " waiting for pending crush update " << dendl;
+      wait_for_finished_proposal(op, new C_RetryMessage(this, op));
+      return true;
+    }
     dout(10) << "prepare_command setting new crush map" << dendl;
     bufferlist data(m->get_data());
     CrushWrapper crush;
@@ -7156,6 +7161,32 @@ bool OSDMonitor::prepare_command_impl(MonOpRequestRef op,
       err = -EINVAL;
       ss << "Failed to parse crushmap: " << e.what();
       goto reply;
+    }
+
+    int64_t prior_version = 0;
+    if (cmd_getval(g_ceph_context, cmdmap, "prior_version", prior_version)) {
+      if (prior_version == osdmap.get_crush_version() - 1) {
+	// see if we are a resend of the last update.  this is imperfect
+	// (multiple racing updaters may not both get reliable success)
+	// but we expect crush updaters (via this interface) to be rare-ish.
+	bufferlist current, proposed;
+	osdmap.crush->encode(current, mon->get_quorum_con_features());
+	crush.encode(proposed, mon->get_quorum_con_features());
+	if (current.contents_equal(proposed)) {
+	  dout(10) << __func__
+		   << " proposed matches current and version off-by-one"
+		   << dendl;
+	  err = 0;
+	  ss << osdmap.get_crush_version();
+	  goto reply;
+	}
+      }
+      if (prior_version != osdmap.get_crush_version()) {
+	err = -EPERM;
+	ss << "prior_version " << prior_version << " != crush version "
+	   << osdmap.get_crush_version();
+	goto reply;
+      }
     }
 
     if (!validate_crush_against_features(&crush, ss)) {
@@ -7196,7 +7227,7 @@ bool OSDMonitor::prepare_command_impl(MonOpRequestRef op,
     dout(10) << " result " << ess.str() << dendl;
 
     pending_inc.crush = data;
-    ss << "set crush map";
+    ss << osdmap.get_crush_version() + 1;
     goto update;
 
   } else if (prefix == "osd crush set-device-class") {
