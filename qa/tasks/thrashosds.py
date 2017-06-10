@@ -197,4 +197,7 @@ def task(ctx, config):
     finally:
         log.info('joining thrashosds')
         thrash_proc.do_join()
+        cluster_manager.wait_for_all_up()
+        num_osds = int(ctx.cluster.only(teuthology.is_type('osd', cluster)))
+        cluster_manager.flush_pg_stats(range(0, num_osds))
         cluster_manager.wait_for_recovery(config.get('timeout', 360))
