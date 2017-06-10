@@ -171,3 +171,11 @@
   versions of Ceph will likely include an alternative object
   enumeration interface that makes it more natural and efficient to
   enumerate all objects along with their snapshot and clone metadata.
+
+12.1.1
+------
+
+* The 'ceph health' structured output (JSON or XML) no longer contains
+  a 'timechecks' section describing the time sync status.  This
+  information is now available via the 'ceph time-sync-status'
+  command.
