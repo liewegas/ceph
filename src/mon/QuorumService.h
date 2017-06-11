@@ -22,6 +22,7 @@
 #include "common/config.h"
 
 #include "mon/Monitor.h"
+#include "mon/health_check.h"
 
 class QuorumService
 {
@@ -38,6 +39,8 @@ public:
 protected:
   Monitor *mon;
   epoch_t epoch;
+
+  health_check_map_t health_checks;
 
   QuorumService(Monitor *m) :
     tick_period(g_conf->mon_tick_interval),
@@ -116,6 +119,13 @@ public:
   }
 
   virtual void init() { }
+
+  virtual health_status_t get_health_summary(Formatter *f, string *out) {
+    return health_checks.dump_summary(f, out);
+  }
+  virtual void get_health_detail(Formatter *f, string *out) {
+    health_checks.dump_detail(f, out);
+  }
 
   virtual void get_health(Formatter *f,
 			  list<pair<health_status_t,string> >& summary,

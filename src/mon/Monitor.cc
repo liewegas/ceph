@@ -1991,6 +1991,7 @@ void Monitor::finish_election()
   resend_routed_requests();
   update_logger();
   register_cluster_logger();
+  update_health();
 
   // am i named properly?
   string cur_name = monmap->get_name(messenger->get_myaddr());
@@ -2413,6 +2414,122 @@ void Monitor::do_health_to_clog(bool force)
 
   health_status_cache.overall = overall;
   health_status_cache.summary = summary;
+}
+
+void Monitor::update_health()
+{
+  health_checks.clear();
+
+  // quorum
+  {
+    int max = monmap->size();
+    int actual = get_quorum().size();
+    if (actual < max) {
+      ostringstream ss;
+      ss << (max-actual) << "/" << max << " mons down, quorum "
+	 << get_quorum_names();
+      auto& d = health_checks.add("MON_DOWN", HEALTH_WARN, ss.str());
+      set<int> q = get_quorum();
+      for (int i=0; i<max; i++) {
+	if (q.count(i) == 0) {
+	  ostringstream ss;
+	  ss << "mon." << monmap->get_name(i) << " (rank " << i
+	     << ") addr " << monmap->get_addr(i)
+	     << " is down (out of quorum)";
+	  d.detail.push_back(ss.str());
+	}
+      }
+    }
+  }
+
+  // clock skew
+  if (!timecheck_skews.empty()) {
+    list<string> warns;
+    list<string> details;
+    for (map<entity_inst_t,double>::iterator i = timecheck_skews.begin();
+	 i != timecheck_skews.end(); ++i) {
+      entity_inst_t inst = i->first;
+      double skew = i->second;
+      double latency = timecheck_latencies[inst];
+      string name = monmap->get_name(inst.addr);
+      ostringstream tcss;
+      health_status_t tcstatus = timecheck_status(tcss, skew, latency);
+      if (tcstatus != HEALTH_OK) {
+	warns.push_back(name);
+	ostringstream tmp_ss;
+	tmp_ss << "mon." << name
+	       << " addr " << inst.addr << " " << tcss.str()
+	       << " (latency " << latency << "s)";
+	details.push_back(tmp_ss.str());
+      }
+    }
+    if (!warns.empty()) {
+      ostringstream ss;
+      ss << "clock skew detected on";
+      while (!warns.empty()) {
+	ss << " mon." << warns.front();
+	warns.pop_front();
+	if (!warns.empty())
+	  ss << ",";
+      }
+      auto& d = health_checks.add("MON_CLOCK_SKEW", HEALTH_WARN,
+				  "monitor clock skew detected");
+      d.detail.swap(details);
+    }
+  }
+}
+
+health_status_t Monitor::get_health_status(
+  bool want_detail,
+  Formatter *f,
+  std::string *plain)
+{
+  health_status_t r = HEALTH_OK;
+  if (f) {
+    f->open_object_section("health");
+    f->open_object_section("checks");
+  }
+
+  string summary;
+  string *psummary = f ? nullptr : &summary;
+  r = std::min(r, health_checks.dump_summary(f, psummary));
+  for (auto& svc : paxos_service) {
+    r = std::min(r, svc->get_health_summary(f, psummary));
+  }
+  r = std::min(r, health_monitor->get_health_summary(f, psummary));
+
+  if (f) {
+    f->close_section();
+    f->dump_stream("status") << r;
+  } else {
+    // one-liner: HEALTH_FOO[ thing1[; thing2 ...]]
+    *plain = stringify(r);
+    if (summary.size()) {
+      *plain += " ";
+      *plain += summary;
+    }
+    *plain += "\n";
+  }
+
+  if (want_detail) {
+    if (f) {
+      f->open_object_section("detail");
+    }
+
+    health_checks.dump_detail(f, plain);
+    for (auto& svc : paxos_service) {
+      svc->get_health_detail(f, plain);
+    }
+    health_monitor->get_health_detail(f, plain);
+
+    if (f) {
+      f->close_section();
+    }
+  }
+  if (f) {
+    f->close_section();
+  }
+  return r;
 }
 
 health_status_t Monitor::get_health(list<string>& status,
@@ -3067,25 +3184,35 @@ void Monitor::handle_command(MonOpRequestRef op)
       }
       rdata.append(ds);
     } else if (prefix == "health") {
-      list<string> health_str;
-      get_health(health_str, detail == "detail" ? &rdata : NULL, f.get());
-      if (f) {
-        f->flush(ds);
-        ds << '\n';
-      } else {
-	assert(!health_str.empty());
-	ds << health_str.front();
-	health_str.pop_front();
-	if (!health_str.empty()) {
-	  ds << ' ';
-	  ds << joinify(health_str.begin(), health_str.end(), string("; "));
+      if (osdmon()->osdmap.require_osd_release >= CEPH_RELEASE_LUMINOUS) {
+	string plain;
+	get_health_status(detail == "detail", f.get(), f ? nullptr : &plain);
+	if (f) {
+	  f->flush(rdata);
+	} else {
+	  rdata.append(plain);
 	}
+      } else {
+	list<string> health_str;
+	get_health(health_str, detail == "detail" ? &rdata : NULL, f.get());
+	if (f) {
+	  f->flush(ds);
+	  ds << '\n';
+	} else {
+	  assert(!health_str.empty());
+	  ds << health_str.front();
+	  health_str.pop_front();
+	  if (!health_str.empty()) {
+	    ds << ' ';
+	    ds << joinify(health_str.begin(), health_str.end(), string("; "));
+	  }
+	}
+	bufferlist comb;
+	comb.append(ds);
+	if (detail == "detail")
+	  comb.append(rdata);
+	rdata = comb;
       }
-      bufferlist comb;
-      comb.append(ds);
-      if (detail == "detail")
-	comb.append(rdata);
-      rdata = comb;
     } else if (prefix == "df") {
       bool verbose = (detail == "detail");
       if (f)
@@ -5116,7 +5243,9 @@ void Monitor::tick()
     (*p)->tick();
     (*p)->maybe_trim();
   }
-  
+
+  update_health();
+
   // trim sessions
   utime_t now = ceph_clock_now();
   {

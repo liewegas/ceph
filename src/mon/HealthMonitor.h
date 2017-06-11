@@ -42,6 +42,10 @@ public:
   void get_health(Formatter *f,
 		  list<pair<health_status_t,string> >& summary,
 		  list<pair<health_status_t,string> > *detail) override;
+
+  health_status_t get_health_summary(Formatter *f, string *out) override;
+  void get_health_detail(Formatter *f, string *out) override;
+
   bool service_dispatch(MonOpRequestRef op) override;
 
   void start_epoch() override;

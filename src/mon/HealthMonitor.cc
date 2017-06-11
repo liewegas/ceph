@@ -116,3 +116,21 @@ void HealthMonitor::get_health(Formatter *f,
   }
 }
 
+
+health_status_t HealthMonitor::get_health_summary(
+  Formatter *f, string *out)
+{
+  health_status_t r = HEALTH_OK;
+  for (auto& p : services) {
+    r = std::min(r, p.second->get_health_summary(f, out));
+  }
+  return r;
+}
+
+void HealthMonitor::get_health_detail(
+  Formatter *f, string *out)
+{
+  for (auto& p : services) {
+    p.second->get_health_detail(f, out);
+  }
+}

@@ -84,7 +84,12 @@ protected:
    */
   version_t format_version;
 
-
+  /**
+   * health checks for this service
+   *
+   * Child should populate this.
+   */
+  health_check_map_t health_checks;
 
   /**
    * @defgroup PaxosService_h_callbacks Callback classes
@@ -427,6 +432,13 @@ public:
   virtual void get_health(list<pair<health_status_t,string> >& summary,
 			  list<pair<health_status_t,string> > *detail,
 			  CephContext *cct) const { }
+
+  health_status_t get_health_summary(Formatter *f, string *out) {
+    return health_checks.dump_summary(f, out);
+  }
+  void get_health_detail(Formatter *f, string *out) {
+    health_checks.dump_detail(f, out);
+  }
 
  private:
   /**

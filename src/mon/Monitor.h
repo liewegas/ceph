@@ -32,6 +32,7 @@
 
 #include "common/Timer.h"
 
+#include "health_check.h"
 #include "MonMap.h"
 #include "Elector.h"
 #include "Paxos.h"
@@ -735,6 +736,15 @@ public:
    */
   health_status_t get_health(list<string>& status, bufferlist *detailbl,
                              Formatter *f);
+
+  health_check_map_t health_checks;
+
+  void update_health();
+  health_status_t get_health_status(
+    bool want_detail,
+    Formatter *f,
+    std::string *plain);
+
   void get_cluster_status(stringstream &ss, Formatter *f);
 
   void reply_command(MonOpRequestRef op, int rc, const string &rs, version_t version);
