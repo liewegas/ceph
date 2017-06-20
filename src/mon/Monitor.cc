@@ -76,6 +76,7 @@
 #include "AuthMonitor.h"
 #include "MgrMonitor.h"
 #include "MgrStatMonitor.h"
+#include "ServiceMonitor.h"
 #include "mon/QuorumService.h"
 #include "mon/HealthMonitor.h"
 #include "mon/ConfigKeyService.h"
@@ -204,6 +205,7 @@ Monitor::Monitor(CephContext* cct_, string nm, MonitorDBStore *s,
   paxos_service[PAXOS_AUTH] = new AuthMonitor(this, paxos, "auth");
   paxos_service[PAXOS_MGR] = new MgrMonitor(this, paxos, "mgr");
   paxos_service[PAXOS_MGRSTAT] = new MgrStatMonitor(this, paxos, "mgrstat");
+  paxos_service[PAXOS_SERVICEMAP] = new ServiceMonitor(this, paxos, "servicemap");
 
   health_monitor = new HealthMonitor(this);
   config_key_service = new ConfigKeyService(this, paxos);
@@ -243,6 +245,10 @@ PaxosService *Monitor::get_paxos_service_by_name(const string& name)
     return paxos_service[PAXOS_AUTH];
   if (name == "mgr")
     return paxos_service[PAXOS_MGR];
+  if (name == "mgrstat")
+    return paxos_service[PAXOS_MGRSTAT];
+  if (name == "servicemap")
+    return paxos_service[PAXOS_SERVICEMAP];
 
   assert(0 == "given name does not match known paxos service");
   return NULL;
@@ -2988,6 +2994,11 @@ void Monitor::handle_command(MonOpRequestRef op)
 
   if (module == "mgr") {
     mgrmon()->dispatch(op);
+    return;
+  }
+
+  if (module == "service") {
+    servicemon()->dispatch(op);
     return;
   }
 

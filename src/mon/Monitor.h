@@ -646,6 +646,10 @@ public:
     return (class MgrStatMonitor*) paxos_service[PAXOS_MGRSTAT];
   }
 
+  class ServiceMonitor *servicemon() {
+    return (class ServiceMonitor*) paxos_service[PAXOS_SERVICEMAP];
+  }
+
   friend class Paxos;
   friend class OSDMonitor;
   friend class MDSMonitor;
