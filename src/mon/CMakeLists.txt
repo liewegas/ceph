@@ -19,6 +19,7 @@ set(lib_mon_srcs
   DataHealthService.cc
   PGMonitor.cc
   PGMap.cc
+  ServiceMap.cc
   ConfigKeyService.cc)
 add_library(mon STATIC
   ${lib_mon_srcs}
