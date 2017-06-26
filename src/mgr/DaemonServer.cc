@@ -286,8 +286,10 @@ bool DaemonServer::handle_open(MMgrOpen *m)
     } else {
       dout(4) << "constructing new DaemonState for " << key << dendl;
       daemon = std::make_shared<DaemonState>(daemon_state.types);
-      // FIXME: crap, we don't know the hostname at this stage.
       daemon->key = key;
+      if (m->daemon_metadata.count("hostname")) {
+        daemon->hostname = m->daemon_metadata["hostname"];
+      }
       daemon_state.insert(daemon);
     }
     daemon->service_daemon = true;
@@ -344,7 +346,9 @@ bool DaemonServer::handle_report(MMgrReport *m)
     // FIXME: crap, we don't know the hostname at this stage.
     daemon->key = key;
     daemon_state.insert(daemon);
-    // FIXME: we should request metadata at this stage
+    // FIXME: we should avoid this case by rejecting MMgrReport from
+    // daemons without sessions, and ensuring that session open
+    // always contains metadata.
   }
   assert(daemon != nullptr);
   auto &daemon_counters = daemon->perf_counters;
@@ -1030,9 +1034,12 @@ void DaemonServer::got_service_map()
       if (!daemon_state.exists(key)) {
 	auto daemon = std::make_shared<DaemonState>(daemon_state.types);
 	daemon->key = key;
-	daemon_state.insert(daemon);
 	daemon->metadata = q.second.metadata;
+        if (q.second.metadata.count("hostname")) {
+          daemon->hostname = q.second.metadata["hostname"];
+        }
 	daemon->service_daemon = true;
+	daemon_state.insert(daemon);
 	dout(10) << "added missing " << key << dendl;
       }
     }
