@@ -279,6 +279,19 @@ get_metadata(PyObject *self, PyObject *args)
 }
 
 static PyObject*
+get_daemon_status(PyObject *self, PyObject *args)
+{
+  char *handle = nullptr;
+  char *svc_name = NULL;
+  char *svc_id = NULL;
+  if (!PyArg_ParseTuple(args, "sss:get_daemon_status", &handle, &svc_name,
+			&svc_id)) {
+    return nullptr;
+  }
+  return global_handle->get_daemon_status_python(handle, svc_name, svc_id);
+}
+
+static PyObject*
 ceph_log(PyObject *self, PyObject *args)
 {
   int level = 0;
