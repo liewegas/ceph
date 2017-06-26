@@ -3762,11 +3762,8 @@ int RGWRados::init_rados()
     if (first) {
       map<string,string> metadata;
       metadata["pid"] = stringify(getpid());
-      char hostname[1024] = {0};
-      gethostname(hostname, sizeof(hostname));
-      metadata["host"] = hostname;
-      metadata["num_handles"] = handles.size();
-      metadata["zonegroup_id"] = zonegroup_id;
+      metadata["num_handles"] = stringify(handles.size());
+      metadata["zonegroup_id"] = stringify(zonegroup_id);
       metadata["zone_name"] = zone_name;
       string name = g_conf->name.get_id();
       if (name.find("rgw.") == 0) {
