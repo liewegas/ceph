@@ -172,3 +172,11 @@ target_link_libraries(unittest_librados_config
   ${BLKID_LIBRARIES}
   )
 
+# ceph_test_rados_api_service
+add_executable(ceph_test_rados_api_service
+  service.cc
+  )
+set_target_properties(ceph_test_rados_api_service PROPERTIES COMPILE_FLAGS
+  ${UNITTEST_CXX_FLAGS})
+target_link_libraries(ceph_test_rados_api_service
+  rados_a global ${UNITTEST_LIBS} radostest)
