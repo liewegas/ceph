@@ -3752,10 +3752,28 @@ int RGWRados::init_rados()
   int ret = 0;
   auto handles = std::vector<librados::Rados>{cct->_conf->rgw_num_rados_handles};
 
+  bool first = true;
   for (auto& r : handles) {
     ret = r.init_with_context(cct);
     if (ret < 0) {
       return ret;
+    }
+
+    if (first) {
+      map<string,string> metadata;
+      metadata["pid"] = stringify(getpid());
+      char hostname[1024] = {0};
+      gethostname(hostname, sizeof(hostname));
+      metadata["host"] = hostname;
+      metadata["num_handles"] = handles.size();
+      metadata["zonegroup_id"] = zonegroup_id;
+      metadata["zone_name"] = zone_name;
+      string name = g_conf->name.get_id();
+      if (name.find("rgw.") == 0) {
+	name = name.substr(4);
+      }
+      r.service_daemon_register("rgw", name, metadata);
+      first = false;
     }
 
     ret = r.connect();
