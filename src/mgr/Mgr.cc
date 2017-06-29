@@ -48,6 +48,7 @@ Mgr::Mgr(MonClient *monc_, Messenger *clientm_, Objecter *objecter_,
   lock("Mgr::lock"),
   timer(g_ceph_context, lock),
   finisher(g_ceph_context, "Mgr", "mgr-fin"),
+  digest_received(false),
   py_modules(daemon_state, cluster_state, *monc, clog_, *objecter, *client,
              finisher),
   cluster_state(monc, nullptr),
@@ -217,8 +218,10 @@ void Mgr::init()
   // all sets will come via mgr)
   load_config();
 
-  // Wait for MgrDigest...?
-  // TODO
+  // Wait for MgrDigest...
+  while(!digest_received) {
+    digest_cond.Wait(lock);
+  }
 
   // assume finisher already initialized in background_init
 
@@ -582,6 +585,11 @@ void Mgr::handle_mgr_digest(MMgrDigest* m)
   dout(10) << "done." << dendl;
 
   m->put();
+
+  if (!digest_received) {
+    digest_received = true;
+    digest_cond.Signal();
+  }
 }
 
 void Mgr::tick()
