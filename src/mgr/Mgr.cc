@@ -147,7 +147,7 @@ public:
 };
 
 
-void Mgr::background_init()
+void Mgr::background_init(Context *completion)
 {
   Mutex::Locker l(lock);
   assert(!initializing);
@@ -156,8 +156,9 @@ void Mgr::background_init()
 
   finisher.start();
 
-  finisher.queue(new FunctionContext([this](int r){
+  finisher.queue(new FunctionContext([this, completion](int r){
     init();
+    completion->complete(0);
   }));
 }
 
