@@ -3763,18 +3763,6 @@ int RGWRados::init_rados()
     }
   }
 
-  // FIXME: this should happen later when we know what kind of rgw we will be.
-  map<string,string> metadata;
-  metadata["pid"] = stringify(getpid());
-  metadata["num_handles"] = stringify(handles.size());
-  metadata["zonegroup_id"] = stringify(zonegroup_id);
-  metadata["zone_name"] = zone_name;
-  string name = g_conf->name.get_id();
-  if (name.find("rgw.") == 0) {
-    name = name.substr(4);
-  }
-  handles[0].service_daemon_register("rgw", name, metadata);
-
   sync_modules_manager = new RGWSyncModulesManager();
 
   rgw_register_sync_modules(sync_modules_manager);
@@ -3792,6 +3780,28 @@ int RGWRados::init_rados()
 
   std::swap(handles, rados);
   return ret;
+}
+
+
+int RGWRados::register_to_service_map(const string& daemon_type, const map<string, string>& meta)
+{
+  map<string,string> metadata = meta;
+  metadata["num_handles"] = stringify(rados.size());
+  metadata["zonegroup_id"] = zonegroup.get_id();
+  metadata["zonegroup_name"] = zonegroup.get_name();
+  metadata["zone_name"] = zone_name();
+  metadata["zone_id"] = zone_id();;
+  string name = cct->_conf->name.get_id();
+  if (name.find("rgw.") == 0) {
+    name = name.substr(4);
+  }
+  int ret = rados[0].service_daemon_register(daemon_type, name, metadata);
+  if (ret < 0) {
+    ldout(cct, 0) << "ERROR: service_daemon_register() returned ret=" << ret << ": " << cpp_strerror(-ret) << dendl;
+    return ret;
+  }
+
+  return 0;
 }
 
 /**
@@ -5907,7 +5917,7 @@ int RGWRados::select_bucket_location_by_rule(const string& location_rule, RGWZon
   map<string, RGWZonePlacementInfo>::iterator piter = get_zone_params().placement_pools.find(location_rule);
   if (piter == get_zone_params().placement_pools.end()) {
     /* couldn't find, means we cannot really place data for this bucket in this zone */
-    if (get_zonegroup().equals(zonegroup_id)) {
+    if (get_zonegroup().equals(zonegroup.get_id())) {
       /* that's a configuration error, zone should have that rule, as we're within the requested
        * zonegroup */
       return -EINVAL;
