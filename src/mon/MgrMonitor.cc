@@ -106,7 +106,7 @@ void MgrMonitor::encode_pending(MonitorDBStore::TransactionRef t)
   put_last_committed(t, pending_map.epoch);
 
   health_check_map_t next;
-  if (!pending_map.available) {
+  if (pending_map.active_gid == 0) {
     auto level = should_warn_about_mgr_down();
     if (level != HEALTH_OK) {
       next.add("MGR_DOWN", level, "no active mgr");
@@ -328,8 +328,7 @@ void MgrMonitor::send_digests()
     MMgrDigest *mdigest = new MMgrDigest;
 
     JSONFormatter f;
-    std::list<std::string> health_strs;
-    mon->get_health(health_strs, nullptr, &f);
+    mon->get_health_status(true, &f, nullptr, nullptr, nullptr);
     f.flush(mdigest->health_json);
     f.reset();
 
@@ -357,8 +356,9 @@ void MgrMonitor::cancel_timer()
 
 void MgrMonitor::on_active()
 {
-  if (mon->is_leader())
-    mon->clog->info() << "mgrmap e" << map.epoch << ": " << map;
+  if (mon->is_leader()) {
+    mon->clog->debug() << "mgrmap e" << map.epoch << ": " << map;
+  }
 }
 
 void MgrMonitor::get_health(
@@ -377,7 +377,7 @@ void MgrMonitor::get_health(
     return;
   }
 
-  if (!map.available) {
+  if (map.active_gid == 0) {
     auto level = HEALTH_WARN;
     // do not escalate to ERR if they are still upgrading to jewel.
     if (mon->osdmon()->osdmap.require_osd_release >= CEPH_RELEASE_LUMINOUS) {
