@@ -59,7 +59,7 @@ void PyModules::dump_server(const std::string &hostname,
 
   for (const auto &i : dmc) {
     const auto &key = i.first;
-    const std::string str_type = ceph_entity_type_name(key.first);
+    const std::string &str_type = key.first;
     const std::string &svc_name = key.second;
 
     // TODO: pick the highest version, and make sure that
@@ -117,10 +117,12 @@ PyObject *PyModules::list_servers_python()
   return f.get();
 }
 
-PyObject *PyModules::get_metadata_python(std::string const &handle,
-    entity_type_t svc_type, const std::string &svc_id)
+PyObject *PyModules::get_metadata_python(
+  std::string const &handle,
+  const std::string &svc_name,
+  const std::string &svc_id)
 {
-  auto metadata = daemon_state.get(DaemonKey(svc_type, svc_id));
+  auto metadata = daemon_state.get(DaemonKey(svc_name, svc_id));
   PyFormatter f;
   f.dump_string("hostname", metadata->hostname);
   for (const auto &i : metadata->metadata) {
@@ -130,6 +132,18 @@ PyObject *PyModules::get_metadata_python(std::string const &handle,
   return f.get();
 }
 
+PyObject *PyModules::get_daemon_status_python(
+  std::string const &handle,
+  const std::string &svc_name,
+  const std::string &svc_id)
+{
+  auto metadata = daemon_state.get(DaemonKey(svc_name, svc_id));
+  PyFormatter f;
+  for (const auto &i : metadata->service_status) {
+    f.dump_string(i.first.c_str(), i.second);
+  }
+  return f.get();
+}
 
 PyObject *PyModules::get_python(const std::string &what)
 {
@@ -174,9 +188,17 @@ PyObject *PyModules::get_python(const std::string &what)
       }
     );
     return f.get();
+  } else if (what == "service_map") {
+    PyFormatter f;
+    cluster_state.with_servicemap(
+      [&f](const ServiceMap &service_map) {
+        service_map.dump(&f);
+      }
+    );
+    return f.get();
   } else if (what == "osd_metadata") {
     PyFormatter f;
-    auto dmc = daemon_state.get_by_type(CEPH_ENTITY_TYPE_OSD);
+    auto dmc = daemon_state.get_by_service("osd");
     for (const auto &i : dmc) {
       f.open_object_section(i.first.second.c_str());
       f.dump_string("hostname", i.second->hostname);
@@ -615,7 +637,7 @@ void PyModules::log(const std::string &handle,
 
 PyObject* PyModules::get_counter_python(
     const std::string &handle,
-    entity_type_t svc_type,
+    const std::string &svc_name,
     const std::string &svc_id,
     const std::string &path)
 {
@@ -626,7 +648,7 @@ PyObject* PyModules::get_counter_python(
   PyFormatter f;
   f.open_array_section(path.c_str());
 
-  auto metadata = daemon_state.get(DaemonKey(svc_type, svc_id));
+  auto metadata = daemon_state.get(DaemonKey(svc_name, svc_id));
 
   // FIXME: this is unsafe, I need to either be inside DaemonStateIndex's
   // lock or put a lock on individual DaemonStates
@@ -643,8 +665,7 @@ PyObject* PyModules::get_counter_python(
       }
     } else {
       dout(4) << "Missing counter: '" << path << "' ("
-              << ceph_entity_type_name(svc_type) << "."
-              << svc_id << ")" << dendl;
+              << svc_name << "." << svc_id << ")" << dendl;
       dout(20) << "Paths are:" << dendl;
       for (const auto &i : metadata->perf_counters.instances) {
         dout(20) << i.first << dendl;
@@ -652,8 +673,7 @@ PyObject* PyModules::get_counter_python(
     }
   } else {
     dout(4) << "No daemon state for "
-              << ceph_entity_type_name(svc_type) << "."
-              << svc_id << ")" << dendl;
+              << svc_name << "." << svc_id << ")" << dendl;
   }
   f.close_section();
   return f.get();

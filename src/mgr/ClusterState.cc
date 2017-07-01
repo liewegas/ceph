@@ -40,6 +40,13 @@ void ClusterState::set_fsmap(FSMap const &new_fsmap)
   fsmap = new_fsmap;
 }
 
+void ClusterState::set_service_map(ServiceMap const &new_service_map)
+{
+  Mutex::Locker l(lock);
+
+  servicemap = new_service_map;
+}
+
 void ClusterState::load_digest(MMgrDigest *m)
 {
   health_json = std::move(m->health_json);

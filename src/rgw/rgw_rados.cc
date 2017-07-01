@@ -3757,12 +3757,23 @@ int RGWRados::init_rados()
     if (ret < 0) {
       return ret;
     }
-
     ret = r.connect();
     if (ret < 0) {
       return ret;
     }
   }
+
+  // FIXME: this should happen later when we know what kind of rgw we will be.
+  map<string,string> metadata;
+  metadata["pid"] = stringify(getpid());
+  metadata["num_handles"] = stringify(handles.size());
+  metadata["zonegroup_id"] = stringify(zonegroup_id);
+  metadata["zone_name"] = zone_name;
+  string name = g_conf->name.get_id();
+  if (name.find("rgw.") == 0) {
+    name = name.substr(4);
+  }
+  handles[0].service_daemon_register("rgw", name, metadata);
 
   sync_modules_manager = new RGWSyncModulesManager();
 
