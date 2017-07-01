@@ -181,13 +181,14 @@ def task(ctx, config):
     assert proc.exitstatus == 0
 
     # Kill one of non-divergent OSDs
-    log.info('killing osd.%d' % non_divergent[0])
-    manager.kill_osd(non_divergent[0])
-    manager.mark_down_osd(non_divergent[0])
-    # manager.mark_out_osd(non_divergent[0])
+    target = non_divergent[1]
+    log.info('killing osd.%d' % target)
+    manager.kill_osd(target)
+    manager.mark_down_osd(target)
+    # manager.mark_out_osd(target)
 
     cmd = ((prefix + "--op import --file {file}").
-           format(id=non_divergent[0], file=expfile))
+           format(id=target, file=expfile))
     proc = exp_remote.run(args=cmd, wait=True,
                           check_status=False, stdout=StringIO())
     assert proc.exitstatus == 0
@@ -196,8 +197,8 @@ def task(ctx, config):
     log.info("revive divergent %d", divergent)
     manager.revive_osd(divergent)
     manager.mark_in_osd(divergent)
-    log.info("revive %d", non_divergent[0])
-    manager.revive_osd(non_divergent[0])
+    log.info("revive %d", target)
+    manager.revive_osd(target)
 
     while len(manager.get_osd_status()['up']) < 3:
         time.sleep(10)
