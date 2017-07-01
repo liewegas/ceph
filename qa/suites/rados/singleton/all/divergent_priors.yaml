@@ -10,12 +10,6 @@ openstack:
       count: 3
       size: 10 # GB
 
-overrides:
-  ceph:
-    conf:
-      osd:
-        debug osd: 5
-
 tasks:
 - install:
 - ceph:
