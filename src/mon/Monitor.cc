@@ -77,6 +77,7 @@
 #include "MgrMonitor.h"
 #include "MgrStatMonitor.h"
 #include "mon/QuorumService.h"
+#include "mon/OldHealthMonitor.h"
 #include "mon/HealthMonitor.h"
 #include "mon/ConfigKeyService.h"
 #include "common/config.h"
@@ -204,8 +205,9 @@ Monitor::Monitor(CephContext* cct_, string nm, MonitorDBStore *s,
   paxos_service[PAXOS_AUTH] = new AuthMonitor(this, paxos, "auth");
   paxos_service[PAXOS_MGR] = new MgrMonitor(this, paxos, "mgr");
   paxos_service[PAXOS_MGRSTAT] = new MgrStatMonitor(this, paxos, "mgrstat");
+  paxos_service[PAXOS_HEALTH] = new HealthMonitor(this, paxos, "health");
 
-  health_monitor = new HealthMonitor(this);
+  health_monitor = new OldHealthMonitor(this);
   config_key_service = new ConfigKeyService(this, paxos);
 
   mon_caps = new MonCap();
@@ -225,27 +227,6 @@ Monitor::Monitor(CephContext* cct_, string nm, MonitorDBStore *s,
 
   // note: OSDMonitor may update this based on the luminous flag.
   pgservice = mgrstatmon()->get_pg_stat_service();
-}
-
-PaxosService *Monitor::get_paxos_service_by_name(const string& name)
-{
-  if (name == "mdsmap")
-    return paxos_service[PAXOS_MDSMAP];
-  if (name == "monmap")
-    return paxos_service[PAXOS_MONMAP];
-  if (name == "osdmap")
-    return paxos_service[PAXOS_OSDMAP];
-  if (name == "pgmap")
-    return paxos_service[PAXOS_PGMAP];
-  if (name == "logm")
-    return paxos_service[PAXOS_LOG];
-  if (name == "auth")
-    return paxos_service[PAXOS_AUTH];
-  if (name == "mgr")
-    return paxos_service[PAXOS_MGR];
-
-  assert(0 == "given name does not match known paxos service");
-  return NULL;
 }
 
 Monitor::~Monitor()
@@ -296,7 +277,8 @@ void Monitor::do_admin_command(string command, cmdmap_t& cmdmap, string format,
   bool read_only = (command == "mon_status" ||
                     command == "mon metadata" ||
                     command == "quorum_status" ||
-                    command == "ops");
+                    command == "ops" ||
+                    command == "sessions");
 
   (read_only ? audit_clog->debug() : audit_clog->info())
     << "from='admin socket' entity='admin socket' "
@@ -334,6 +316,17 @@ void Monitor::do_admin_command(string command, cmdmap_t& cmdmap, string format,
     if (f) {
       f->flush(ss);
     }
+  } else if (command == "sessions") {
+
+    if (f) {
+      f->open_array_section("sessions");
+      for (auto p : session_map.sessions) {
+        f->dump_stream("session") << *p;
+      }
+      f->close_section();
+      f->flush(ss);
+    }
+
   } else {
     assert(0 == "bad AdminSocket command binding");
   }
@@ -768,6 +761,11 @@ int Monitor::preinit()
                                      admin_hook,
                                      "show the ops currently in flight");
   assert(r == 0);
+  r = admin_socket->register_command("sessions",
+                                     "sessions",
+                                     admin_hook,
+                                     "list existing sessions");
+  assert(r == 0);
 
   lock.Lock();
 
@@ -898,6 +896,7 @@ void Monitor::shutdown()
     admin_socket->unregister_command("quorum enter");
     admin_socket->unregister_command("quorum exit");
     admin_socket->unregister_command("ops");
+    admin_socket->unregister_command("sessions");
     delete admin_hook;
     admin_hook = NULL;
   }
@@ -2425,27 +2424,180 @@ void Monitor::do_health_to_clog(bool force)
 
   dout(10) << __func__ << (force ? " (force)" : "") << dendl;
 
-  list<string> status;
-  health_status_t overall = get_health(status, NULL, NULL);
+  if (osdmon()->osdmap.require_osd_release >= CEPH_RELEASE_LUMINOUS) {
+    string summary;
+    health_status_t level = get_health_status(false, nullptr, &summary);
+    if (!force &&
+	summary == health_status_cache.summary &&
+	level == health_status_cache.overall)
+      return;
+    if (level == HEALTH_OK)
+      clog->info() << "overall " << summary;
+    else if (level == HEALTH_WARN)
+      clog->warn() << "overall " << summary;
+    else if (level == HEALTH_ERR)
+      clog->error() << "overall " << summary;
+    else
+      ceph_abort();
+    health_status_cache.summary = summary;
+    health_status_cache.overall = level;
+  } else {
+    // for jewel only
+    list<string> status;
+    health_status_t overall = get_health(status, NULL, NULL);
+    dout(25) << __func__
+	     << (force ? " (force)" : "")
+	     << dendl;
 
-  dout(25) << __func__
-           << (force ? " (force)" : "")
-           << dendl;
+    string summary = joinify(status.begin(), status.end(), string("; "));
 
-  string summary = joinify(status.begin(), status.end(), string("; "));
+    if (!force &&
+	overall == health_status_cache.overall &&
+	!health_status_cache.summary.empty() &&
+	health_status_cache.summary == summary) {
+      // we got a dup!
+      return;
+    }
 
-  if (!force &&
-      overall == health_status_cache.overall &&
-      !health_status_cache.summary.empty() &&
-      health_status_cache.summary == summary) {
-    // we got a dup!
-    return;
+    clog->info() << summary;
+
+    health_status_cache.overall = overall;
+    health_status_cache.summary = summary;
+  }
+}
+
+health_status_t Monitor::get_health_status(
+  bool want_detail,
+  Formatter *f,
+  std::string *plain,
+  const char *sep1,
+  const char *sep2)
+{
+  health_status_t r = HEALTH_OK;
+  bool compat = g_conf->mon_health_preluminous_compat;
+  if (f) {
+    f->open_object_section("health");
+    f->open_object_section("checks");
   }
 
-  clog->info() << summary;
+  string summary;
+  string *psummary = f ? nullptr : &summary;
+  for (auto& svc : paxos_service) {
+    r = std::min(r, svc->get_health_checks().dump_summary(
+		   f, psummary, sep2, want_detail));
+  }
 
-  health_status_cache.overall = overall;
-  health_status_cache.summary = summary;
+  if (f) {
+    f->close_section();
+    f->dump_stream("status") << r;
+  } else {
+    // one-liner: HEALTH_FOO[ thing1[; thing2 ...]]
+    *plain = stringify(r);
+    if (summary.size()) {
+      *plain += sep1;
+      *plain += summary;
+    }
+    *plain += "\n";
+  }
+
+  if (f && compat) {
+    f->open_array_section("summary");
+    for (auto& svc : paxos_service) {
+      svc->get_health_checks().dump_summary_compat(f);
+    }
+    f->close_section();
+    f->dump_stream("overall_status") << r;
+  }
+
+  if (want_detail) {
+    if (f && compat) {
+      f->open_array_section("detail");
+    }
+
+    for (auto& svc : paxos_service) {
+      svc->get_health_checks().dump_detail(f, plain, compat);
+    }
+
+    if (f && compat) {
+      f->close_section();
+    }
+  }
+  if (f) {
+    f->close_section();
+  }
+  return r;
+}
+
+void Monitor::log_health(
+  const health_check_map_t& updated,
+  const health_check_map_t& previous,
+  MonitorDBStore::TransactionRef t)
+{
+  if (!g_conf->mon_health_to_clog) {
+    return;
+  }
+  // FIXME: log atomically as part of @t instead of using clog.
+  dout(10) << __func__ << " updated " << updated.checks.size()
+	   << " previous " << previous.checks.size()
+	   << dendl;
+  for (auto& p : updated.checks) {
+    auto q = previous.checks.find(p.first);
+    if (q == previous.checks.end()) {
+      // new
+      ostringstream ss;
+      ss << "Health check failed: " << p.second.summary << " ("
+         << p.first << ")";
+      if (p.second.severity == HEALTH_WARN)
+	clog->warn() << ss.str();
+      else
+	clog->error() << ss.str();
+    } else {
+      if (p.second.summary != q->second.summary ||
+	  p.second.severity != q->second.severity) {
+	// summary or severity changed (ignore detail changes at this level)
+	ostringstream ss;
+        ss << "Health check update: " << p.second.summary << " (" << p.first << ")";
+	if (p.second.severity == HEALTH_WARN)
+	  clog->warn() << ss.str();
+	else
+	  clog->error() << ss.str();
+      }
+    }
+  }
+  for (auto& p : previous.checks) {
+    if (!updated.checks.count(p.first)) {
+      // cleared
+      ostringstream ss;
+      if (p.first == "DEGRADED_OBJECTS") {
+        clog->info() << "All degraded objects recovered";
+      } else if (p.first == "OSD_FLAGS") {
+        clog->info() << "OSD flags cleared";
+      } else {
+        clog->info() << "Health check cleared: " << p.first << " (was: "
+                     << p.second.summary << ")";
+      }
+    }
+  }
+
+  if (previous.checks.size() && updated.checks.size() == 0) {
+    // We might be going into a fully healthy state, check
+    // other subsystems
+    bool any_checks = false;
+    for (auto& svc : paxos_service) {
+      if (&(svc->get_health_checks()) == &(previous)) {
+        // Ignore the ones we're clearing right now
+        continue;
+      }
+
+      if (svc->get_health_checks().checks.size() > 0) {
+        any_checks = true;
+        break;
+      }
+    }
+    if (!any_checks) {
+      clog->info() << "Cluster is now healthy";
+    }
+  }
 }
 
 health_status_t Monitor::get_health(list<string>& status,
@@ -2465,51 +2617,28 @@ health_status_t Monitor::get_health(list<string>& status,
     s->get_health(summary, detailbl ? &detail : NULL, cct);
   }
 
-  health_monitor->get_health(f, summary, (detailbl ? &detail : NULL));
-
-  if (f) {
-    f->open_object_section("timechecks");
-    f->dump_unsigned("epoch", get_epoch());
-    f->dump_int("round", timecheck_round);
-    f->dump_stream("round_status")
-      << ((timecheck_round%2) ? "on-going" : "finished");
-  }
+  health_monitor->get_health(summary, (detailbl ? &detail : NULL));
 
   health_status_t overall = HEALTH_OK;
   if (!timecheck_skews.empty()) {
     list<string> warns;
-    if (f)
-      f->open_array_section("mons");
     for (map<entity_inst_t,double>::iterator i = timecheck_skews.begin();
          i != timecheck_skews.end(); ++i) {
       entity_inst_t inst = i->first;
       double skew = i->second;
       double latency = timecheck_latencies[inst];
       string name = monmap->get_name(inst.addr);
-
       ostringstream tcss;
       health_status_t tcstatus = timecheck_status(tcss, skew, latency);
       if (tcstatus != HEALTH_OK) {
         if (overall > tcstatus)
           overall = tcstatus;
         warns.push_back(name);
-
         ostringstream tmp_ss;
         tmp_ss << "mon." << name
                << " addr " << inst.addr << " " << tcss.str()
 	       << " (latency " << latency << "s)";
         detail.push_back(make_pair(tcstatus, tmp_ss.str()));
-      }
-
-      if (f) {
-        f->open_object_section("mon");
-        f->dump_string("name", name.c_str());
-        f->dump_float("skew", skew);
-        f->dump_float("latency", latency);
-        f->dump_stream("health") << tcstatus;
-        if (tcstatus != HEALTH_OK)
-          f->dump_stream("details") << tcss.str();
-        f->close_section();
       }
     }
     if (!warns.empty()) {
@@ -2524,11 +2653,7 @@ health_status_t Monitor::get_health(list<string>& status,
       status.push_back(ss.str());
       summary.push_back(make_pair(HEALTH_WARN, "Monitor clock skew detected "));
     }
-    if (f)
-      f->close_section();
   }
-  if (f)
-    f->close_section();
 
   if (f)
     f->open_array_section("summary");
@@ -2580,12 +2705,9 @@ void Monitor::get_cluster_status(stringstream &ss, Formatter *f)
   if (f)
     f->open_object_section("status");
 
-  // reply with the status for all the components
-  list<string> health;
-  get_health(health, NULL, f);
-
   if (f) {
     f->dump_stream("fsid") << monmap->get_fsid();
+    get_health_status(false, f, nullptr);
     f->dump_unsigned("election_epoch", get_epoch());
     {
       f->open_array_section("quorum");
@@ -2609,7 +2731,6 @@ void Monitor::get_cluster_status(stringstream &ss, Formatter *f)
     f->open_object_section("fsmap");
     mdsmon()->get_fsmap().print_summary(f, NULL);
     f->close_section();
-
     f->open_object_section("mgrmap");
     mgrmon()->get_map().print_summary(f, nullptr);
     f->close_section();
@@ -2617,11 +2738,21 @@ void Monitor::get_cluster_status(stringstream &ss, Formatter *f)
     f->dump_object("servicemap", mgrstatmon()->get_service_map());
     f->close_section();
   } else {
-
     ss << "  cluster:\n";
     ss << "    id:     " << monmap->get_fsid() << "\n";
-    ss << "    health: " << joinify(health.begin(), health.end(), 
-				  string("\n            ")) << "\n";
+
+    string health;
+    if (osdmon()->osdmap.require_osd_release >= CEPH_RELEASE_LUMINOUS) {
+      get_health_status(false, nullptr, &health,
+			"\n            ", "\n            ");
+    } else {
+      list<string> ls;
+      get_health(ls, NULL, f);
+      health = joinify(ls.begin(), ls.end(),
+		       string("\n            "));
+    }
+    ss << "    health: " << health << "\n";
+
     ss << "\n \n  services:\n";
     {
       size_t maxlen = 3;
@@ -3092,6 +3223,40 @@ void Monitor::handle_command(MonOpRequestRef op)
       rs = "must supply options to be parsed in a single string";
       r = -EINVAL;
     }
+  } else if (prefix == "time-sync-status") {
+    if (!f)
+      f.reset(Formatter::create("json-pretty"));
+    f->open_object_section("time_sync");
+    if (!timecheck_skews.empty()) {
+      f->open_object_section("time_skew_status");
+      for (auto& i : timecheck_skews) {
+	entity_inst_t inst = i.first;
+	double skew = i.second;
+	double latency = timecheck_latencies[inst];
+	string name = monmap->get_name(inst.addr);
+	ostringstream tcss;
+	health_status_t tcstatus = timecheck_status(tcss, skew, latency);
+	f->open_object_section(name.c_str());
+	f->dump_float("skew", skew);
+	f->dump_float("latency", latency);
+	f->dump_stream("health") << tcstatus;
+	if (tcstatus != HEALTH_OK) {
+	  f->dump_stream("details") << tcss.str();
+	}
+	f->close_section();
+      }
+      f->close_section();
+    }
+    f->open_object_section("timechecks");
+    f->dump_unsigned("epoch", get_epoch());
+    f->dump_int("round", timecheck_round);
+    f->dump_stream("round_status") << ((timecheck_round%2) ?
+				       "on-going" : "finished");
+    f->close_section();
+    f->close_section();
+    f->flush(rdata);
+    r = 0;
+    rs = "";
   } else if (prefix == "status" ||
 	     prefix == "health" ||
 	     prefix == "df") {
@@ -3108,25 +3273,35 @@ void Monitor::handle_command(MonOpRequestRef op)
       }
       rdata.append(ds);
     } else if (prefix == "health") {
-      list<string> health_str;
-      get_health(health_str, detail == "detail" ? &rdata : NULL, f.get());
-      if (f) {
-        f->flush(ds);
-        ds << '\n';
-      } else {
-	assert(!health_str.empty());
-	ds << health_str.front();
-	health_str.pop_front();
-	if (!health_str.empty()) {
-	  ds << ' ';
-	  ds << joinify(health_str.begin(), health_str.end(), string("; "));
+      if (osdmon()->osdmap.require_osd_release >= CEPH_RELEASE_LUMINOUS) {
+	string plain;
+	get_health_status(detail == "detail", f.get(), f ? nullptr : &plain);
+	if (f) {
+	  f->flush(rdata);
+	} else {
+	  rdata.append(plain);
 	}
+      } else {
+	list<string> health_str;
+	get_health(health_str, detail == "detail" ? &rdata : NULL, f.get());
+	if (f) {
+	  f->flush(ds);
+	  ds << '\n';
+	} else {
+	  assert(!health_str.empty());
+	  ds << health_str.front();
+	  health_str.pop_front();
+	  if (!health_str.empty()) {
+	    ds << ' ';
+	    ds << joinify(health_str.begin(), health_str.end(), string("; "));
+	  }
+	}
+	bufferlist comb;
+	comb.append(ds);
+	if (detail == "detail")
+	  comb.append(rdata);
+	rdata = comb;
       }
-      bufferlist comb;
-      comb.append(ds);
-      if (detail == "detail")
-	comb.append(rdata);
-      rdata = comb;
     } else if (prefix == "df") {
       bool verbose = (detail == "detail");
       if (f)
@@ -3790,6 +3965,30 @@ void Monitor::_ms_dispatch(Message *m)
   if (s && s->closed) {
     return;
   }
+
+  if (src_is_mon && s) {
+    ConnectionRef con = m->get_connection();
+    if (con->get_messenger() && con->get_features() != s->con_features) {
+      // only update features if this is a non-anonymous connection
+      dout(10) << __func__ << " feature change for " << m->get_source_inst()
+               << " (was " << s->con_features
+               << ", now " << con->get_features() << ")" << dendl;
+      // connection features changed - recreate session.
+      if (s->con && s->con != con) {
+        dout(10) << __func__ << " connection for " << m->get_source_inst()
+                 << " changed from session; mark down and replace" << dendl;
+        s->con->mark_down();
+      }
+      if (s->item.is_on_list()) {
+        // forwarded messages' sessions are not in the sessions map and
+        // exist only while the op is being handled.
+        remove_session(s);
+      }
+      s->put();
+      s = nullptr;
+    }
+  }
+
   if (!s) {
     // if the sender is not a monitor, make sure their first message for a
     // session is an MAuth.  If it is not, assume it's a stray message,
@@ -4089,6 +4288,11 @@ void Monitor::dispatch_op(MonOpRequestRef op)
 
     case MSG_MON_HEALTH:
       health_monitor->dispatch(op);
+      break;
+
+    case MSG_MON_HEALTH_CHECKS:
+      op->set_type_service();
+      paxos_service[PAXOS_HEALTH]->dispatch(op);
       break;
 
     default:

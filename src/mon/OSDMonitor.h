@@ -147,7 +147,7 @@ public:
 
   bool check_failures(utime_t now);
   bool check_failure(utime_t now, int target_osd, failure_info_t& fi);
-  void force_failure(utime_t now, int target_osd, int by);
+  void force_failure(int target_osd, int by);
 
   // the time of last msg(MSG_ALIVE and MSG_PGTEMP) proposed without delay
   utime_t last_attempted_minwait_time;
@@ -359,8 +359,6 @@ private:
 
   void update_pool_flags(int64_t pool_id, uint64_t flags);
   bool update_pools_status();
-  void get_pools_health(list<pair<health_status_t,string> >& summary,
-                        list<pair<health_status_t,string> > *detail) const;
 
   bool prepare_set_flag(MonOpRequestRef op, int flag);
   bool prepare_unset_flag(MonOpRequestRef op, int flag);

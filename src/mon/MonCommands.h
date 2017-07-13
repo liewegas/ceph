@@ -210,6 +210,7 @@ COMMAND_WITH_FLAG("injectargs " \
 COMMAND("status", "show cluster status", "mon", "r", "cli,rest")
 COMMAND("health name=detail,type=CephChoices,strings=detail,req=false", \
 	"show cluster health", "mon", "r", "cli,rest")
+COMMAND("time-sync-status", "show time sync status", "mon", "r", "cli,rest")
 COMMAND("df name=detail,type=CephChoices,strings=detail,req=false", \
 	"show cluster free space stats", "mon", "r", "cli,rest")
 COMMAND("report name=tags,type=CephString,n=N,req=false", \
@@ -602,6 +603,13 @@ COMMAND("osd crush rule create-simple " \
 	"name=mode,type=CephChoices,strings=firstn|indep,req=false",
 	"create crush rule <name> to start from <root>, replicate across buckets of type <type>, using a choose mode of <firstn|indep> (default firstn; indep best for erasure pools)", \
 	"osd", "rw", "cli,rest")
+COMMAND("osd crush rule create-replicated " \
+	"name=name,type=CephString,goodchars=[A-Za-z0-9-_.] " \
+	"name=root,type=CephString,goodchars=[A-Za-z0-9-_.] " \
+	"name=type,type=CephString,goodchars=[A-Za-z0-9-_.] " \
+	"name=class,type=CephString,goodchars=[A-Za-z0-9-_.],req=false",
+	"create crush rule <name> for replicated pool to start from <root>, replicate across buckets of type <type>, using a choose mode of <firstn|indep> (default firstn; indep best for erasure pools)", \
+	"osd", "rw", "cli,rest")
 COMMAND("osd crush rule create-erasure " \
 	"name=name,type=CephString,goodchars=[A-Za-z0-9-_.] " \
 	"name=profile,type=CephString,req=false,goodchars=[A-Za-z0-9-_.=]", \
@@ -843,7 +851,7 @@ COMMAND("osd pool create " \
 COMMAND("osd pool delete " \
 	"name=pool,type=CephPoolname " \
 	"name=pool2,type=CephPoolname,req=false " \
-	"name=sure,type=CephChoices,strings=--yes-i-really-really-mean-it,req=false", \
+	"name=sure,type=CephString,req=false", \
 	"delete pool", \
 	"osd", "rw", "cli,rest")
 COMMAND("osd pool rm " \

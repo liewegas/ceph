@@ -563,6 +563,14 @@ public:
   void find_roots(set<int>& roots) const;
 
   /**
+   * find tree roots that are not shadow (device class) items
+   *
+   * These are parentless nodes in the map that are not shadow
+   * items for device classes.
+   */
+  void find_nonshadow_roots(set<int>& roots) const;
+
+  /**
    * see if an item is contained within a subtree
    *
    * @param root haystack
@@ -849,18 +857,37 @@ public:
     return (float)get_item_weight_in_loc(id, loc) / (float)0x10000;
   }
 
+  int validate_weightf(float weight) {
+    uint64_t iweight = weight * 0x10000;
+    if (iweight > std::numeric_limits<int>::max()) {
+      return -EOVERFLOW;
+    }
+    return 0;
+  }
   int adjust_item_weight(CephContext *cct, int id, int weight);
   int adjust_item_weightf(CephContext *cct, int id, float weight) {
+    int r = validate_weightf(weight);
+    if (r < 0) {
+      return r;
+    }
     return adjust_item_weight(cct, id, (int)(weight * (float)0x10000));
   }
   int adjust_item_weight_in_loc(CephContext *cct, int id, int weight, const map<string,string>& loc);
   int adjust_item_weightf_in_loc(CephContext *cct, int id, float weight, const map<string,string>& loc) {
+    int r = validate_weightf(weight);
+    if (r < 0) {
+      return r;
+    }
     return adjust_item_weight_in_loc(cct, id, (int)(weight * (float)0x10000), loc);
   }
   void reweight(CephContext *cct);
 
   int adjust_subtree_weight(CephContext *cct, int id, int weight);
   int adjust_subtree_weightf(CephContext *cct, int id, float weight) {
+    int r = validate_weightf(weight);
+    if (r < 0) {
+      return r;
+    }
     return adjust_subtree_weight(cct, id, (int)(weight * (float)0x10000));
   }
 
@@ -1015,6 +1042,7 @@ public:
 
   int add_simple_rule(
     string name, string root_name, string failure_domain_type,
+    string device_class,
     string mode, int rule_type, ostream *err = 0);
 
   /**
@@ -1022,7 +1050,7 @@ public:
    */
   int add_simple_rule_at(
     string name, string root_name,
-    string failure_domain_type, string mode,
+    string failure_domain_type, string device_class, string mode,
     int rule_type, int rno, ostream *err = 0);
 
   int remove_rule(int ruleno);
