@@ -588,14 +588,14 @@ public:
    *
    * Note that these may not be parentless roots.
    */
-  void find_takes(set<int>& roots) const;
+  void find_takes(set<int> *roots) const;
 
   /**
    * find tree roots
    *
    * These are parentless nodes in the map.
    */
-  void find_roots(set<int>& roots) const;
+  void find_roots(set<int> *roots) const;
 
   /**
    * find tree roots that are not shadow (device class) items
@@ -603,7 +603,7 @@ public:
    * These are parentless nodes in the map that are not shadow
    * items for device classes.
    */
-  void find_nonshadow_roots(set<int>& roots) const;
+  void find_nonshadow_roots(set<int> *roots) const;
 
   /**
    * see if an item is contained within a subtree

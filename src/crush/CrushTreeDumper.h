@@ -68,7 +68,7 @@ namespace CrushTreeDumper {
     explicit Dumper(const CrushWrapper *crush_,
 		    const name_map_t& weight_set_names_)
       : crush(crush_), weight_set_names(weight_set_names_) {
-      crush->find_nonshadow_roots(roots);
+      crush->find_nonshadow_roots(&roots);
       root = roots.begin();
     }
 

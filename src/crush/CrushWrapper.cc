@@ -291,7 +291,7 @@ int CrushWrapper::rename_bucket(const string& srcname,
   return set_item_name(oldid, dstname);
 }
 
-void CrushWrapper::find_takes(set<int>& roots) const
+void CrushWrapper::find_takes(set<int> *roots) const
 {
   for (unsigned i=0; i<crush->max_rules; i++) {
     crush_rule *r = crush->rules[i];
@@ -299,23 +299,23 @@ void CrushWrapper::find_takes(set<int>& roots) const
       continue;
     for (unsigned j=0; j<r->len; j++) {
       if (r->steps[j].op == CRUSH_RULE_TAKE)
-	roots.insert(r->steps[j].arg1);
+	roots->insert(r->steps[j].arg1);
     }
   }
 }
 
-void CrushWrapper::find_roots(set<int>& roots) const
+void CrushWrapper::find_roots(set<int> *roots) const
 {
   for (int i = 0; i < crush->max_buckets; i++) {
     if (!crush->buckets[i])
       continue;
     crush_bucket *b = crush->buckets[i];
     if (!_search_item_exists(b->id))
-      roots.insert(b->id);
+      roots->insert(b->id);
   }
 }
 
-void CrushWrapper::find_nonshadow_roots(set<int>& roots) const
+void CrushWrapper::find_nonshadow_roots(set<int> *roots) const
 {
   for (int i = 0; i < crush->max_buckets; i++) {
     if (!crush->buckets[i])
@@ -326,7 +326,7 @@ void CrushWrapper::find_nonshadow_roots(set<int>& roots) const
     const char *name = get_item_name(b->id);
     if (name && !is_valid_crush_name(name))
       continue;
-    roots.insert(b->id);
+    roots->insert(b->id);
   }
 }
 
@@ -1381,7 +1381,7 @@ bool CrushWrapper::class_is_in_use(int class_id)
 int CrushWrapper::populate_classes()
 {
   set<int> roots;
-  find_roots(roots);
+  find_roots(&roots);
   for (auto &r : roots) {
     if (r >= 0)
       continue;
@@ -1405,7 +1405,7 @@ int CrushWrapper::cleanup_classes()
 int CrushWrapper::trim_roots_with_class(bool unused)
 {
   set<int> roots;
-  find_roots(roots);
+  find_roots(&roots);
   for (auto &r : roots) {
     if (r >= 0)
       continue;
@@ -1449,7 +1449,7 @@ int32_t CrushWrapper::_alloc_class_id() const {
 void CrushWrapper::reweight(CephContext *cct)
 {
   set<int> roots;
-  find_roots(roots);
+  find_roots(&roots);
   for (set<int>::iterator p = roots.begin(); p != roots.end(); ++p) {
     if (*p >= 0)
       continue;
@@ -2387,7 +2387,7 @@ namespace {
 
     void dump(Formatter *f) {
       set<int> roots;
-      crush->find_roots(roots);
+      crush->find_roots(&roots);
       for (set<int>::iterator root = roots.begin(); root != roots.end(); ++root) {
 	dump_item(Item(*root, 0, 0, crush->get_bucket_weightf(*root)), f);
       }
