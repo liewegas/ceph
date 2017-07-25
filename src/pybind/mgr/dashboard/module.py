@@ -433,6 +433,7 @@ class Module(MgrModule):
                     log.warning("Failed to get RBD pool list")
                     data = []
 
+                # rbd
                 rbd_pools = sorted([
                     {
                         "name": name,
@@ -446,6 +447,7 @@ class Module(MgrModule):
                     log.warning("Failed to get RBD mirroring summary")
                     rbd_mirroring = {}
 
+                # cephfs
                 fsmap = global_instance().get_sync_object(FsMap)
                 filesystems = [
                     {
@@ -456,11 +458,21 @@ class Module(MgrModule):
                     for f in fsmap.data['filesystems']
                 ]
 
+                # rgw
+                rgw_zonegroups = [
+                    { #fixme
+                        "name": 'default',
+                        "uuid": 'c5ffd3fa-0ebc-43f4-8186-fe823d1be590',
+                        'url': "/zonegroup/default/",
+                    }
+                ]
+
                 return {
                     'rbd_pools': rbd_pools,
                     'rbd_mirroring': rbd_mirroring,
                     'health_status': self._health_data()['status'],
-                    'filesystems': filesystems
+                    'filesystems': filesystems,
+                    'rgw_zonegroups': rgw_zonegroups,
                 }
 
         class Root(EndPoint):

@@ -402,6 +402,19 @@
             <li class="ceph-none-found" rv-hide="filesystems | length">None found</li>
           </ul>
         </li>
+        <li class="treeview{%if path_info.startswith(('/rgw/'))%} active{%endif%}">
+          <a href="#"><i class="fa fa-file-o"></i> <span>RGW</span>
+            <span class="pull-right-container">
+              <i class="fa fa-angle-left pull-right"></i>
+            </span>
+          </a>
+          <ul class="treeview-menu menu-open">
+            <li rv-each-zonegroup="rgw_zonegroups">
+                <a rv-href="zonegroup.url">{zonegroup.name}</a>
+            </li>
+            <li class="ceph-none-found" rv-hide="rgw_zonegroups | length">None found</li>
+          </ul>
+        </li>
       </ul>
       <!-- /.sidebar-menu -->
     </section>
