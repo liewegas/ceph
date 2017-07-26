@@ -1220,6 +1220,7 @@ protected:
   std::string dev_path, journal_path;
 
   bool store_is_rotational = true;
+  bool journal_is_rotational = true;
 
   ZTracer::Endpoint trace_endpoint;
   void create_logger();

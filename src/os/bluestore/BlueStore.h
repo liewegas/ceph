@@ -1980,6 +1980,7 @@ private:
 				   bool create);
 
   int _write_bdev_label(string path, bluestore_bdev_label_t label);
+  bool _is_bdev_journal_rotational();
 public:
   static int _read_bdev_label(CephContext* cct, string path,
 			      bluestore_bdev_label_t *label);
@@ -2111,6 +2112,7 @@ public:
   bool allows_journal() override { return false; };
 
   bool is_rotational() override;
+  bool is_journal_rotational() override;
 
   string get_default_device_class() override {
     string device_class;

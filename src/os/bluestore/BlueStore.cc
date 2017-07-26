@@ -4091,6 +4091,22 @@ void BlueStore::_set_alloc_sizes(void)
 	   << dendl;
 }
 
+bool BlueStore::_is_bdev_journal_rotational()
+{
+  bool rotational = true;
+  string p = path + "/block.wal";
+  BlockDevice *bdev_journal = BlockDevice::create(cct, p, aio_cb, static_cast<void*>(this));
+  int r = bdev_journal->open(p);
+  if (r < 0) {
+    dout(10) << __func__ << " unable to open " << p << dendl;
+    return rotational;
+  }
+  rotational = bdev_journal->is_rotational();
+  bdev_journal->close();
+  delete bdev_journal;
+  return rotational;
+}
+
 int BlueStore::_open_bdev(bool create)
 {
   assert(bdev == NULL);
@@ -4393,6 +4409,31 @@ bool BlueStore::is_rotational()
   _close_path();
   out:
   return rotational;
+}
+
+bool BlueStore::is_journal_rotational()
+{
+  bool journal_rotational = true;
+  int r = _open_path();
+  if (r < 0)
+    goto out;
+  r = _open_fsid(false);
+  if (r < 0)
+    goto out_path;
+  r = _read_fsid(&fsid);
+  if (r < 0)
+    goto out_fsid;
+  r = _lock_fsid();
+  if (r < 0)
+    goto out_fsid;
+  journal_rotational = _is_bdev_journal_rotational();
+ out_fsid:
+  _close_fsid();
+ out_path:
+  _close_path();
+  out:
+  dout(10) << __func__ << " " << (int)journal_rotational << dendl;
+  return journal_rotational;
 }
 
 bool BlueStore::test_mount_in_use()
