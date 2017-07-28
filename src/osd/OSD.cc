@@ -1897,7 +1897,6 @@ OSD::OSD(CephContext *cct_, ObjectStore *store_,
   whoami(id),
   dev_path(dev), journal_path(jdev),
   store_is_rotational(store->is_rotational()),
-  journal_is_rotational(store->is_journal_rotational()),
   trace_endpoint("0.0.0.0", 0, "osd"),
   asok_hook(NULL),
   osd_compat(get_osd_compat_set()),
@@ -2378,9 +2377,7 @@ int OSD::init()
   dout(2) << "init " << dev_path
 	  << " (looks like " << (store_is_rotational ? "hdd" : "ssd") << ")"
 	  << dendl;
-  dout(2) << "journal " << journal_path
-          << " (looks like " << (journal_is_rotational ? "hdd" : "ssd") << ")"
-          << dendl;
+  dout(2) << "journal " << journal_path << dendl;
   assert(store);  // call pre_init() first!
 
   store->set_cache_shards(get_num_op_shards());
@@ -2390,6 +2387,10 @@ int OSD::init()
     derr << "OSD:init: unable to mount object store" << dendl;
     return r;
   }
+
+  journal_is_rotational = store->is_journal_rotational();
+  dout(2) << " journal looks like " << (journal_is_rotational ? "hdd" : "ssd")
+	  <<dendl;
 
   enable_disable_fuse(false);
 
