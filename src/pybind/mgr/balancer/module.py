@@ -12,11 +12,11 @@ from threading import Event
 
 # available modes: 'none', 'crush', 'crush-compat', 'upmap', 'osd_weight'
 default_mode = 'none'
+default_cost_mode = 'pg'
 default_sleep_interval = 60   # seconds
 default_max_misplaced = .03   # max ratio of pgs replaced at a time
 
 TIME_FORMAT = '%Y-%m-%d %H:%M:%S %Z'
-
 
 class MappingState:
     def __init__(self, osdmap, pg_dump, desc=''):
@@ -122,6 +122,11 @@ class Module(MgrModule):
             "perm": "rw",
         },
         {
+            "cmd": "balancer cost-mode name=cost-mode,type=CephChoices,strings=pg|pg-size|utilization",
+            "desc": "Set balancer cost mode",
+            "perm": "rw",
+        },
+        {
             "cmd": "balancer on",
             "desc": "Enable automatic balancing",
             "perm": "rw",
@@ -183,10 +188,14 @@ class Module(MgrModule):
                 'plans': self.plans.keys(),
                 'active': self.active,
                 'mode': self.get_config('mode', default_mode),
+                'cost-mode':self.get_config('cost-mode', default_cost_mode),
             }
             return (0, json.dumps(s, indent=4), '')
         elif command['prefix'] == 'balancer mode':
             self.set_config('mode', command['mode'])
+            return (0, '', '')
+        elif command['prefix'] == 'balancer cost-mode':
+            self.set_config('cost-mode', command['cost-mode'])
             return (0, '', '')
         elif command['prefix'] == 'balancer on':
             if not self.active:
@@ -496,7 +505,7 @@ class Module(MgrModule):
         # FIXME: when we add utilization support, we need to throttle back
         # so that we don't run if *any* objects are misplaced.  with 'pgs' we
         # can look at up mappings, which lets us look ahead a bit.
-        cost_mode = 'pg'
+        cost_mode = self.get_config('cost_mode', default_cost_mode)
 
         # go
         random.shuffle(roots)
@@ -635,7 +644,29 @@ class Module(MgrModule):
         self.log.info('do_crush (not yet implemented)')
 
     def do_osd_weight(self):
-        self.log.info('do_osd_weight (not yet implemented)')
+        self.log.info('do_osd_weight')
+
+        cost_mode = self.get_config('cost-mode', default_cost_mode)
+
+	# Reweight any over-utilized OSD
+        result = CommandResult('balancer_osd_weight')
+        if cost_mode == 'pg':
+            self.send_command(result, 'mgr', '', json.dumps({
+                'prefix': 'osd reweight-by-pg',
+                'oload': '101',
+            }), 'balancer_osd_weight')
+            r, outb, outs = result.wait()
+        elif cost_mode == 'utilization':
+            self.send_command(result, 'mgr', '', json.dumps({
+                'prefix': 'osd reweight-by-utilization',
+                'oload': '101',
+            }), 'balancer_osd_weight')
+            r, outb, outs = result.wait()
+        else:
+            raise RuntimeError('unsupported cost mode %s' % cost_mode)
+        if r != 0:
+            self.log.error(outs)
+            break;
 
     def execute(self, plan):
         self.log.info('Executing plan %s' % plan.name)
