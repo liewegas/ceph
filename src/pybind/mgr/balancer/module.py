@@ -19,6 +19,7 @@ default_max_misplaced = .03   # max ratio of pgs replaced at a time
 
 TIME_FORMAT = '%Y-%m-%d_%H:%M:%S'
 
+
 class MappingState:
     def __init__(self, osdmap, pg_dump, desc=''):
         self.desc = desc
