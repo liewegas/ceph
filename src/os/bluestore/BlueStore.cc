@@ -8376,8 +8376,8 @@ void BlueStore::_kv_sync_thread()
       // end up going to sleep, and then wake up when the very first
       // transaction is ready for commit.
       throttle_bytes.put(costs);
-      dout(20) << __func__ << " COST releasing prev kv_throttle_cost "
-	       << costs << dendl;
+      dout(20) << __func__ << " COST released prev kv_throttle_cost "
+	       << costs << " now " << throttle_bytes.get_current() << dendl;
 
       PExtentVector bluefs_gift_extents;
       if (bluefs &&
@@ -8816,7 +8816,7 @@ int BlueStore::queue_transactions(
 
   utime_t tstart = ceph_clock_now();
   dout(20) << __func__ << " COST get txc " << txc << " cost " << txc ->cost
-	   << dendl;
+	   << " current " << throttle_bytes.get_current() << dendl;
   throttle_bytes.get(txc->cost);
   if (txc->deferred_txn) {
     // ensure we do not block here because of deferred writes
