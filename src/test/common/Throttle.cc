@@ -216,6 +216,29 @@ TEST_F(ThrottleTest, wait) {
   } while(!waited);
 }
 
+TEST_F(ThrottleTest, put_flag) {
+  Throttle throttle(g_ceph_context, "throttle", 10);
+
+  auto getter = [&]() {
+    throttle.get(10);
+  };
+
+  throttle.get(13);  // won't block
+  ASSERT_FALSE(throttle.get_or_fail(10));
+  bool blocked = false;
+  throttle.put(1, &blocked);
+  ASSERT_FALSE(blocked);
+  ASSERT_FALSE(throttle.get_or_fail(10));
+  auto t = std::thread(getter); // will block
+  sleep(1);  // make sure it's going
+  throttle.put(1, &blocked);
+  ASSERT_TRUE(blocked);
+  blocked = false;
+  throttle.put(11, &blocked);
+  ASSERT_FALSE(blocked);
+  t.join();
+}
+
 
 TEST_F(ThrottleTest, destructor) {
   EXPECT_DEATH({

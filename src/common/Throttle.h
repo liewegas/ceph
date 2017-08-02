@@ -32,7 +32,7 @@ class Throttle {
   PerfCounters *logger;
   std::atomic<unsigned> count = { 0 }, max = { 0 };
   Mutex lock;
-  list<Cond*> cond;
+  list<pair<uint64_t,Cond*>> cond;
   const bool use_perf;
   bool shutting_down = false;
   Cond shutdown_clear;
@@ -112,9 +112,10 @@ public:
   /**
    * put slots back to the stock
    * @param c number of slots to return
+   * @param waiters set to true if there are still waiters blocked
    * @returns number of requests being hold after this
    */
-  int64_t put(int64_t c = 1);
+  int64_t put(int64_t c = 1, bool *blocked_waiters = 0);
    /**
    * reset the zero to the stock
    */

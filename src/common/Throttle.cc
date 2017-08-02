@@ -85,7 +85,7 @@ void Throttle::_reset_max(int64_t m)
   if (static_cast<int64_t>(max) == m)
     return;
   if (!cond.empty())
-    cond.front()->SignalOne();
+    cond.front().second->SignalOne();
   if (logger)
     logger->set(l_throttle_max, m);
   max = m;
@@ -97,9 +97,9 @@ bool Throttle::_wait(int64_t c)
   bool waited = false;
   if (_should_wait(c) || !cond.empty()) { // always wait behind other waiters.
     {
-      auto cv = cond.insert(cond.end(), new Cond);
+      auto cv = cond.insert(cond.end(), make_pair(c, new Cond));
       auto w = make_scope_guard([this, cv]() {
-	  delete *cv;
+	  delete cv->second;
 	  cond.erase(cv);
 	});
       waited = true;
@@ -108,7 +108,7 @@ bool Throttle::_wait(int64_t c)
 	start = ceph_clock_now();
 
       do {
-	(*cv)->Wait(lock);
+	cv->second->Wait(lock);
       } while ((_should_wait(c) || cv != cond.begin()));
 
       ldout(cct, 2) << "_wait finished waiting" << dendl;
@@ -119,7 +119,7 @@ bool Throttle::_wait(int64_t c)
     }
     // wake up the next guy
     if (!cond.empty())
-      cond.front()->SignalOne();
+      cond.front().second->SignalOne();
   }
   return waited;
 }
@@ -217,7 +217,7 @@ bool Throttle::get_or_fail(int64_t c)
   }
 }
 
-int64_t Throttle::put(int64_t c)
+int64_t Throttle::put(int64_t c, bool *waiters_blocked)
 {
   if (0 == max) {
     return 0;
@@ -227,10 +227,16 @@ int64_t Throttle::put(int64_t c)
   ldout(cct, 10) << "put " << c << " (" << count.load() << " -> " << (count.load()-c) << ")" << dendl;
   Mutex::Locker l(lock);
   if (c) {
-    if (!cond.empty())
-      cond.front()->SignalOne();
     assert(static_cast<int64_t>(count) >= c); // if count goes negative, we failed somewhere!
     count -= c;
+    if (!cond.empty()) {
+      cond.front().second->SignalOne();
+      if (waiters_blocked &&
+	  _should_wait(cond.front().first)) {
+	// even after this put, the next getter in line is still blocked.
+	*waiters_blocked = true;
+      }
+    }
     if (logger) {
       logger->inc(l_throttle_put);
       logger->inc(l_throttle_put_sum, c);
@@ -244,7 +250,7 @@ void Throttle::reset()
 {
   Mutex::Locker l(lock);
   if (!cond.empty())
-    cond.front()->SignalOne();
+    cond.front().second->SignalOne();
   count = 0;
   if (logger) {
     logger->set(l_throttle_val, 0);
