@@ -3471,6 +3471,7 @@ BlueStore::BlueStore(CephContext *cct, const string& path)
 		       cct->_conf->bluestore_throttle_bytes +
 		       cct->_conf->bluestore_throttle_deferred_bytes),
     kv_sync_thread(this),
+    deferred_finisher(cct, "BlueStore::deferred_finisher", "deferred_fin"),
     kv_finalize_thread(this),
     mempool_thread(this)
 {
@@ -3489,6 +3490,7 @@ BlueStore::BlueStore(CephContext *cct,
 		       cct->_conf->bluestore_throttle_bytes +
 		       cct->_conf->bluestore_throttle_deferred_bytes),
     kv_sync_thread(this),
+    deferred_finisher(cct, "BlueStore::deferred_finisher", "deferred_fin"),
     kv_finalize_thread(this),
     min_alloc_size(_min_alloc_size),
     min_alloc_size_order(ctz(_min_alloc_size)),
@@ -8205,6 +8207,7 @@ void BlueStore::_kv_start()
   }
   kv_sync_thread.create("bstore_kv_sync");
   kv_finalize_thread.create("bstore_kv_final");
+  deferred_finisher.start();
 }
 
 void BlueStore::_kv_stop()
@@ -8241,6 +8244,8 @@ void BlueStore::_kv_stop()
     f->wait_for_empty();
     f->stop();
   }
+  deferred_finisher.wait_for_empty();
+  deferred_finisher.stop();
   dout(10) << __func__ << " stopped" << dendl;
 }
 
@@ -8597,9 +8602,9 @@ void BlueStore::_deferred_queue(TransContext *txc)
 
 void BlueStore::deferred_try_submit()
 {
+  std::lock_guard<std::mutex> l(deferred_lock);
   dout(20) << __func__ << " " << deferred_queue.size() << " osrs, "
 	   << deferred_queue_size << " txcs" << dendl;
-  std::lock_guard<std::mutex> l(deferred_lock);
   vector<OpSequencerRef> osrs;
   osrs.reserve(deferred_queue.size());
   for (auto& osr : deferred_queue) {
@@ -8689,6 +8694,7 @@ void BlueStore::_deferred_aio_finish(OpSequencer *osr)
     }
   }
 
+  bool still_blocked = false;
   {
     uint64_t costs = 0;
     std::lock_guard<std::mutex> l2(osr->qlock);
@@ -8698,9 +8704,16 @@ void BlueStore::_deferred_aio_finish(OpSequencer *osr)
       costs += txc->cost;
     }
     osr->qcond.notify_all();
-    throttle_deferred_bytes.put(costs);
+    throttle_deferred_bytes.put(costs, &still_blocked);
     std::lock_guard<std::mutex> l(kv_lock);
     deferred_done_queue.emplace_back(b);
+  }
+  if (still_blocked) {
+    dout(10) << __func__ << " throttle still blocked, queueing async try_submit"
+	     << dendl;
+    deferred_finisher.queue(new FunctionContext([&](int r) {
+	  deferred_try_submit();
+	}));
   }
 
   // in the normal case, do not bother waking up the kv thread; it will
