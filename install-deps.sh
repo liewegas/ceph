@@ -71,7 +71,7 @@ if [ x`uname`x = xFreeBSDx ]; then
 
 	# Now use pip to install some extra python modules
 	pip install pecan
-
+	pip install crush
     exit
 else
     source /etc/os-release

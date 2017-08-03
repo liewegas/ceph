@@ -7,6 +7,7 @@ import errno
 import json
 import random
 import time
+import os
 from mgr_module import MgrModule, CommandResult
 from threading import Event
 
@@ -166,6 +167,11 @@ class Module(MgrModule):
             "desc": "Execute an optimization plan",
             "perm": "r",
         },
+        {
+            "cmd": "balancer crushmap name=pool,type=CephString name=rule,type=CephString name=choose,type=CephString name=rep-count,type=CephString,req=false name=step,type=CephString,req=false",
+            "desc": "Optimize crushmap to reduce chances of uneven distribution. Highly recommended at initial stages",
+            "perm": "rw",
+        },
     ]
     active = False
     run = True
@@ -239,6 +245,8 @@ class Module(MgrModule):
             self.execute(plan)
             self.plan_rm(plan)
             return (0, '', '')
+        elif command['prefix'] == 'balancer crushmap':
+            return self.handle_balancer_crushmap(command)
         else:
             return (-errno.EINVAL, '',
                     "Command not found '{0}'".format(command['prefix']))
@@ -715,3 +723,73 @@ class Module(MgrModule):
             if r != 0:
                 self.log.error('Error on command')
                 return
+
+    def handle_balancer_crushmap(self, cmd):
+        # Update python-crush
+        import commands
+        ret = commands.getstatusoutput("pip install crush --upgrade")
+
+        output = "Optimize Crushmap \n"
+
+        # Check for errors
+        if ret[0]:
+            ret_out = str(ret[1])
+            require_sudo = ret_out.find("Permission denied:")
+            import imp
+            try:
+                imp.find_module('crush')
+                output = "Failed to update crush. "
+                if require_sudo != -1:
+                    output += "To upgrade, use 'sudo pip install crush --upgrade' "
+                elif ret_out.find("ConnectionError") != -1:
+                    output += "Network error."
+                output += "Using existing crush library. "
+            except:
+                output = "Crush library couldn't be installed. "
+                if req_sudo != -1:
+                    output += "Please use 'sudo pip install crush --upgrade'. "
+                elif ret_out.find("ConnectionError") != -1:
+                    output += "Network error. "
+                output += "Exiting without rebalancing. "
+                return 0, "", output
+
+        # Get crushmap
+        crushmap = self.get('osd_map_crush')
+
+        # Save it in JSON format
+        import json
+        with open('crushmap.json', 'w') as outfile:
+            json.dump(crushmap, outfile)
+
+        # Prepare the command string
+        pgnum = 2048
+        cmd_str = "crush optimize --crushmap crushmap.json --out-path optimized_crushmap.txt --out-format txt"
+        cmd_str += " --pool " + str(cmd['pool']) + " --rule " + str(cmd['rule'])
+        cmd_str += " --choose-args " + str(cmd['choose']) + " --pg-num " + str(pgnum)
+        cmd_str += " --pgp-num " + str(pgnum)
+        if cmd['rep-count']:
+            cmd_str += " --replication-count " + str(cmd['rep-count'])
+        if cmd['step']:
+            cmd_str += " --step " + str(cmd['step'])
+
+        os.system(cmd_str)
+
+        # Set the crushmap
+        result = CommandResult('')
+        self.send_command(result, 'mon', '', json.dumps({
+            'prefix': 'osd setcrushmap',
+            'input': 'optimized_crushmap.txt',
+        }), '')
+        r, outb, outs = result.wait()
+
+        if r != 0:
+            self.log.error('Error setting optimized crushmap')
+            output += outs + "\n" + outb
+            return 0, "", output
+
+        output += "Optimized crushmap set"
+
+        os.unlink("crushmap.json")
+        os.unlink("optimized_crushmap.txt")
+
+        return 0, "", output
