@@ -538,12 +538,16 @@ class Module(MgrModule):
                 break
         self.log.info('prepared %d/%d changes' % (total_did, max_iterations))
 
-    def do_crush_compat(self):
+    def do_crush_compat(self, plan):
         self.log.info('do_crush_compat')
         osdmap = self.get_osdmap()
         crush = osdmap.get_crush()
 
+        # get current compat weight-set weights
         weight_set = self.get_compat_weight_set_weights()
+
+        ms = plan.initial
+        pe = self.calc_eval(ms)
 
         # get subtree weight maps, check for overlap
         roots = crush.find_takes()
