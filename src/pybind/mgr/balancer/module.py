@@ -136,22 +136,21 @@ class Eval:
                 # One 10% underfilled device with 5 2% overfilled devices, is arguably a better
                 # situation than one 10% overfilled with 5 2% underfilled devices
                 if adjusted > avg:
-                    '''
-                    F(x) = 2*phi(x) - 1, where phi(x) = cdf of standard normal distribution
-                    x = (adjusted - avg)/avg.
-                    Since, we're considering only over-weighted devices, x >= 0, and so phi(x) lies in [0.5, 1).
-                    To bring range of F(x) in range [0, 1), we need to make the above modification.
 
-                    In general, we need to use a function F(x), where x = (adjusted - avg)/avg
-                    1. which is bounded between 0 and 1, so that ultimately reweight_urgency will also be bounded.
-                    2. A larger value of x, should imply more urgency to reweight.
-                    3. Also, the difference between F(x) when x is large, should be minimal. 
-                    4. The value of F(x) should get close to 1 (highest urgency to reweight) with steeply.
-                    
-                    Could have used F(x) = (1 - e^(-x)). But that had slower convergence to 1, compared to the one currently in use.
+                    # F(x) = 2*phi(x) - 1, where phi(x) = cdf of standard normal distribution
+                    # x = (adjusted - avg)/avg.
+                    # Since, we're considering only over-weighted devices, x >= 0, and so phi(x) lies in [0.5, 1).
+                    # To bring range of F(x) in range [0, 1), we need to make the above modification.
 
-                    cdf of standard normal distribution: https://stackoverflow.com/a/29273201
-                    '''
+                    # In general, we need to use a function F(x), where x = (adjusted - avg)/avg
+                    # 1. which is bounded between 0 and 1, so that ultimately reweight_urgency will also be bounded.
+                    # 2. A larger value of x, should imply more urgency to reweight.
+                    # 3. Also, the difference between F(x) when x is large, should be minimal.
+                    # 4. The value of F(x) should get close to 1 (highest urgency to reweight) with steeply.
+
+                    # Could have used F(x) = (1 - e^(-x)). But that had slower convergence to 1, compared to the one currently in use.
+                    # cdf of standard normal distribution: https://en.wikipedia.org/wiki/Error_function#Cumulative_distribution_function
+
                     score += target[k] * (math.erf(((adjusted - avg)/avg) / math.sqrt(2.0)))
                     sum_weight += target[k]
                 dev += (avg - adjusted) * (avg - adjusted)
