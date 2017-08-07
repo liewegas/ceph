@@ -13,6 +13,7 @@ from threading import Event
 
 # available modes: 'none', 'crush', 'crush-compat', 'upmap', 'osd_weight'
 default_mode = 'none'
+default_key = 'pgs'
 default_sleep_interval = 60   # seconds
 default_max_misplaced = .03   # max ratio of pgs replaced at a time
 
@@ -176,6 +177,11 @@ class Module(MgrModule):
             "perm": "rw",
         },
         {
+            "cmd": "balancer key name=key,type=CephChoices,strings=pgs|bytes|objects",
+            "desc": "Set balancer key",
+            "perm": "rw",
+        },
+        {
             "cmd": "balancer on",
             "desc": "Enable automatic balancing",
             "perm": "rw",
@@ -225,6 +231,7 @@ class Module(MgrModule):
     run = True
     plans = {}
     mode = ''
+    key = 'pgs'
 
     def __init__(self, *args, **kwargs):
         super(Module, self).__init__(*args, **kwargs)
@@ -237,10 +244,14 @@ class Module(MgrModule):
                 'plans': self.plans.keys(),
                 'active': self.active,
                 'mode': self.get_config('mode', default_mode),
+                'key': self.get_config('key', default_key),
             }
             return (0, json.dumps(s, indent=4), '')
         elif command['prefix'] == 'balancer mode':
             self.set_config('mode', command['mode'])
+            return (0, '', '')
+        elif command['prefix'] == 'balancer key':
+            self.set_config('key', command['key'])
             return (0, '', '')
         elif command['prefix'] == 'balancer on':
             if not self.active:
@@ -602,7 +613,8 @@ class Module(MgrModule):
                          overlap)
             return False
 
-        key = 'pgs'  # pgs objects or bytes
+        # pgs objects or bytes
+        key = self.get_config('key', default_key)
 
         # go
         random.shuffle(roots)
