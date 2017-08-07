@@ -612,21 +612,59 @@ class Module(MgrModule):
                           (root, pools, key))
             target = pe.target_by_root[root]
             actual = pe.actual_by_root[root][key]
+
+            # sort on the basis of *deviation%* rather than deviation only
             queue = sorted(actual.keys(),
-                           key=lambda osd: -abs(target[osd] - actual[osd]))
+                           key=lambda osd: ((target[osd] - actual[osd])/ target[osd]))
             self.log.debug('queue %s' % queue)
+
+            # 1. Move a *shift* amount of weight from an over-used device to under-used one.
+            # 2. The amount to be moved depends on the how under/over used the devices are.
+            # 3. Don't change the weights of the devices that have perfect utilization.
+
+            up = 0
+            down = len(queue)-1
+            least_overused_pos = 0
+            least_underused_pos = len(queue)-1
+            while actual[queue[least_underused_pos]] < target[queue[least_underused_pos]]:
+                least_overused_pos += 1
+            while actual[queue[least_overused_pos]] > target[queue[least_overused_pos]]:
+                least_overused_pos -= 1
+            if least_overused_pos == 0 and least_underused_pos == len(queue)-1:
+                self.log.debug('Distribution is perfect')
+
+            if least_overused_pos > (len(queue)-1-least_underused_pos):
+                while up < least_overused_pos:
+                    up_float = float((target[queue[up]] - actual[queue[up]])/target[queue[up]])
+                    up_float /= 1+up_float
+                    down_float = float((target[queue[down]] - actual[queue[down]])/target[queue[down]])
+                    down_float /= 1+down_float
+                    shift = min(old_ws[queue[up]] *  abs(up_float), old_ws[queue[down]] * abs(down_float))
+                    shift /= 2
+                    plan.compat_ws[queue[up]] += shift
+                    plan.compat_ws[queue[down]] -= shift
+                    up += 1
+                    down -= 1
+                    if down == least_underused_pos:
+                        down = len(d)-1
+            else:
+                while down > least_underused_pos:
+                    up_float = float((target[queue[up]] - actual[queue[up]])/target[queue[up]])
+                    up_float /= 1+up_float
+                    down_float = float((target[queue[down]] - actual[queue[down]])/target[queue[down]])
+                    down_float /= 1+down_float
+                    shift = min(old_ws[queue[up]] *  abs(up_float), old_ws[queue[down]] * abs(down_float))
+                    shift /= 2
+                    plan.compat_ws[queue[up]] += shift
+                    plan.compat_ws[queue[down]] -= shift
+                    up += 1
+                    down -= 1
+                    if down == least_underused_pos:
+                        down = len(d)-1
+
             for osd in queue:
-                deviation = target[osd] - actual[osd]
-                if deviation == 0:
-                    break
-                self.log.debug('osd.%d deviation %f', osd, deviation)
-                weight = old_ws[osd]
-                calc_weight = target[osd] / actual[osd] * weight
-                new_weight = weight * .7 + calc_weight * .3
-                self.log.debug('Reweight osd.%d %f -> %f', osd, weight,
-                               new_weight)
-                plan.compat_ws[osd] = new_weight
-        return True
+                self.log.debug('Reweight osd.%d %f -> %f', osd, old_ws[osd], plan.compat_ws[osd])
+	    return True
 
     def compat_weight_set_reweight(self, osd, new_weight):
         self.log.debug('ceph osd crush weight-set reweight-compat')
