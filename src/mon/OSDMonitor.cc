@@ -3960,8 +3960,6 @@ bool OSDMonitor::preprocess_command(MonOpRequestRef op)
 	p->print(ds);
       }
       rdata.append(ds);
-      if (!f)
-	ds << " ";
     } else if (prefix == "osd ls") {
       if (f) {
 	f->open_array_section("osds");
@@ -4032,7 +4030,6 @@ bool OSDMonitor::preprocess_command(MonOpRequestRef op)
       rdata.append(ds);
     } else if (prefix == "osd getmap") {
       rdata.append(osdmap_bl);
-      ss << "got osdmap epoch " << p->get_epoch();
     } else if (prefix == "osd getcrushmap") {
       p->crush->encode(rdata, mon->get_quorum_con_features());
       ss << p->get_crush_version();
@@ -4290,18 +4287,14 @@ bool OSDMonitor::preprocess_command(MonOpRequestRef op)
     get_str_vec(prefix, pvec);
 
     if (whostr == "*" || whostr == "all" || whostr == "any") {
-      ss << "osds ";
-      int c = 0;
       for (int i = 0; i < osdmap.get_max_osd(); i++)
 	if (osdmap.is_up(i)) {
-	  ss << (c++ ? "," : "") << i;
 	  mon->try_send_message(new MOSDScrub(osdmap.get_fsid(),
 					      pvec.back() == "repair",
 					      pvec.back() == "deep-scrub"),
 				osdmap.get_inst(i));
 	}
       r = 0;
-      ss << " instructed to " << pvec.back();
     } else {
       long osd = parse_osd_id(whostr.c_str(), &ss);
       if (osd < 0) {
@@ -4311,7 +4304,6 @@ bool OSDMonitor::preprocess_command(MonOpRequestRef op)
 					    pvec.back() == "repair",
 					    pvec.back() == "deep-scrub"),
 			      osdmap.get_inst(osd));
-	ss << "osd." << osd << " instructed to " << pvec.back();
       } else {
 	ss << "osd." << osd << " is not up";
 	r = -EAGAIN;
@@ -4366,8 +4358,6 @@ bool OSDMonitor::preprocess_command(MonOpRequestRef op)
       f->close_section();
       f->flush(rdata);
     }
-    ss << "listed " << osdmap.blacklist.size() << " entries";
-
   } else if (prefix == "osd pool ls") {
     string detail;
     cmd_getval(g_ceph_context, cmdmap, "detail", detail);
@@ -7356,7 +7346,7 @@ bool OSDMonitor::prepare_command_impl(MonOpRequestRef op,
         oss << "osd." << osd;
         string name = oss.str();
 
-        string action;
+	string action;
         if (newcrush.item_exists(osd)) {
           action = "updating";
         } else {
@@ -7386,8 +7376,6 @@ bool OSDMonitor::prepare_command_impl(MonOpRequestRef op,
     if (!updated.empty()) {
       pending_inc.crush.clear();
       newcrush.encode(pending_inc.crush, mon->get_quorum_con_features());
-      ss << "set osd(s) " << updated << " to class '" << device_class << "'";
-      getline(ss, rs);
       wait_for_finished_proposal(op,
         new Monitor::C_Command(mon,op, 0, rs, get_last_committed() + 1));
       return true;
@@ -7448,8 +7436,6 @@ bool OSDMonitor::prepare_command_impl(MonOpRequestRef op,
     if (!updated.empty()) {
       pending_inc.crush.clear();
       newcrush.encode(pending_inc.crush, mon->get_quorum_con_features());
-      ss << "done removing class of osd(s): " << updated;
-      getline(ss, rs);
       wait_for_finished_proposal(op,
         new Monitor::C_Command(mon,op, 0, rs, get_last_committed() + 1));
       return true;
@@ -7501,8 +7487,6 @@ bool OSDMonitor::prepare_command_impl(MonOpRequestRef op,
 
     pending_inc.crush.clear();
     newcrush.encode(pending_inc.crush, mon->get_quorum_con_features());
-    ss << "added bucket " << name << " type " << typestr
-       << " to crush map";
     goto update;
   } else if (prefix == "osd crush rename-bucket") {
     string srcname, dstname;
@@ -7696,16 +7680,11 @@ bool OSDMonitor::prepare_command_impl(MonOpRequestRef op,
       goto reply;
 
     if (err == 0 && !_have_pending_crush()) {
-      ss << action << " item id " << osdid << " name '" << name << "' weight "
-        << weight << " at location " << loc << ": no change";
       goto reply;
     }
 
     pending_inc.crush.clear();
     newcrush.encode(pending_inc.crush, mon->get_quorum_con_features());
-    ss << action << " item id " << osdid << " name '" << name << "' weight "
-      << weight << " at location " << loc << " to crush map";
-    getline(ss, rs);
     wait_for_finished_proposal(op, new Monitor::C_Command(mon, op, 0, rs,
 						      get_last_committed() + 1));
     return true;
@@ -7741,16 +7720,11 @@ bool OSDMonitor::prepare_command_impl(MonOpRequestRef op,
 
       err = newcrush.create_or_move_item(g_ceph_context, osdid, weight, name, loc);
       if (err == 0) {
-	ss << "create-or-move updated item name '" << name << "' weight " << weight
-	   << " at location " << loc << " to crush map";
 	break;
       }
       if (err > 0) {
 	pending_inc.crush.clear();
 	newcrush.encode(pending_inc.crush, mon->get_quorum_con_features());
-	ss << "create-or-move updating item name '" << name << "' weight " << weight
-	   << " at location " << loc << " to crush map";
-	getline(ss, rs);
 	wait_for_finished_proposal(op, new Monitor::C_Command(mon, op, 0, rs,
 						  get_last_committed() + 1));
 	return true;
@@ -7786,16 +7760,13 @@ bool OSDMonitor::prepare_command_impl(MonOpRequestRef op,
 	  err = newcrush.move_bucket(g_ceph_context, id, loc);
 	}
 	if (err >= 0) {
-	  ss << "moved item id " << id << " name '" << name << "' to location " << loc << " in crush map";
 	  pending_inc.crush.clear();
 	  newcrush.encode(pending_inc.crush, mon->get_quorum_con_features());
-	  getline(ss, rs);
 	  wait_for_finished_proposal(op, new Monitor::C_Command(mon, op, 0, rs,
 						   get_last_committed() + 1));
 	  return true;
 	}
       } else {
-	ss << "no need to move item id " << id << " name '" << name << "' to location " << loc << " in crush map";
 	err = 0;
       }
     } while (false);
@@ -7839,7 +7810,6 @@ bool OSDMonitor::prepare_command_impl(MonOpRequestRef op,
       err = r;
       goto reply;
     }
-    ss << "swapped bucket of " << source << " to " << dest;
     pending_inc.crush.clear();
     newcrush.encode(pending_inc.crush, mon->get_quorum_con_features());
     wait_for_finished_proposal(op,
@@ -7866,8 +7836,6 @@ bool OSDMonitor::prepare_command_impl(MonOpRequestRef op,
       dout(5) << "resolved crush name '" << name << "' to id " << id << dendl;
     }
     if (osdmap.crush->check_item_loc(g_ceph_context, id, loc, (int*) NULL)) {
-      ss << "no need to move item id " << id << " name '" << name
-	 << "' to location " << loc << " in crush map";
       err = 0;
       goto reply;
     }
@@ -7885,8 +7853,6 @@ bool OSDMonitor::prepare_command_impl(MonOpRequestRef op,
       if (!newcrush.check_item_loc(g_ceph_context, id, loc, (int *)NULL)) {
 	err = newcrush.link_bucket(g_ceph_context, id, loc);
 	if (err >= 0) {
-	  ss << "linked item id " << id << " name '" << name
-             << "' to location " << loc << " in crush map";
 	  pending_inc.crush.clear();
 	  newcrush.encode(pending_inc.crush, mon->get_quorum_con_features());
 	} else {
@@ -7895,8 +7861,6 @@ bool OSDMonitor::prepare_command_impl(MonOpRequestRef op,
           goto reply;
 	}
       } else {
-	ss << "no need to move item id " << id << " name '" << name
-           << "' to location " << loc << " in crush map";
 	err = 0;
       }
     }
@@ -7916,13 +7880,10 @@ bool OSDMonitor::prepare_command_impl(MonOpRequestRef op,
 
       if (!osdmap.crush->name_exists(name)) {
 	err = 0;
-	ss << "device '" << name << "' does not appear in the crush map";
 	break;
       }
       if (!newcrush.name_exists(name)) {
 	err = 0;
-	ss << "device '" << name << "' does not appear in the crush map";
-	getline(ss, rs);
 	wait_for_finished_proposal(op, new Monitor::C_Command(mon, op, 0, rs,
 						  get_last_committed() + 1));
 	return true;
@@ -7948,13 +7909,10 @@ bool OSDMonitor::prepare_command_impl(MonOpRequestRef op,
           (ancestor < 0), unlink_only);
 
       if (err == -ENOENT) {
-	ss << "item " << id << " does not appear in that position";
 	err = 0;
 	break;
       }
       if (err == 0) {
-	ss << "removed item id " << id << " name '" << name << "' from crush map";
-	getline(ss, rs);
 	wait_for_finished_proposal(op, new Monitor::C_Command(mon, op, 0, rs,
 						  get_last_committed() + 1));
 	return true;
@@ -7968,8 +7926,6 @@ bool OSDMonitor::prepare_command_impl(MonOpRequestRef op,
     newcrush.reweight(g_ceph_context);
     pending_inc.crush.clear();
     newcrush.encode(pending_inc.crush, mon->get_quorum_con_features());
-    ss << "reweighted crush hierarchy";
-    getline(ss, rs);
     wait_for_finished_proposal(op, new Monitor::C_Command(mon, op, 0, rs,
 						  get_last_committed() + 1));
     return true;
@@ -8005,9 +7961,6 @@ bool OSDMonitor::prepare_command_impl(MonOpRequestRef op,
       goto reply;
     pending_inc.crush.clear();
     newcrush.encode(pending_inc.crush, mon->get_quorum_con_features());
-    ss << "reweighted item id " << id << " name '" << name << "' to " << w
-       << " in crush map";
-    getline(ss, rs);
     wait_for_finished_proposal(op, new Monitor::C_Command(mon, op, 0, rs,
 						  get_last_committed() + 1));
     return true;
@@ -8043,9 +7996,6 @@ bool OSDMonitor::prepare_command_impl(MonOpRequestRef op,
       goto reply;
     pending_inc.crush.clear();
     newcrush.encode(pending_inc.crush, mon->get_quorum_con_features());
-    ss << "reweighted subtree id " << id << " name '" << name << "' to " << w
-       << " in crush map";
-    getline(ss, rs);
     wait_for_finished_proposal(op, new Monitor::C_Command(mon, op, 0, rs,
 					      get_last_committed() + 1));
     return true;
@@ -8083,8 +8033,6 @@ bool OSDMonitor::prepare_command_impl(MonOpRequestRef op,
 
     pending_inc.crush.clear();
     newcrush.encode(pending_inc.crush, mon->get_quorum_con_features());
-    ss << "adjusted tunables profile to " << profile;
-    getline(ss, rs);
     wait_for_finished_proposal(op, new Monitor::C_Command(mon, op, 0, rs,
 					      get_last_committed() + 1));
     return true;
@@ -8123,8 +8071,6 @@ bool OSDMonitor::prepare_command_impl(MonOpRequestRef op,
 
     pending_inc.crush.clear();
     newcrush.encode(pending_inc.crush, mon->get_quorum_con_features());
-    ss << "adjusted tunable " << tunable << " to " << value;
-    getline(ss, rs);
     wait_for_finished_proposal(op, new Monitor::C_Command(mon, op, 0, rs,
 					      get_last_committed() + 1));
     return true;
@@ -8245,7 +8191,6 @@ bool OSDMonitor::prepare_command_impl(MonOpRequestRef op,
 							get_last_committed() + 1));
       return true;
     } else {
-      ss << "erasure-code-profile " << name << " does not exist";
       err = 0;
       goto reply;
     }
@@ -8322,7 +8267,6 @@ bool OSDMonitor::prepare_command_impl(MonOpRequestRef op,
       pending_inc.set_erasure_code_profile(name, profile_map);
     }
 
-    getline(ss, rs);
     wait_for_finished_proposal(op, new Monitor::C_Command(mon, op, 0, rs,
                                                       get_last_committed() + 1));
     return true;
@@ -8379,11 +8323,7 @@ bool OSDMonitor::prepare_command_impl(MonOpRequestRef op,
  	goto reply;
 	break;
       }
-    } else {
-      ss << "created rule " << name << " at " << rule;
     }
-
-    getline(ss, rs);
     wait_for_finished_proposal(op, new Monitor::C_Command(mon, op, 0, rs,
                                                       get_last_committed() + 1));
     return true;
@@ -8393,7 +8333,6 @@ bool OSDMonitor::prepare_command_impl(MonOpRequestRef op,
     cmd_getval(g_ceph_context, cmdmap, "name", name);
 
     if (!osdmap.crush->rule_exists(name)) {
-      ss << "rule " << name << " does not exist";
       err = 0;
       goto reply;
     }
@@ -8402,7 +8341,6 @@ bool OSDMonitor::prepare_command_impl(MonOpRequestRef op,
     _get_pending_crush(newcrush);
 
     if (!newcrush.rule_exists(name)) {
-      ss << "rule " << name << " does not exist";
       err = 0;
     } else {
       int ruleno = newcrush.get_rule_id(name);
@@ -8465,8 +8403,6 @@ bool OSDMonitor::prepare_command_impl(MonOpRequestRef op,
     }
 
     pending_inc.new_max_osd = newmax;
-    ss << "set new max_osd = " << pending_inc.new_max_osd;
-    getline(ss, rs);
     wait_for_finished_proposal(op, new Monitor::C_Command(mon, op, 0, rs,
 					      get_last_committed() + 1));
     return true;
@@ -8493,8 +8429,6 @@ bool OSDMonitor::prepare_command_impl(MonOpRequestRef op,
       pending_inc.new_backfillfull_ratio = n;
     else if (prefix == "osd set-nearfull-ratio")
       pending_inc.new_nearfull_ratio = n;
-    ss << prefix << " " << n;
-    getline(ss, rs);
     wait_for_finished_proposal(op, new Monitor::C_Command(mon, op, 0, rs,
 					      get_last_committed() + 1));
     return true;
@@ -8565,9 +8499,7 @@ bool OSDMonitor::prepare_command_impl(MonOpRequestRef op,
 	goto reply;
       }
     }
-    ss << "set require_min_compat_client to " << ceph_release_name(vno);
     pending_inc.new_require_min_compat_client = vno;
-    getline(ss, rs);
     wait_for_finished_proposal(op, new Monitor::C_Command(mon, op, 0, rs,
 							  get_last_committed() + 1));
     return true;
