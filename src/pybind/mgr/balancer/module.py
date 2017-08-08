@@ -547,8 +547,6 @@ class Module(MgrModule):
                 self.log.info('Unrecognized mode %s' % plan.mode)
         return False
 
-        ##
-
     def do_upmap(self, plan):
         self.log.info('do_upmap')
         max_iterations = self.get_config('upmap_max_iterations', 10)
@@ -816,6 +814,10 @@ class Module(MgrModule):
                 'pgid': item['pgid'],
                 'id': osdlist,
             }), 'foo')
+            commands.append(result)
+
+        # wait for commands
+        for result in commands:
             r, outb, outs = result.wait()
             if r != 0:
                 self.log.error('Error on command')
@@ -829,3 +831,4 @@ class Module(MgrModule):
         #        self.log.error('Error on command')
         #        return
         self.log.debug('done')
+
