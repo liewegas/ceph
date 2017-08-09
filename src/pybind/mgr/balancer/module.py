@@ -182,6 +182,11 @@ class Module(MgrModule):
             "perm": "rw",
         },
         {
+            "cmd": "balancer max-iterations name=max-iterations,type=CephInt",
+            "desc": "Set max-iterations for optimization in crush-compat mode",
+            "perm": "rw",
+        },
+        {
             "cmd": "balancer on",
             "desc": "Enable automatic balancing",
             "perm": "rw",
@@ -232,6 +237,7 @@ class Module(MgrModule):
     plans = {}
     mode = ''
     key = 'pgs'
+    max_iterations = 100
 
     def __init__(self, *args, **kwargs):
         super(Module, self).__init__(*args, **kwargs)
@@ -245,6 +251,7 @@ class Module(MgrModule):
                 'active': self.active,
                 'mode': self.get_config('mode', default_mode),
                 'key': self.get_config('key', default_key),
+                'max-iterations': self.max_iterations,
             }
             return (0, json.dumps(s, indent=4), '')
         elif command['prefix'] == 'balancer mode':
@@ -252,6 +259,9 @@ class Module(MgrModule):
             return (0, '', '')
         elif command['prefix'] == 'balancer key':
             self.set_config('key', command['key'])
+            return (0, '', '')
+        elif command['prefix'] == 'balancer max-iterations':
+            self.max_iterations = max(1, command['max-iterations'])
             return (0, '', '')
         elif command['prefix'] == 'balancer on':
             if not self.active:
@@ -622,7 +632,7 @@ class Module(MgrModule):
 
         # pgs objects or bytes
         key = self.get_config('key', default_key)
-        max_iterations = 100
+        max_iterations = self.max_iterations
         no_improvement = 0
         improve_tolerance = 10
         previous_score = None
