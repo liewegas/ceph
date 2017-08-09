@@ -177,8 +177,13 @@ class Module(MgrModule):
             "perm": "rw",
         },
         {
-            "cmd": "balancer key name=key,type=CephChoices,strings=pgs|bytes|objects",
+            "cmd": "balancer key name=key,type=CephChoices,strings=pgs|bytes|objects|auto",
             "desc": "Set balancer key",
+            "perm": "rw",
+        },
+        {
+            "cmd": "balancer key-weights name=pg-weight,type=CephInt name=object-weight,type=CephInt name=byte-weight,type=CephInt",
+            "desc": "Set weights to show relative importance of the parameters on basis of which 'auto' in crush-compat mode works",
             "perm": "rw",
         },
         {
@@ -238,6 +243,7 @@ class Module(MgrModule):
     mode = ''
     key = 'pgs'
     max_iterations = 100
+    key_weights = [5, 3, 2]
 
     def __init__(self, *args, **kwargs):
         super(Module, self).__init__(*args, **kwargs)
@@ -251,6 +257,7 @@ class Module(MgrModule):
                 'active': self.active,
                 'mode': self.get_config('mode', default_mode),
                 'key': self.get_config('key', default_key),
+                'key-weights': self.key_weights,
                 'max-iterations': self.max_iterations,
             }
             return (0, json.dumps(s, indent=4), '')
@@ -262,6 +269,11 @@ class Module(MgrModule):
             return (0, '', '')
         elif command['prefix'] == 'balancer max-iterations':
             self.max_iterations = max(1, command['max-iterations'])
+            return (0, '', '')
+        elif command['prefix'] == 'balancer key-weights':
+            self.key_weights[0] = max(0, command['pg-weight'])
+            self.key_weights[1] = max(0, command['object-weight'])
+            self.key_weights[2] = max(0, command['byte-weight'])
             return (0, '', '')
         elif command['prefix'] == 'balancer on':
             if not self.active:
@@ -597,7 +609,14 @@ class Module(MgrModule):
 
     def get_score(pe, key):
         score = 0.0
-        for r, vs in pe.score_by_root.iteritems():
+        if key == 'auto':
+            for _, vs in pe.score_by_root.iteritems():
+                for _, v in vs.iteritems():
+                    score += v
+            score /= 3 * len(roots)
+            return score
+
+        for _, vs in pe.score_by_root.iteritems():
             score += vs[key]
         score /= len(roots)
         return score
@@ -630,7 +649,14 @@ class Module(MgrModule):
                          overlap)
             return False
 
-        # pgs objects or bytes
+        # pgs objects bytes or auto
+
+        # In auto-mode, alternate between objects, bytes and pgs.
+        # The relative importance between PGs, objects and bytes is out of the fact that PGs have much
+        # more role in the distribution in the long run than the others. The parameter 'bytes' varies
+        # rather too rapidly, 'objects' would vary less frequently and PGs the slowest. The rate of varying
+        # of these parameters is inversely proportional to how much they affect the distribution in the long run.
+
         key = self.get_config('key', default_key)
         max_iterations = self.max_iterations
         no_improvement = 0
@@ -639,10 +665,25 @@ class Module(MgrModule):
         tolerance_threshold = 0.000001
         best_weights = {}
 
+        key_copy = self.get_config('key', default_key)
+        if key == 'auto':
+            key = 'pgs'
+
         # go
         for iterations in range(max_iterations):
             ms = plan.final_state()
             pe = self.calc_eval(ms)
+            if key_copy == 'auto':
+                pgs_score = self.key_weights[0] * self.get_score(pe, 'pgs')
+                objects_score = self.key_weights[1] * self.get_score(pe, 'objects')
+                bytes_score = self.key_weights[2] * self.get_score(pe, 'bytes')
+                if pgs_score >= max(objects_score, bytes_score):
+                    key = 'pgs'
+                elif objects_score >= max(pgs_score, bytes_score):
+                    key = 'objects'
+                else:
+                    key = 'bytes'
+
             if previous_score is not None:
                 if previous_score > get_score(pe, key):
                     no_improvement += 1
