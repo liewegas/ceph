@@ -585,6 +585,13 @@ class Module(MgrModule):
         self.log.info('prepared %d/%d changes' % (total_did, max_iterations))
         return True
 
+    def get_score(pe, key):
+        score = 0.0
+        for r, vs in pe.score_by_root.iteritems():
+            score += vs[key]
+        score /= len(roots)
+        return score
+
     def do_crush_compat(self, plan):
         self.log.info('do_crush_compat')
         osdmap = self.get_osdmap()
@@ -615,68 +622,93 @@ class Module(MgrModule):
 
         # pgs objects or bytes
         key = self.get_config('key', default_key)
+        max_iterations = 100
+        no_improvement = 0
+        improve_tolerance = 10
+        previous_score = None
+        tolerance_threshold = 0.000001
+        best_weights = {}
 
         # go
-        random.shuffle(roots)
-        for root in roots:
-            pools = pe.root_pools[root]
-            self.log.info('Balancing root %s (pools %s) by %s' %
-                          (root, pools, key))
-            target = pe.target_by_root[root]
-            actual = pe.actual_by_root[root][key]
-
-            # sort on the basis of *deviation%* rather than deviation only
-            queue = sorted(actual.keys(),
-                           key=lambda osd: ((target[osd] - actual[osd])/ target[osd]))
-            self.log.debug('queue %s' % queue)
-
-            # 1. Move a *shift* amount of weight from an over-used device to under-used one.
-            # 2. The amount to be moved depends on the how under/over used the devices are.
-            # 3. Don't change the weights of the devices that have perfect utilization.
-
-            up = 0
-            down = len(queue)-1
-            least_overused_pos = 0
-            least_underused_pos = len(queue)-1
-            while actual[queue[least_underused_pos]] < target[queue[least_underused_pos]]:
-                least_overused_pos += 1
-            while actual[queue[least_overused_pos]] > target[queue[least_overused_pos]]:
-                least_overused_pos -= 1
-            if least_overused_pos == 0 and least_underused_pos == len(queue)-1:
-                self.log.debug('Distribution is perfect')
-
-            if least_overused_pos > (len(queue)-1-least_underused_pos):
-                while up < least_overused_pos:
-                    up_float = float((target[queue[up]] - actual[queue[up]])/target[queue[up]])
-                    up_float /= 1+up_float
-                    down_float = float((target[queue[down]] - actual[queue[down]])/target[queue[down]])
-                    down_float /= 1+down_float
-                    shift = min(old_ws[queue[up]] *  abs(up_float), old_ws[queue[down]] * abs(down_float))
-                    shift /= 2
-                    plan.compat_ws[queue[up]] += shift
-                    plan.compat_ws[queue[down]] -= shift
-                    up += 1
-                    down -= 1
-                    if down == least_underused_pos:
-                        down = len(d)-1
+        for iterations in range(max_iterations):
+            ms = plan.final_state()
+            pe = self.calc_eval(ms)
+            if previous_score is not None:
+                if previous_score > get_score(pe, key):
+                    no_improvement += 1
+                else:
+                    previous_score = get_score(pe, key)
+                    best_weights = dict(plan.compat_ws)
+                    no_improvement = 0
+                if no_improvement >= improve_tolerance:
+                    self.log.debug("stop becuase " + str(no_improvement) + " tries")
+                    break
             else:
-                while down > least_underused_pos:
-                    up_float = float((target[queue[up]] - actual[queue[up]])/target[queue[up]])
-                    up_float /= 1+up_float
-                    down_float = float((target[queue[down]] - actual[queue[down]])/target[queue[down]])
-                    down_float /= 1+down_float
-                    shift = min(old_ws[queue[up]] *  abs(up_float), old_ws[queue[down]] * abs(down_float))
-                    shift /= 2
-                    plan.compat_ws[queue[up]] += shift
-                    plan.compat_ws[queue[down]] -= shift
-                    up += 1
-                    down -= 1
-                    if down == least_underused_pos:
-                        down = len(d)-1
+                best_weights = dict(plan.compat_ws)
+                previous_score = get_score(pe, key)
+            if abs(previous_score - 0) <= tolerance_threshold:
+                self.log.debug("stop because distribution is perfect")
+                break
+            for root in roots:
+                pools = pe.root_pools[root]
+                self.log.info('Balancing root %s (pools %s) by %s' %
+                              (root, pools, key))
+                target = pe.target_by_root[root]
+                actual = pe.actual_by_root[root][key]
 
-            for osd in queue:
-                self.log.debug('Reweight osd.%d %f -> %f', osd, old_ws[osd], plan.compat_ws[osd])
-	    return True
+                # sort on the basis of *deviation%* rather than deviation only
+                queue = sorted(actual.keys(),
+                               key=lambda osd: ((target[osd] - actual[osd])/ target[osd]))
+                self.log.debug('queue %s' % queue)
+
+                # 1. Move a *shift* amount of weight from an over-used device to under-used one.
+                # 2. The amount to be moved depends on the how under/over used the devices are.
+                # 3. Don't change the weights of the devices that have perfect utilization.
+
+                up = 0
+                down = len(queue)-1
+                least_overused_pos = 0
+                least_underused_pos = len(queue)-1
+                while actual[queue[least_underused_pos]] < target[queue[least_underused_pos]]:
+                    least_overused_pos += 1
+                while actual[queue[least_overused_pos]] > target[queue[least_overused_pos]]:
+                    least_overused_pos -= 1
+                if least_overused_pos == 0 and least_underused_pos == len(queue)-1:
+                    self.log.debug('Distribution is perfect')
+
+                if least_overused_pos > (len(queue)-1-least_underused_pos):
+                    while up < least_overused_pos:
+                        up_float = float((target[queue[up]] - actual[queue[up]])/target[queue[up]])
+                        up_float /= 1+up_float
+                        down_float = float((target[queue[down]] - actual[queue[down]])/target[queue[down]])
+                        down_float /= 1+down_float
+                        shift = min(old_ws[queue[up]] *  abs(up_float), old_ws[queue[down]] * abs(down_float))
+                        shift /= 2
+                        plan.compat_ws[queue[up]] += shift
+                        plan.compat_ws[queue[down]] -= shift
+                        up += 1
+                        down -= 1
+                        if down == least_underused_pos:
+                            down = len(d)-1
+                else:
+                    while down > least_underused_pos:
+                        up_float = float((target[queue[up]] - actual[queue[up]])/target[queue[up]])
+                        up_float /= 1+up_float
+                        down_float = float((target[queue[down]] - actual[queue[down]])/target[queue[down]])
+                        down_float /= 1+down_float
+                        shift = min(old_ws[queue[up]] *  abs(up_float), old_ws[queue[down]] * abs(down_float))
+                        shift /= 2
+                        plan.compat_ws[queue[up]] += shift
+                        plan.compat_ws[queue[down]] -= shift
+                        up += 1
+                        down -= 1
+                        if down == least_underused_pos:
+                            down = len(d)-1
+
+        # after all calculations are done
+        for osd in best_weights:
+            plan.compat_ws[osd] = best_weights[osd]
+            self.log.debug('Reweight osd.%d %f -> %f', osd, old_ws[osd], plan.compat_ws[osd])
 
     def compat_weight_set_reweight(self, osd, new_weight):
         self.log.debug('ceph osd crush weight-set reweight-compat')
