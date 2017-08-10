@@ -1369,6 +1369,8 @@ public:
   bool check_new_blacklist_entries() const { return new_blacklist_entries; }
 
   void check_health(health_check_map_t *checks) const;
+
+  int parse_osd_id_list(const list<string>& ls, set<int> *out, ostream *ss);
 };
 WRITE_CLASS_ENCODER_FEATURES(OSDMap)
 WRITE_CLASS_ENCODER_FEATURES(OSDMap::Incremental)
