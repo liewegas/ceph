@@ -8678,12 +8678,11 @@ bool OSDMonitor::prepare_command_impl(MonOpRequestRef op,
 	     prefix == "osd in" ||
 	     prefix == "osd rm") {
 
-    bool any = false;
     bool stop = false;
-    bool verbose = true;
 
     vector<string> idvec;
     cmd_getval(g_ceph_context, cmdmap, "ids", idvec);
+    set<int> ok, dne, stillup;
     for (unsigned j = 0; j < idvec.size() && !stop; j++) {
       set<int> osds;
 
@@ -8697,36 +8696,26 @@ bool OSDMonitor::prepare_command_impl(MonOpRequestRef op,
           osdmap.get_all_osds(osds);
         }
         stop = true;
-        verbose = false; // so the output is less noisy.
       } else {
         long osd = parse_osd_id(idvec[j].c_str(), &ss);
         if (osd < 0) {
-          ss << "invalid osd id" << osd;
           err = -EINVAL;
           continue;
         } else if (!osdmap.exists(osd)) {
-          ss << "osd." << osd << " does not exist. ";
+	  dne.insert(osd);
           continue;
         }
-
         osds.insert(osd);
       }
 
       for (auto &osd : osds) {
         if (prefix == "osd down") {
-	  if (osdmap.is_down(osd)) {
-            if (verbose)
-	      ss << "osd." << osd << " is already down. ";
-	  } else {
+	  if (!osdmap.is_down(osd)) {
             pending_inc.pending_osd_state_set(osd, CEPH_OSD_UP);
-	    ss << "marked down osd." << osd << ". ";
-	    any = true;
+	    ok.insert(osd);
 	  }
         } else if (prefix == "osd out") {
-	  if (osdmap.is_out(osd)) {
-            if (verbose)
-	      ss << "osd." << osd << " is already out. ";
-	  } else {
+	  if (!osdmap.is_out(osd)) {
 	    pending_inc.new_weight[osd] = CEPH_OSD_OUT;
 	    if (osdmap.osd_weight[osd]) {
 	      if (pending_inc.new_xinfo.count(osd) == 0) {
@@ -8734,7 +8723,7 @@ bool OSDMonitor::prepare_command_impl(MonOpRequestRef op,
 	      }
 	      pending_inc.new_xinfo[osd].old_weight = osdmap.osd_weight[osd];
 	    }
-	    ss << "marked out osd." << osd << ". ";
+	    ok.insert(osd);
             std::ostringstream msg;
             msg << "Client " << op->get_session()->entity_name
                 << " marked osd." << osd << " out";
@@ -8746,13 +8735,9 @@ bool OSDMonitor::prepare_command_impl(MonOpRequestRef op,
             }
 
             mon->clog->info() << msg.str();
-	    any = true;
 	  }
         } else if (prefix == "osd in") {
-	  if (osdmap.is_in(osd)) {
-            if (verbose)
-	      ss << "osd." << osd << " is already in. ";
-	  } else {
+	  if (!osdmap.is_in(osd)) {
 	    if (osdmap.osd_xinfo[osd].old_weight > 0) {
 	      pending_inc.new_weight[osd] = osdmap.osd_xinfo[osd].old_weight;
 	      if (pending_inc.new_xinfo.count(osd) == 0) {
@@ -8762,31 +8747,37 @@ bool OSDMonitor::prepare_command_impl(MonOpRequestRef op,
 	    } else {
 	      pending_inc.new_weight[osd] = CEPH_OSD_IN;
 	    }
-	    ss << "marked in osd." << osd << ". ";
-	    any = true;
+	    ok.insert(osd);
 	  }
         } else if (prefix == "osd rm") {
           err = prepare_command_osd_remove(osd);
-
           if (err == -EBUSY) {
-	    if (any)
-	      ss << ", ";
-            ss << "osd." << osd << " is still up; must be down before removal. ";
+	    stillup.insert(osd);
 	  } else {
             assert(err == 0);
-	    if (any) {
-	      ss << ", osd." << osd;
-            } else {
-	      ss << "removed osd." << osd;
-            }
-	    any = true;
+	    ok.insert(osd);
 	  }
         }
       }
     }
-    if (any) {
-      getline(ss, rs);
-      wait_for_finished_proposal(op, new Monitor::C_Command(mon, op, err, rs,
+    list<string> ls;
+    if (!ok.empty())
+      ls.push_back(string("updated ") + stringify(ok));
+    if (!dne.empty())
+      ls.push_back(stringify(dne) + " do not exist");
+    if (!stillup.empty())
+      ls.push_back(stringify(stillup) + " still up");
+    if (!ls.empty()) {
+      ss << ls.front();
+      ls.pop_front();
+      while (!ls.empty()) {
+	ss << "; " << ls.front();
+	ls.pop_front();
+      }
+    }
+    if (!ok.empty()) {
+      wait_for_finished_proposal(op, new Monitor::C_Command(mon, op, err,
+							    ss.str(),
 						get_last_committed() + 1));
       return true;
     }
