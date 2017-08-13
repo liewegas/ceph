@@ -161,6 +161,87 @@ Usage::
 
 	ceph auth print_key <entity>
 
+balancer
+--------
+
+Manage reweight optimizations and balancing. It is used to remove any
+uneven utilization of OSDs in a cluster.
+
+Subcommand ``on`` starts auto-magic (online and incremental) balancing.
+
+Usage::
+
+	ceph balancer on
+
+Subcommand ``status`` shows balancer configurations and existing plans.
+
+Usage::
+
+	ceph balancer status
+
+Subcommand ``mode`` sets mode of operation.
+
+Usage::
+
+	ceph mds mode crush-compat|upmap|none
+
+Subcommand ``optimize`` creates a new optimization plan.
+
+Usage::
+
+	ceph balancer optimize <plan>
+
+Subcommand ``eval`` evaluates the expected utilization of OSDs if the
+optimization plan is actually implemented. If no plan is specified, it
+evaluates the current utilization of OSDs.
+
+Usage::
+
+	ceph balancer eval {<plan>}
+
+Subcommand ``show`` displays the cli implementations of the plan.
+
+Usage::
+
+	ceph balancer show <plan>
+
+Subcommand ``execute`` implements the plan through ``mon`` commands.
+
+Usage::
+
+	ceph balancer execute <plan>
+
+Subcommand ``rm`` removes a plan from the memory.
+
+Usage::
+
+	ceph balancer rm <plan>
+
+Subcommand ``key`` configures the optimization parameter.
+
+Usage::
+
+	ceph balancer key pgs|objects|bytes|auto
+
+Subcommand ``key-weights`` configures key weights in case the key was `auto`.
+
+Usage::
+
+	ceph balancer key-weights <int[0-]> <int[0-]> <int[0-]>
+
+Subcommand ``max-iterations`` configures the maximum number of times the
+iterative algorithm may run before it results in the new weights.
+
+Usage::
+
+	ceph balancer max-iterations <int[1-]>
+
+Subcommand ``off`` stops auto-magic balancing.
+
+Usage::
+
+	ceph balancer off
+
 
 compact
 -------

@@ -673,6 +673,9 @@ class Module(MgrModule):
         for iterations in range(max_iterations):
             ms = plan.final_state()
             pe = self.calc_eval(ms)
+
+            # If in auto-mode, sort first by pgs, until distribution by pgs is more-or-less converged.
+            # Follow up with sorting wrt objects and bytes.
             if key_copy == 'auto':
                 pgs_score = self.key_weights[0] * self.get_score(pe, 'pgs')
                 objects_score = self.key_weights[1] * self.get_score(pe, 'objects')
@@ -684,6 +687,7 @@ class Module(MgrModule):
                 else:
                     key = 'bytes'
 
+            # Convergence Testing Algorithm
             if previous_score is not None:
                 if previous_score > get_score(pe, key):
                     no_improvement += 1
@@ -697,9 +701,11 @@ class Module(MgrModule):
             else:
                 best_weights = dict(plan.compat_ws)
                 previous_score = get_score(pe, key)
+
             if abs(previous_score - 0) <= tolerance_threshold:
                 self.log.debug("stop because distribution is perfect")
                 break
+
             for root in roots:
                 pools = pe.root_pools[root]
                 self.log.info('Balancing root %s (pools %s) by %s' %
@@ -708,6 +714,8 @@ class Module(MgrModule):
                 actual = pe.actual_by_root[root][key]
 
                 # sort on the basis of *deviation%* rather than deviation only
+                # If a pool gets unusable due to filling up of an OSD, then the
+                # error causing OSD has highest *deviation%* and not highest *deviation*
                 queue = sorted(actual.keys(),
                                key=lambda osd: ((target[osd] - actual[osd])/ target[osd]))
                 self.log.debug('queue %s' % queue)
