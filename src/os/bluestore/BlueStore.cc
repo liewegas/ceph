@@ -5997,10 +5997,28 @@ int BlueStore::fsck(bool deep)
     size_t count = used_blocks.count();
     if (used_blocks.size() != count) {
       assert(used_blocks.size() > count);
-      derr << __func__ << " error: leaked some space;"
+      derr << __func__ << " error: leaked some space ("
 	   << (used_blocks.size() - count) * min_alloc_size
-	   << " bytes leaked" << dendl;
+	   << " bytes)" << dendl;
       ++errors;
+      used_blocks.flip();
+      size_t start = used_blocks.find_first();
+      while (start != decltype(used_blocks)::npos) {
+	size_t cur = start;
+	while (true) {
+	  size_t next = used_blocks.find_next(cur);
+	  if (next != cur + 1) {
+	    derr << __func__ << " error:  0x" << std::hex
+		 << ((uint64_t)start * block_size) << "~"
+		 << (cur + 1 - start) << std::dec << " is leaked"
+		 << dendl;
+	    start = next;
+	    break;
+	  }
+	  cur = next;
+	}
+      }
+      used_blocks.flip();
     }
   }
 
