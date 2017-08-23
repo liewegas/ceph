@@ -766,10 +766,7 @@ class Module(MgrModule):
                 'item': 'osd.%d' % osd,
                 'weight': [weight],
             }), 'foo')
-            r, outb, outs = result.wait()
-            if r != 0:
-                self.log.error('Error on command')
-                return
+            commands.append(result)
 
         # new_weight
         reweightn = {}
@@ -783,10 +780,7 @@ class Module(MgrModule):
                 'format': 'json',
                 'weights': json.dumps(reweightn),
             }), 'foo')
-            r, outb, outs = result.wait()
-            if r != 0:
-                self.log.error('Error on command')
-                return
+            commands.append(result)
 
         # upmap
         incdump = plan.inc.dump()
@@ -798,10 +792,7 @@ class Module(MgrModule):
                 'format': 'json',
                 'pgid': pgid,
             }), 'foo')
-            r, outb, outs = result.wait()
-            if r != 0:
-                self.log.error('Error on command')
-                return
+            commands.append(result)
 
         for item in incdump.get('new_pg_upmap_items', []):
             self.log.info('ceph osd pg-upmap-items %s mappings %s', item['pgid'],
@@ -816,16 +807,13 @@ class Module(MgrModule):
                 'pgid': item['pgid'],
                 'id': osdlist,
             }), 'foo')
+            commands.append(result)
+
+        # wait for commands
+        self.log.debug('commands %s' % commands)
+        for result in commands:
             r, outb, outs = result.wait()
             if r != 0:
                 self.log.error('Error on command')
                 return
-
-        # wait for commands
-        #self.log.debug('commands %s' % commands)
-        #for result in commands:
-        #    r, outb, outs = result.wait()
-        #    if r != 0:
-        #        self.log.error('Error on command')
-        #        return
         self.log.debug('done')
