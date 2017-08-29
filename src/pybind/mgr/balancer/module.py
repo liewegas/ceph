@@ -13,6 +13,7 @@ from threading import Event
 
 # available modes: 'none', 'crush', 'crush-compat', 'upmap', 'osd_weight'
 default_mode = 'none'
+default_key = 'pgs'
 default_sleep_interval = 60   # seconds
 default_max_misplaced = .03   # max ratio of pgs replaced at a time
 
@@ -136,22 +137,21 @@ class Eval:
                 # One 10% underfilled device with 5 2% overfilled devices, is arguably a better
                 # situation than one 10% overfilled with 5 2% underfilled devices
                 if adjusted > avg:
-                    '''
-                    F(x) = 2*phi(x) - 1, where phi(x) = cdf of standard normal distribution
-                    x = (adjusted - avg)/avg.
-                    Since, we're considering only over-weighted devices, x >= 0, and so phi(x) lies in [0.5, 1).
-                    To bring range of F(x) in range [0, 1), we need to make the above modification.
 
-                    In general, we need to use a function F(x), where x = (adjusted - avg)/avg
-                    1. which is bounded between 0 and 1, so that ultimately reweight_urgency will also be bounded.
-                    2. A larger value of x, should imply more urgency to reweight.
-                    3. Also, the difference between F(x) when x is large, should be minimal. 
-                    4. The value of F(x) should get close to 1 (highest urgency to reweight) with steeply.
-                    
-                    Could have used F(x) = (1 - e^(-x)). But that had slower convergence to 1, compared to the one currently in use.
+                    # F(x) = 2*phi(x) - 1, where phi(x) = cdf of standard normal distribution
+                    # x = (adjusted - avg)/avg.
+                    # Since, we're considering only over-weighted devices, x >= 0, and so phi(x) lies in [0.5, 1).
+                    # To bring range of F(x) in range [0, 1), we need to make the above modification.
 
-                    cdf of standard normal distribution: https://stackoverflow.com/a/29273201
-                    '''
+                    # In general, we need to use a function F(x), where x = (adjusted - avg)/avg
+                    # 1. which is bounded between 0 and 1, so that ultimately reweight_urgency will also be bounded.
+                    # 2. A larger value of x, should imply more urgency to reweight.
+                    # 3. Also, the difference between F(x) when x is large, should be minimal.
+                    # 4. The value of F(x) should get close to 1 (highest urgency to reweight) with steeply.
+
+                    # Could have used F(x) = (1 - e^(-x)). But that had slower convergence to 1, compared to the one currently in use.
+                    # cdf of standard normal distribution: https://en.wikipedia.org/wiki/Error_function#Cumulative_distribution_function
+
                     score += target[k] * (math.erf(((adjusted - avg)/avg) / math.sqrt(2.0)))
                     sum_weight += target[k]
                 dev += (avg - adjusted) * (avg - adjusted)
@@ -174,6 +174,21 @@ class Module(MgrModule):
         {
             "cmd": "balancer mode name=mode,type=CephChoices,strings=none|crush-compat|upmap",
             "desc": "Set balancer mode",
+            "perm": "rw",
+        },
+        {
+            "cmd": "balancer key name=key,type=CephChoices,strings=pgs|bytes|objects|auto",
+            "desc": "Set balancer key",
+            "perm": "rw",
+        },
+        {
+            "cmd": "balancer key-weights name=pg-weight,type=CephInt name=object-weight,type=CephInt name=byte-weight,type=CephInt",
+            "desc": "Set weights to show relative importance of the parameters on basis of which 'auto' in crush-compat mode works",
+            "perm": "rw",
+        },
+        {
+            "cmd": "balancer max-iterations name=max-iterations,type=CephInt",
+            "desc": "Set max-iterations for optimization in crush-compat mode",
             "perm": "rw",
         },
         {
@@ -226,6 +241,9 @@ class Module(MgrModule):
     run = True
     plans = {}
     mode = ''
+    key = 'pgs'
+    max_iterations = 100
+    key_weights = [5, 3, 2]
 
     def __init__(self, *args, **kwargs):
         super(Module, self).__init__(*args, **kwargs)
@@ -238,10 +256,24 @@ class Module(MgrModule):
                 'plans': self.plans.keys(),
                 'active': self.active,
                 'mode': self.get_config('mode', default_mode),
+                'key': self.get_config('key', default_key),
+                'key-weights': self.key_weights,
+                'max-iterations': self.max_iterations,
             }
             return (0, json.dumps(s, indent=4), '')
         elif command['prefix'] == 'balancer mode':
             self.set_config('mode', command['mode'])
+            return (0, '', '')
+        elif command['prefix'] == 'balancer key':
+            self.set_config('key', command['key'])
+            return (0, '', '')
+        elif command['prefix'] == 'balancer max-iterations':
+            self.max_iterations = max(1, command['max-iterations'])
+            return (0, '', '')
+        elif command['prefix'] == 'balancer key-weights':
+            self.key_weights[0] = max(0, command['pg-weight'])
+            self.key_weights[1] = max(0, command['object-weight'])
+            self.key_weights[2] = max(0, command['byte-weight'])
             return (0, '', '')
         elif command['prefix'] == 'balancer on':
             if not self.active:
@@ -575,6 +607,20 @@ class Module(MgrModule):
         self.log.info('prepared %d/%d changes' % (total_did, max_iterations))
         return True
 
+    def get_score(pe, key):
+        score = 0.0
+        if key == 'auto':
+            for _, vs in pe.score_by_root.iteritems():
+                for _, v in vs.iteritems():
+                    score += v
+            score /= 3 * len(roots)
+            return score
+
+        for _, vs in pe.score_by_root.iteritems():
+            score += vs[key]
+        score /= len(roots)
+        return score
+
     def do_crush_compat(self, plan):
         self.log.info('do_crush_compat')
         osdmap = self.get_osdmap()
@@ -603,31 +649,125 @@ class Module(MgrModule):
                          overlap)
             return False
 
-        key = 'pgs'  # pgs objects or bytes
+        # pgs objects bytes or auto
+
+        # In auto-mode, alternate between objects, bytes and pgs.
+        # The relative importance between PGs, objects and bytes is out of the fact that PGs have much
+        # more role in the distribution in the long run than the others. The parameter 'bytes' varies
+        # rather too rapidly, 'objects' would vary less frequently and PGs the slowest. The rate of varying
+        # of these parameters is inversely proportional to how much they affect the distribution in the long run.
+
+        key = self.get_config('key', default_key)
+        max_iterations = self.max_iterations
+        no_improvement = 0
+        improve_tolerance = 10
+        previous_score = None
+        tolerance_threshold = 0.000001
+        best_weights = {}
+
+        key_copy = self.get_config('key', default_key)
+        if key == 'auto':
+            key = 'pgs'
 
         # go
-        random.shuffle(roots)
-        for root in roots:
-            pools = pe.root_pools[root]
-            self.log.info('Balancing root %s (pools %s) by %s' %
-                          (root, pools, key))
-            target = pe.target_by_root[root]
-            actual = pe.actual_by_root[root][key]
-            queue = sorted(actual.keys(),
-                           key=lambda osd: -abs(target[osd] - actual[osd]))
-            self.log.debug('queue %s' % queue)
-            for osd in queue:
-                deviation = target[osd] - actual[osd]
-                if deviation == 0:
+        for iterations in range(max_iterations):
+            ms = plan.final_state()
+            pe = self.calc_eval(ms)
+
+            # If in auto-mode, sort first by pgs, until distribution by pgs is more-or-less converged.
+            # Follow up with sorting wrt objects and bytes.
+            if key_copy == 'auto':
+                pgs_score = self.key_weights[0] * self.get_score(pe, 'pgs')
+                objects_score = self.key_weights[1] * self.get_score(pe, 'objects')
+                bytes_score = self.key_weights[2] * self.get_score(pe, 'bytes')
+                if pgs_score >= max(objects_score, bytes_score):
+                    key = 'pgs'
+                elif objects_score >= max(pgs_score, bytes_score):
+                    key = 'objects'
+                else:
+                    key = 'bytes'
+
+            # Convergence Testing Algorithm
+            if previous_score is not None:
+                if previous_score > get_score(pe, key):
+                    no_improvement += 1
+                else:
+                    previous_score = get_score(pe, key)
+                    best_weights = dict(plan.compat_ws)
+                    no_improvement = 0
+                if no_improvement >= improve_tolerance:
+                    self.log.debug("stop becuase " + str(no_improvement) + " tries")
                     break
-                self.log.debug('osd.%d deviation %f', osd, deviation)
-                weight = old_ws[osd]
-                calc_weight = target[osd] / actual[osd] * weight
-                new_weight = weight * .7 + calc_weight * .3
-                self.log.debug('Reweight osd.%d %f -> %f', osd, weight,
-                               new_weight)
-                plan.compat_ws[osd] = new_weight
-        return True
+            else:
+                best_weights = dict(plan.compat_ws)
+                previous_score = get_score(pe, key)
+
+            if abs(previous_score - 0) <= tolerance_threshold:
+                self.log.debug("stop because distribution is perfect")
+                break
+
+            for root in roots:
+                pools = pe.root_pools[root]
+                self.log.info('Balancing root %s (pools %s) by %s' %
+                              (root, pools, key))
+                target = pe.target_by_root[root]
+                actual = pe.actual_by_root[root][key]
+
+                # sort on the basis of *deviation%* rather than deviation only
+                # If a pool gets unusable due to filling up of an OSD, then the
+                # error causing OSD has highest *deviation%* and not highest *deviation*
+                queue = sorted(actual.keys(),
+                               key=lambda osd: ((target[osd] - actual[osd])/ target[osd]))
+                self.log.debug('queue %s' % queue)
+
+                # 1. Move a *shift* amount of weight from an over-used device to under-used one.
+                # 2. The amount to be moved depends on the how under/over used the devices are.
+                # 3. Don't change the weights of the devices that have perfect utilization.
+
+                up = 0
+                down = len(queue)-1
+                least_overused_pos = 0
+                least_underused_pos = len(queue)-1
+                while actual[queue[least_underused_pos]] < target[queue[least_underused_pos]]:
+                    least_overused_pos += 1
+                while actual[queue[least_overused_pos]] > target[queue[least_overused_pos]]:
+                    least_overused_pos -= 1
+                if least_overused_pos == 0 and least_underused_pos == len(queue)-1:
+                    self.log.debug('Distribution is perfect')
+
+                if least_overused_pos > (len(queue)-1-least_underused_pos):
+                    while up < least_overused_pos:
+                        up_float = float((target[queue[up]] - actual[queue[up]])/target[queue[up]])
+                        up_float /= 1+up_float
+                        down_float = float((target[queue[down]] - actual[queue[down]])/target[queue[down]])
+                        down_float /= 1+down_float
+                        shift = min(old_ws[queue[up]] *  abs(up_float), old_ws[queue[down]] * abs(down_float))
+                        shift /= 2
+                        plan.compat_ws[queue[up]] += shift
+                        plan.compat_ws[queue[down]] -= shift
+                        up += 1
+                        down -= 1
+                        if down == least_underused_pos:
+                            down = len(d)-1
+                else:
+                    while down > least_underused_pos:
+                        up_float = float((target[queue[up]] - actual[queue[up]])/target[queue[up]])
+                        up_float /= 1+up_float
+                        down_float = float((target[queue[down]] - actual[queue[down]])/target[queue[down]])
+                        down_float /= 1+down_float
+                        shift = min(old_ws[queue[up]] *  abs(up_float), old_ws[queue[down]] * abs(down_float))
+                        shift /= 2
+                        plan.compat_ws[queue[up]] += shift
+                        plan.compat_ws[queue[down]] -= shift
+                        up += 1
+                        down -= 1
+                        if down == least_underused_pos:
+                            down = len(d)-1
+
+        # after all calculations are done
+        for osd in best_weights:
+            plan.compat_ws[osd] = best_weights[osd]
+            self.log.debug('Reweight osd.%d %f -> %f', osd, old_ws[osd], plan.compat_ws[osd])
 
     def compat_weight_set_reweight(self, osd, new_weight):
         self.log.debug('ceph osd crush weight-set reweight-compat')
