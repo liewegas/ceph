@@ -4860,6 +4860,9 @@ void PG::scrub_compare_maps()
     }
     for_meta_scrub.objects.insert(begin, iter);
     scrubber.cleaned_meta_map.objects.erase(begin, iter);
+    dout(10) << __func__ << " for_meta_scrub " << for_meta_scrub.objects.size()
+	     << " cleaned_meta_map " << scrubber.cleaned_meta_map.objects.size()
+	     << dendl;
   }
 
   // ok, do the pg-type specific scrubbing
