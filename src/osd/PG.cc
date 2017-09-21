@@ -4200,7 +4200,7 @@ void PG::Scrubber::cleanup_store(ObjectStore::Transaction *t) {
 }
 
 void PG::repair_object(
-  const hobject_t& soid, list<pair<ScrubMap::object, pg_shard_t> > *ok_peers,
+  const hobject_t& soid, mempool::osd_scrubmap3::list<pair<ScrubMap::object, pg_shard_t> > *ok_peers,
   pg_shard_t bad_peer)
 {
   list<pg_shard_t> op_shards;
@@ -4818,11 +4818,11 @@ void PG::scrub_compare_maps()
       osd->clog->error(ss);
     }
 
-    for (map<hobject_t, list<pg_shard_t>>::iterator i = authoritative.begin();
+    for (auto i = authoritative.begin();
 	 i != authoritative.end();
 	 ++i) {
-      list<pair<ScrubMap::object, pg_shard_t> > good_peers;
-      for (list<pg_shard_t>::const_iterator j = i->second.begin();
+      mempool::osd_scrubmap3::list<pair<ScrubMap::object, pg_shard_t> > good_peers;
+      for (auto j = i->second.begin();
 	   j != i->second.end();
 	   ++j) {
 	good_peers.push_back(make_pair(maps[*j]->objects[i->first], *j));
@@ -4833,7 +4833,7 @@ void PG::scrub_compare_maps()
 	  good_peers));
     }
 
-    for (map<hobject_t, list<pg_shard_t>>::iterator i = authoritative.begin();
+    for (auto i = authoritative.begin();
 	 i != authoritative.end();
 	 ++i) {
       scrubber.cleaned_meta_map.objects.erase(i->first);
@@ -4894,7 +4894,7 @@ bool PG::scrub_process_inconsistent()
     osd->clog->error(ss);
     if (repair) {
       state_clear(PG_STATE_CLEAN);
-      for (map<hobject_t, list<pair<ScrubMap::object, pg_shard_t> >>::iterator i =
+      for (auto i =
 	     scrubber.authoritative.begin();
 	   i != scrubber.authoritative.end();
 	   ++i) {

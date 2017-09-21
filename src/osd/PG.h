@@ -1234,7 +1234,7 @@ public:
     map<hobject_t, set<pg_shard_t>> inconsistent;
 
     // Map from object with errors to good peers
-    map<hobject_t, list<pair<ScrubMap::object, pg_shard_t> >> authoritative;
+    mempool::osd_scrubmap3::map<hobject_t, mempool::osd_scrubmap3::list<pair<ScrubMap::object, pg_shard_t> >> authoritative;
 
     // Cleaned map pending snap metadata scrub
     ScrubMap cleaned_meta_map;
@@ -1347,7 +1347,8 @@ public:
   int active_pushes;
 
   void repair_object(
-    const hobject_t& soid, list<pair<ScrubMap::object, pg_shard_t> > *ok_peers,
+    const hobject_t& soid,
+    mempool::osd_scrubmap3::list<pair<ScrubMap::object, pg_shard_t> > *ok_peers,
     pg_shard_t bad_peer);
 
   void scrub(epoch_t queued, ThreadPool::TPHandle &handle);
