@@ -4886,7 +4886,9 @@ ostream& operator<<(ostream& out, const PushOp &op);
  * summarize pg contents for purposes of a scrub
  */
 struct ScrubMap {
+  MEMPOOL_CLASS_HELPERS();
   struct object {
+    MEMPOOL_CLASS_HELPERS();
     map<string,bufferptr> attrs;
     uint64_t size;
     __u32 omap_digest;         ///< omap crc32c

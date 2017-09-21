@@ -5719,6 +5719,12 @@ uint64_t PushOp::cost(CephContext *cct) const
 
 // -- ScrubMap --
 
+MEMPOOL_DEFINE_OBJECT_FACTORY(ScrubMap, scrub_map,
+			      osd_scrubmap);
+MEMPOOL_DEFINE_OBJECT_FACTORY(ScrubMap::object, scrub_map_object,
+			      osd_scrubmap);
+
+
 void ScrubMap::merge_incr(const ScrubMap &l)
 {
   assert(valid_through == l.incr_since);
