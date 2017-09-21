@@ -157,6 +157,9 @@ namespace mempool {
   f(osd)			      \
   f(osd_mapbl)			      \
   f(osd_pglog)			      \
+  f(osd_scrubmap)		      \
+  f(osd_scrubmap2)		      \
+  f(osd_scrubmap3)		      \
   f(osdmap)			      \
   f(osdmap_mapping)		      \
   f(pgmap)			      \

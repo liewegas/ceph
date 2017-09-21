@@ -602,7 +602,11 @@ void PGBackend::be_scan_list(
 	ghobject_t(
 	  poid, ghobject_t::NO_GEN, get_parent()->whoami_shard().shard),
 	o.attrs);
-
+      bufferlist bl;
+      for (auto& i : o.attrs) {
+	bl.append(i.second);
+      }
+      bl.reassign_to_mempool(mempool::mempool_osd_scrubmap2);
       // calculate the CRC32 on deep scrubs
       if (deep) {
 	be_deep_scrub(*p, seed, o, handle);

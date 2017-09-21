@@ -4316,7 +4316,10 @@ void PG::replica_scrub(
       msg->map_epoch,
       osd->get_tid(),
       v);
-    ::encode(map, subop->get_data());
+    bufferlist bl;
+    ::encode(map, bl);
+    bl.reassign_to_mempool(mempool::mempool_osd_scrubmap);
+    subop->get_data().claim(bl);
     subop->ops = scrub;
     osd->send_message_osd_cluster(subop, msg->get_connection());
   }
