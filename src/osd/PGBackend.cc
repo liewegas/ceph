@@ -604,6 +604,8 @@ void PGBackend::be_scan_list(
 	o.attrs);
       bufferlist bl;
       for (auto& i : o.attrs) {
+	string s(i.second.c_str(), i.second.length());
+	i.second = bufferptr(s.c_str(), s.size());
 	bl.append(i.second);
       }
       bl.reassign_to_mempool(mempool::mempool_osd_scrubmap2);
