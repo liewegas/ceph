@@ -2,8 +2,8 @@ Maintainer
 ----------
 Sage Weil <sage@redhat.com>
 
-Component Technical Leads
--------------------------
+Component Leads
+---------------
 Core, RADOS     - Josh Durgin <jdurgin@redhat.com>
 RBD             - Jason Dillaman <dillaman@redhat.com>
 RBD (kernel)    - Ilya Dryomov <idryomov@redhat.com>
@@ -13,8 +13,22 @@ CephFS          - Patrick Donnelly <pdonnell@redhat.com>
 CephFS (kernel) - Yan, Zheng <zyan@redhat.com>
 Deployment      - Alfredo Deza <adeza@redhat.com>
 Teuthology      - Zack Cerza <zack@redhat.com>
-Calamari        - Gregory Meno <gmeno@redhat.com>
-Chef Cookbook   - Guilhem Lettron <guilhem@lettron.fr>
+
+Ceph Leadership Team
+--------------------
+Alfredo Deza <adeza@redhat.com>
+Greg Farnum <gfarnum@redhat.com>
+Hoamai Wang <haomai@xsky.com>
+Jason Dillaman <dillaman@redhat.com>
+Joao Eduardo Luis <joao@suse.de>
+John Spray <john.spray@redhat.com>
+Josh Durgin <jdurgin@redhat.com>
+Matt Benjamin <mbenjami@redhat.com>
+Patrick Donnelly <pdonnell@redhat.com>
+Sage Weil <sage@redhat.com>
+Xie Xingguo <xie.xingguo@zte.com.cn>
+Yehuda Sadeh <yehuda@redhat.com>
+Zack Cerza <zack@redhat.com>
 
 Release Manager
 ---------------
@@ -25,6 +39,10 @@ Backport Team
 Nathan Cutler <ncutler@suse.cz>
 Shinobu Kinjo <shinobu@redhat.com>
 Abhishek Lekshmanan <abhishek@suse.com>
+
+Community Manager
+-----------------
+Leo Vaz <lvaz@redhat.com>
 
 Contributors
 ------------
