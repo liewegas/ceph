@@ -109,23 +109,35 @@ void osd_xinfo_t::dump(Formatter *f) const
   f->dump_int("laggy_interval", laggy_interval);
   f->dump_int("features", features);
   f->dump_unsigned("old_weight", old_weight);
+  f->dump_int("dead_epoch", dead_epoch);
 }
 
-void osd_xinfo_t::encode(bufferlist& bl) const
+void osd_xinfo_t::encode(bufferlist& bl, uint64_t features) const
 {
-  ENCODE_START(3, 1, bl);
+  if (!HAVE_FEATURE(features, SERVER_MIMIC)) {
+    ENCODE_START(3, 1, bl);
+    ::encode(down_stamp, bl);
+    __u32 lp = laggy_probability * 0xfffffffful;
+    ::encode(lp, bl);
+    ::encode(laggy_interval, bl);
+    ::encode(features, bl);
+    ::encode(old_weight, bl);
+    ENCODE_FINISH(bl);
+  }
+  ENCODE_START(4, 1, bl);
   ::encode(down_stamp, bl);
   __u32 lp = laggy_probability * 0xfffffffful;
   ::encode(lp, bl);
   ::encode(laggy_interval, bl);
   ::encode(features, bl);
   ::encode(old_weight, bl);
+  ::encode(dead_epoch, bl);
   ENCODE_FINISH(bl);
 }
 
 void osd_xinfo_t::decode(bufferlist::iterator& bl)
 {
-  DECODE_START(3, bl);
+  DECODE_START(4, bl);
   ::decode(down_stamp, bl);
   __u32 lp;
   ::decode(lp, bl);
@@ -139,6 +151,10 @@ void osd_xinfo_t::decode(bufferlist::iterator& bl)
     ::decode(old_weight, bl);
   else
     old_weight = 0;
+  if (struct_v >= 4)
+    ::decode(dead_epoch, bl);
+  else
+    dead_epoch = 0;
   DECODE_FINISH(bl);
 }
 
@@ -157,7 +173,8 @@ ostream& operator<<(ostream& out, const osd_xinfo_t& xi)
   return out << "down_stamp " << xi.down_stamp
 	     << " laggy_probability " << xi.laggy_probability
 	     << " laggy_interval " << xi.laggy_interval
-	     << " old_weight " << xi.old_weight;
+	     << " old_weight " << xi.old_weight
+	     << " dead_epoch " << xi.dead_epoch;
 }
 
 // ----------------------------------
@@ -446,7 +463,7 @@ void OSDMap::Incremental::encode_classic(bufferlist& bl, uint64_t features) cons
   ::encode(new_up_cluster, bl, features);
   ::encode(cluster_snapshot, bl);
   ::encode(new_uuid, bl);
-  ::encode(new_xinfo, bl);
+  ::encode(new_xinfo, bl, features);
   ::encode(new_hb_front_up, bl, features);
 }
 
@@ -530,7 +547,7 @@ void OSDMap::Incremental::encode(bufferlist& bl, uint64_t features) const
     ::encode(new_up_cluster, bl, features);
     ::encode(cluster_snapshot, bl);
     ::encode(new_uuid, bl);
-    ::encode(new_xinfo, bl);
+    ::encode(new_xinfo, bl, features);
     ::encode(new_hb_front_up, bl, features);
     ::encode(features, bl);         // NOTE: features arg, not the member
     if (target_v >= 3) {
@@ -2292,7 +2309,7 @@ void OSDMap::encode_classic(bufferlist& bl, uint64_t features) const
   ::encode(cluster_snapshot_epoch, bl);
   ::encode(cluster_snapshot, bl);
   ::encode(*osd_uuid, bl);
-  ::encode(osd_xinfo, bl);
+  ::encode(osd_xinfo, bl, features);
   ::encode(osd_addrs->hb_front_addr, bl, features);
 }
 
@@ -2407,7 +2424,7 @@ void OSDMap::encode(bufferlist& bl, uint64_t features) const
     ::encode(cluster_snapshot_epoch, bl);
     ::encode(cluster_snapshot, bl);
     ::encode(*osd_uuid, bl);
-    ::encode(osd_xinfo, bl);
+    ::encode(osd_xinfo, bl, features);
     ::encode(osd_addrs->hb_front_addr, bl, features);
     if (target_v >= 2) {
       ::encode(nearfull_ratio, bl);
