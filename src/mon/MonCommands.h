@@ -743,6 +743,11 @@ COMMAND("osd down " \
 	"set osd(s) <id> [<id>...] down, " \
         "or use <any|all|*> to set all osds down", \
         "osd", "rw", "cli,rest")
+COMMAND("osd dead " \
+	"type=CephString,name=ids,n=N", \
+	"set osd(s) <id> [<id>...] down + dead (daemon known to not be running), " \
+        "or use <any|all|*> to set all osds down + dead", \
+        "osd", "rw", "cli,rest")
 COMMAND("osd out " \
 	"name=ids,type=CephString,n=N", \
 	"set osd(s) <id> [<id>...] out, " \

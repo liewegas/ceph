@@ -8667,6 +8667,7 @@ bool OSDMonitor::prepare_command_impl(MonOpRequestRef op,
     // ** DISABLE THIS FOR NOW **
 
   } else if (prefix == "osd down" ||
+	     prefix == "osd dead" ||
 	     prefix == "osd out" ||
 	     prefix == "osd in" ||
 	     prefix == "osd rm") {
@@ -8715,6 +8716,16 @@ bool OSDMonitor::prepare_command_impl(MonOpRequestRef op,
 	    ss << "marked down osd." << osd << ". ";
 	    any = true;
 	  }
+	} else if (prefix == "osd dead") {
+	  if (!osdmap.is_down(osd)) {
+            pending_inc.pending_osd_state_set(osd, CEPH_OSD_UP);
+	    ss << "marked down osd." << osd << ". ";
+	  }
+	  if (!pending_inc.new_xinfo.count(osd)) {
+	    pending_inc.new_xinfo[osd] = osdmap.osd_xinfo[osd];
+	  }
+	  pending_inc.new_xinfo[osd].dead_epoch = pending_inc.epoch;
+	  any = true;
         } else if (prefix == "osd out") {
 	  if (osdmap.is_out(osd)) {
             if (verbose)
