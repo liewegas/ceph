@@ -3030,6 +3030,17 @@ PastIntervals::PriorSet::PriorSet(
 	   << dendl;
 }
 
+struct RecentIntervals {
+  struct recent_interval_t {
+    epoch_t first = 0, last = 0;
+    vector<int> acting;
+    utime_t readable_until;
+  };
+  map<epoch_t,recent_interval_t> intervals;
+
+  
+};
+
 /** 
  * pg_query_t - used to ask a peer for information about a pg.
  *
