@@ -9,16 +9,16 @@ roles:
   - osd.3
 openstack:
   - volumes: # attached to each instance
-      count: 3
+      count: 4
       size: 20 # GB
 tasks:
 - install:
 - ceph:
     conf:
       osd:
-        osd recovery sleep: .1
+        osd recovery sleep: .5
         osd min pg log entries: 100
-        osd max pg log entries: 1000
+        osd max pg log entries: 100
     log-whitelist:
       - \(POOL_APP_NOT_ENABLED\)
       - \(OSDMAP_FLAGS\)
@@ -28,11 +28,11 @@ tasks:
       - overall HEALTH
 - exec:
     osd.0:
-      - ceph osd pool create foo 128
+      - ceph osd pool create foo 256
       - ceph osd pool application enable foo foo
-      - rados -p foo bench 30 write -b 4096 --no-cleanup
+      - rados -p foo bench 90 write -b 4096 --no-cleanup
       - ceph osd out 0
-      - sleep 5
+      - sleep 30
       - ceph osd set noup
 - ceph.restart:
     daemons: [osd.1]
@@ -40,10 +40,13 @@ tasks:
     wait-for-healthy: false
 - exec:
     osd.0:
-      - rados -p foo bench 3 write -b 4096 --no-cleanup
+      - for f in 0 1 2 3 ; do sudo ceph daemon osd.$f config set osd_max_pg_log_entries 10000 ; done
+      - rados -p foo bench 5 write -b 4096 --no-cleanup
+      - sleep 15
       - ceph osd unset noup
-      - sleep 10
+      - sleep 60
       - for f in 0 1 2 3 ; do sudo ceph daemon osd.$f config set osd_recovery_sleep 0 ; sudo ceph daemon osd.$f config set osd_recovery_max_active 20 ; done
+      - ceph osd in 0
 - ceph.healthy:
 - exec:
     osd.0:
