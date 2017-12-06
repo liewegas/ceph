@@ -1083,7 +1083,6 @@ int KStore::statfs(struct store_statfs_t* buf)
   return db->get_statfs(buf);
 }
 
-
 ObjectStore::CollectionHandle KStore::open_collection(const coll_t& cid)
 {
   return _get_collection(cid);
@@ -1095,6 +1094,11 @@ ObjectStore::CollectionHandle KStore::create_new_collection(const coll_t& cid)
   RWLock::WLocker l(coll_lock);
   new_coll_map[cid] = c;
   return c;
+}
+
+int KStore::pool_statfs(uint64_t pool_id, struct store_statfs_t *buf)
+{
+  return -ENOTSUP;
 }
 
 // ---------------
