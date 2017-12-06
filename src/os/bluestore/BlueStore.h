@@ -1580,8 +1580,9 @@ public:
     bluestore_deferred_transaction_t *deferred_txn = nullptr; ///< if any
 
     interval_set<uint64_t> allocated, released;
-    volatile_statfs statfs_delta;
-
+    volatile_statfs statfs_delta;	   ///< overall store statistics delta
+    int64_t osd_pool_id = -1;              ///< osd pool id we're operating on
+    
     IOContext ioc;
     bool had_ios = false;  ///< true if we submitted IOs before our kv txn
 
@@ -1807,6 +1808,14 @@ public:
     void dump(Formatter *f);
   };
 
+  typedef map<uint64_t, volatile_statfs> osd_pools_map;
+
+  std::mutex vstatfs_lock;
+  volatile_statfs vstatfs;
+  osd_pools_map osd_pools; // protected by vstatfs_lock as well
+
+  bool per_pool_stat_collection = true;
+
   // --------------------------------------------------------
   // members
 private:
@@ -1925,9 +1934,6 @@ private:
   float cache_meta_ratio = 0;   ///< cache ratio dedicated to metadata
   float cache_kv_ratio = 0;     ///< cache ratio dedicated to kv (e.g., rocksdb)
   float cache_data_ratio = 0;   ///< cache ratio dedicated to object data
-
-  std::mutex vstatfs_lock;
-  volatile_statfs vstatfs;
 
   struct MempoolThread : public Thread {
     BlueStore *store;
@@ -2650,6 +2656,20 @@ private:
 			CollectionRef& d,
 			unsigned bits, int rem);
 };
+
+inline ostream& operator<<(ostream& out, const BlueStore::volatile_statfs& s) {
+  return out 
+    << " allocated:"
+      << s.values[BlueStore::volatile_statfs::STATFS_ALLOCATED]
+    << " stored:"
+      << s.values[BlueStore::volatile_statfs::STATFS_STORED]
+    << " compressed:"
+      << s.values[BlueStore::volatile_statfs::STATFS_COMPRESSED]
+    << " compressed_orig:"
+      << s.values[BlueStore::volatile_statfs::STATFS_COMPRESSED_ORIGINAL]
+    << " compressed_alloc:"
+      << s.values[BlueStore::volatile_statfs::STATFS_COMPRESSED_ALLOCATED];
+}
 
 static inline void intrusive_ptr_add_ref(BlueStore::Onode *o) {
   o->get();
