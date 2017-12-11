@@ -2050,6 +2050,60 @@ WRITE_CLASS_ENCODER(pg_stat_t)
 
 bool operator==(const pg_stat_t& l, const pg_stat_t& r);
 
+/** store_statfs_t
+ * ObjectStore full statfs information
+ */
+struct store_statfs_t
+{
+  uint64_t total = 0;                  // Total bytes
+  uint64_t available = 0;              // Free bytes available
+  uint64_t internally_reserved = 0;    // Bytes reserve for internal purposes
+
+  int64_t allocated = 0;               // Bytes allocated by the store
+  int64_t stored = 0;                  // Bytes actually stored by the user
+  int64_t compressed = 0;              // Bytes stored after compression
+  int64_t compressed_allocated = 0;    // Bytes allocated for compressed data
+  int64_t compressed_original = 0;     // Bytes that were successfully compressed
+
+  void reset() {
+    *this = store_statfs_t();
+  }
+  void floor(int64_t f) {
+#define FLOOR(x) if (int64_t(x) < f) x = f
+    FLOOR(total);
+    FLOOR(available);
+    FLOOR(internally_reserved);
+    FLOOR(allocated);
+    FLOOR(stored);
+    FLOOR(compressed);
+    FLOOR(compressed_allocated);
+    FLOOR(compressed_original);
+#undef FLOOR
+  }
+
+  bool operator ==(const store_statfs_t& other) const;
+  bool is_zero() const {
+    return *this == store_statfs_t();
+  }
+  void dump(Formatter *f) const;
+  DENC(store_statfs_t, v, p) {
+    DENC_START(1, 1, p);
+    denc(v.total, p);
+    denc(v.available, p);
+    denc(v.internally_reserved, p);
+    denc(v.allocated, p);
+    denc(v.stored, p);
+    denc(v.compressed, p);
+    denc(v.compressed_allocated, p);
+    denc(v.compressed_original, p);
+    DENC_FINISH(p);
+  }
+  static void generate_test_instances(list<store_statfs_t*>& o);
+};
+WRITE_CLASS_DENC(store_statfs_t)
+
+ostream &operator<<(ostream &lhs, const store_statfs_t &rhs);
+
 /*
  * summation over an entire pool
  */
@@ -5301,27 +5355,5 @@ struct PromoteCounter {
     bytes = *b / 2;
   }
 };
-
-/** store_statfs_t
- * ObjectStore full statfs information
- */
-struct store_statfs_t
-{
-  uint64_t total = 0;                  // Total bytes
-  uint64_t available = 0;              // Free bytes available
-
-  int64_t allocated = 0;               // Bytes allocated by the store
-  int64_t stored = 0;                  // Bytes actually stored by the user
-  int64_t compressed = 0;              // Bytes stored after compression
-  int64_t compressed_allocated = 0;    // Bytes allocated for compressed data
-  int64_t compressed_original = 0;     // Bytes that were successfully compressed
-
-  void reset() {
-    *this = store_statfs_t();
-  }
-  bool operator ==(const store_statfs_t& other) const;
-  void dump(Formatter *f) const;
-};
-ostream &operator<<(ostream &lhs, const store_statfs_t &rhs);
 
 #endif

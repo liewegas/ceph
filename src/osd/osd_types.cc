@@ -2579,6 +2579,63 @@ bool operator==(const pg_stat_t& l, const pg_stat_t& r)
     l.snaptrimq_len == r.snaptrimq_len;
 }
 
+// -- store_statfs_t --
+
+bool store_statfs_t::operator==(const store_statfs_t& other) const
+{
+  return total == other.total
+    && available == other.available
+    && allocated == other.allocated
+    && internally_reserved == other.internally_reserved
+    && stored == other.stored
+    && compressed == other.compressed
+    && compressed_allocated == other.compressed_allocated
+    && compressed_original == other.compressed_original;
+}
+
+void store_statfs_t::dump(Formatter *f) const
+{
+  f->dump_int("total", total);
+  f->dump_int("available", available);
+  f->dump_int("internally_reserved", internally_reserved);
+  f->dump_int("allocated", allocated);
+  f->dump_int("stored", stored);
+  f->dump_int("compressed", compressed);
+  f->dump_int("compressed_allocated", compressed_allocated);
+  f->dump_int("compressed_original", compressed_original);
+}
+
+ostream& operator<<(ostream& out, const store_statfs_t &s)
+{
+  out << std::hex
+      << "store_statfs(0x" << s.available
+      << "/0x"  << s.internally_reserved
+      << "/0x"  << s.total
+      << ", stored 0x" << s.stored
+      << "/0x"  << s.allocated
+      << ", compress 0x" << s.compressed
+      << "/0x"  << s.compressed_allocated
+      << "/0x"  << s.compressed_original
+      << std::dec
+      << ")";
+  return out;
+}
+
+void store_statfs_t::generate_test_instances(list<store_statfs_t*>& o)
+{
+  store_statfs_t a;
+  o.push_back(new store_statfs_t(a));
+  a.total = 234;
+  a.available = 123;
+  a.internally_reserved = 33;
+  a.allocated = 32;
+  a.stored = 44;
+  a.compressed = 21;
+  a.compressed_allocated = 12;
+  a.compressed_original = 13;
+  o.push_back(new store_statfs_t(a));
+}
+
 // -- pool_stat_t --
 
 void pool_stat_t::dump(Formatter *f) const
@@ -5926,43 +5983,6 @@ void OSDOp::merge_osd_op_vector_out_data(vector<OSDOp>& ops, bufferlist& out)
       out.append(ops[i].outdata);
     }
   }
-}
-
-bool store_statfs_t::operator==(const store_statfs_t& other) const
-{
-  return total == other.total
-    && available == other.available
-    && allocated == other.allocated
-    && stored == other.stored
-    && compressed == other.compressed
-    && compressed_allocated == other.compressed_allocated
-    && compressed_original == other.compressed_original;
-}
-
-void store_statfs_t::dump(Formatter *f) const
-{
-  f->dump_int("total", total);
-  f->dump_int("available", available);
-  f->dump_int("allocated", allocated);
-  f->dump_int("stored", stored);
-  f->dump_int("compressed", compressed);
-  f->dump_int("compressed_allocated", compressed_allocated);
-  f->dump_int("compressed_original", compressed_original);
-}
-
-ostream& operator<<(ostream& out, const store_statfs_t &s)
-{
-  out << std::hex
-      << "store_statfs(0x" << s.available
-      << "/0x"  << s.total
-      << ", stored 0x" << s.stored
-      << "/0x"  << s.allocated
-      << ", compress 0x" << s.compressed
-      << "/0x"  << s.compressed_allocated
-      << "/0x"  << s.compressed_original
-      << std::dec
-      << ")";
-  return out;
 }
 
 void OSDOp::clear_data(vector<OSDOp>& ops)
