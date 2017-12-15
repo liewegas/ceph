@@ -1978,7 +1978,7 @@ void PGMap::update_delta(
 void PGMap::update_one_pool_delta(
   CephContext *cct,
   const utime_t ts,
-  const uint64_t pool,
+  const int64_t pool,
   const pool_stat_t& old_pool_sum)
 {
   if (per_pool_sum_deltas.count(pool) == 0) {
