@@ -2363,13 +2363,15 @@ function test_mon_cephdf_commands()
   # to sync mon with osd
   flush_pg_stats
   local jq_filter='.pools | .[] | select(.name == "cephdf_for_test") | .stats'
-  cal_raw_used_size=`ceph df detail --format=json | jq "$jq_filter.raw_bytes_used"`
-  raw_used_size=`ceph df detail --format=json | jq "$jq_filter.bytes_used * 2"`
+  ceph df detail --format=json-pretty | tee /tmp/$$
+  cal_raw_used_size=`cat /tmp/$$ | jq "$jq_filter.raw_bytes_used"`
+  raw_used_size=`cat /tmp/$$ | jq "$jq_filter.bytes_used * 2"`
+  rm -f /tmp/$$
 
   ceph osd pool delete cephdf_for_test cephdf_for_test --yes-i-really-really-mean-it
   rm ./cephdf_for_test
 
-  expect_false test $cal_raw_used_size != $raw_used_size
+  test $cal_raw_used_size = $raw_used_size
 }
 
 function test_mon_pool_application()
