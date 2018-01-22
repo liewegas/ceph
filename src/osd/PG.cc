@@ -4090,10 +4090,27 @@ void PG::_scan_snaps(ScrubMap &smap)
 			    << "...repaired";
 	}
 	snap_mapper.add_oid(hoid, obj_snaps, &_t);
-	r = osd->store->apply_transaction(osr.get(), std::move(t));
-	if (r != 0) {
-	  derr << __func__ << ": apply_transaction got " << cpp_strerror(r)
-	       << dendl;
+
+	// normal apply_transaction() here can deadlock due to other items
+	// ahead of us that need to take PG lock (which we hold).  hard-code
+	// a variant that uses onreadable_sync instead.
+	{
+	  Cond my_cond;
+	  Mutex my_lock("PG::_scan_snaps my_lock");
+	  int r = 0;
+	  bool done;
+	  C_SafeCond *onreadable = new C_SafeCond(&my_lock, &my_cond, &done, &r);
+	  r = osd->store->queue_transaction(osr.get(), std::move(t), nullptr,
+					    nullptr, onreadable);
+	  if (r != 0) {
+	    derr << __func__ << ": queue_transaction got " << cpp_strerror(r)
+		 << dendl;
+	  } else {
+	    my_lock.Lock();
+	    while (!done)
+	      my_cond.Wait(my_lock);
+	    my_lock.Unlock();
+	  }
 	}
       }
     }
