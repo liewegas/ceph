@@ -230,7 +230,8 @@ private:
     list<uint64_t> jq;
     list<pair<uint64_t, Context*> > flush_commit_waiters;
     Cond cond;
-    map<ghobject_t,int> applying;
+    /// hash of pointers to ghobject_t's for in-flight writes
+    unordered_multimap<uint32_t,const ghobject_t*> applying;
   public:
     Mutex apply_lock;  // for apply mutual exclusion
     int id;
