@@ -518,6 +518,9 @@ void PG::update_object_snap_mapping(
     derr << __func__ << ": remove_oid returned " << cpp_strerror(r) << dendl;
     ceph_abort();
   }
+  if (snaps.empty()) {
+    derr << __func__ << " empty snaps on " << soid << dendl;
+  }
   snap_mapper.add_oid(
     soid,
     snaps,
@@ -3402,8 +3405,14 @@ void PG::update_snap_map(
 	  ::decode(snaps, p);
 	} catch (...) {
 	  snaps.clear();
+	  derr << __func__ << " failed to decode snaps from:\n";
+	  i->snaps.hexdump(*_dout);
+	  *_dout << dendl;
 	}
 	set<snapid_t> _snaps(snaps.begin(), snaps.end());
+	if (_snaps.empty()) {
+	  derr << __func__ << " empty snaps on " << i->soid << dendl;
+	}
 
 	if (i->is_clone() || i->is_promote()) {
 	  snap_mapper.add_oid(

@@ -187,6 +187,9 @@ void ECTransaction::generate_transactions(
       }
 
       if (entry && op.updated_snaps) {
+	if (op.updated_snaps->first.empty()) {
+	  ldpp_dout(dpp, 0) << __func__ << " empty snaps" << dendl;
+	}
 	entry->mod_desc.update_snaps(op.updated_snaps->first);
       }
 

@@ -353,10 +353,18 @@ void PrimaryLogPG::on_local_recover(
       assert(recovery_info.oi.legacy_snaps.size());
       snaps.insert(recovery_info.oi.legacy_snaps.begin(),
 		   recovery_info.oi.legacy_snaps.end());
+      if (snaps.empty()) {
+	derr << __func__ << " empty snaps from legacy_snaps on "
+	     << hoid << dendl;
+      }
     } else {
       auto p = recovery_info.ss.clone_snaps.find(hoid.snap);
       assert(p != recovery_info.ss.clone_snaps.end());  // hmm, should we warn?
       snaps.insert(p->second.begin(), p->second.end());
+      if (snaps.empty()) {
+	derr << __func__ << " empty snaps from recovery_info.ss.clone_snaps on "
+	     << hoid << ", ss " << recovery_info.ss << dendl;
+      }
     }
     dout(20) << " snaps " << snaps << dendl;
     snap_mapper.add_oid(
@@ -3855,7 +3863,9 @@ int PrimaryLogPG::trim_object(
 	0)
       );
     ctx->at_version.version++;
-
+    if (new_snaps.empty()) {
+      derr << __func__ << " empty snaps on new clone " << coid << dendl;
+    }
     t->update_snaps(
       coid,
       old_snaps,
