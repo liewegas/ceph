@@ -5558,7 +5558,7 @@ void PG::proc_primary_info(ObjectStore::Transaction &t, const pg_info_t &oinfo)
 
   if (last_complete_ondisk.epoch >= info.history.last_epoch_started) {
     // DEBUG: verify that the snaps are empty in snap_mapper
-    if (cct->_conf->osd_debug_verify_snaps_on_info) {
+    if (cct->_conf->osd_debug_verify_snaps) {
       interval_set<snapid_t> p;
       p.union_of(oinfo.purged_snaps, info.purged_snaps);
       p.subtract(info.purged_snaps);
