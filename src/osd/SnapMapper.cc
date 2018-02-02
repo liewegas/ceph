@@ -239,6 +239,10 @@ void SnapMapper::add_oid(
   MapCacher::Transaction<std::string, bufferlist> *t)
 {
   dout(20) << __func__ << " " << oid << " " << snaps << dendl;
+  if (snaps.empty()) {
+    derr << __func__ << " " << oid << " adding empty snaps!" << dendl;
+    assert(!cct->_conf->osd_debug_verify_snaps);
+  }
   assert(check(oid));
   {
     object_snaps out;
