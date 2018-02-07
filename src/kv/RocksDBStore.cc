@@ -558,7 +558,7 @@ int RocksDBStore::submit_transaction_sync(KeyValueDB::Transaction t)
   // considering performance overhead, default is disabled
   if (g_conf->rocksdb_perf) {
     rocksdb::SetPerfLevel(rocksdb::PerfLevel::kEnableTimeExceptForMutex);
-    rocksdb::perf_context.Reset();
+    rocksdb::get_perf_context()->Reset();
   }
 
   RocksDBTransactionImpl * _t =
@@ -586,13 +586,13 @@ int RocksDBStore::submit_transaction_sync(KeyValueDB::Transaction t)
     utime_t write_wal_time;
     utime_t write_pre_and_post_process_time;
     write_wal_time.set_from_double(
-	static_cast<double>(rocksdb::perf_context.write_wal_time)/1000000000);
+	static_cast<double>(rocksdb::get_perf_context()->write_wal_time)/1000000000);
     write_memtable_time.set_from_double(
-	static_cast<double>(rocksdb::perf_context.write_memtable_time)/1000000000);
+	static_cast<double>(rocksdb::get_perf_context()->write_memtable_time)/1000000000);
     write_delay_time.set_from_double(
-	static_cast<double>(rocksdb::perf_context.write_delay_time)/1000000000);
+	static_cast<double>(rocksdb::get_perf_context()->write_delay_time)/1000000000);
     write_pre_and_post_process_time.set_from_double(
-	static_cast<double>(rocksdb::perf_context.write_pre_and_post_process_time)/1000000000);
+	static_cast<double>(rocksdb::get_perf_context()->write_pre_and_post_process_time)/1000000000);
     logger->tinc(l_rocksdb_write_memtable_time, write_memtable_time);
     logger->tinc(l_rocksdb_write_delay_time, write_delay_time);
     logger->tinc(l_rocksdb_write_wal_time, write_wal_time);
