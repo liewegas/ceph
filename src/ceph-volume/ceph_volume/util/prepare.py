@@ -279,7 +279,7 @@ def osd_mkfs_bluestore(osd_id, fsid, keyring=None, wal=False, db=False):
     ]
 
     if keyring is not None:
-        base_command.extend(['--keyfile', '-'])
+        base_command.extend(['--key', keyring])
 
     if wal:
         base_command.extend(
