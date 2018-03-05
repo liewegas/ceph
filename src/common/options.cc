@@ -3946,6 +3946,11 @@ std::vector<Option> get_global_options() {
     Option("bluestore_debug_inject_bug21040", Option::TYPE_BOOL, Option::LEVEL_DEV)
     .set_default(false)
     .set_description(""),
+
+    Option("bluestore_debug_no_per_pool_stats", Option::TYPE_BOOL, Option::LEVEL_DEV)
+    .set_default(false)
+    .set_description(""),
+    
     // -----------------------------------------
     // kstore
 
