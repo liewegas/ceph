@@ -1007,6 +1007,15 @@ void PGMap::Incremental::dump(Formatter *f) const
     f->close_section();
   }
   f->close_section();
+  f->open_array_section("osd_pool_statfs_updates");
+  for (auto& p : osd_pool_statfs_updates) {
+    f->open_object_section("pool_statfs");
+    f->dump_int("pool", p.first.first);
+    f->dump_int("osd", p.first.second);
+    p.second.dump(f);
+    f->close_section();
+  }
+  f->close_section();
 
   f->open_array_section("osd_stat_removals");
   for (auto p = osd_stat_rm.begin(); p != osd_stat_rm.end(); ++p)
@@ -1037,6 +1046,7 @@ void PGMap::Incremental::generate_test_instances(list<PGMap::Incremental*>& o)
   o.back()->osd_stat_updates[6] = osd_stat_t();
   o.back()->pg_remove.insert(pg_t(1,2));
   o.back()->osd_stat_rm.insert(5);
+  o.back()->osd_pool_statfs_updates[std::make_pair(1234,4)] = store_statfs_t();
 }
 
 
@@ -1067,6 +1077,21 @@ void PGMap::apply_incremental(CephContext *cct, const Incremental& inc)
       t->second = update_stat;
     }
     stat_pg_add(update_pg, update_stat);
+  }
+
+  for (auto& p : inc.osd_pool_statfs_updates) {
+    auto update_pool = p.first.first;
+    auto update_osd =  p.first.second;
+    auto& statfs_inc = p.second;
+
+    auto pool_statfs_iter =
+      osd_pool_statfs.find(std::make_pair(update_pool, update_osd));
+    if (pool_statfs_iter == osd_pool_statfs.end()) {
+      osd_pool_statfs.emplace(std::make_pair(update_pool, update_osd),
+			      statfs_inc);
+    } else {
+      pool_statfs_iter->second = statfs_inc;
+    }
   }
   for (auto p = inc.get_osd_stat_updates().begin();
        p != inc.get_osd_stat_updates().end();
@@ -1103,6 +1128,14 @@ void PGMap::apply_incremental(CephContext *cct, const Incremental& inc)
     if (t != osd_stat.end()) {
       stat_osd_sub(t->first, t->second);
       osd_stat.erase(t);
+    }
+    auto i = osd_pool_statfs.begin();
+    while (i != osd_pool_statfs.end()) {
+      if (i->first.second == *p) {
+	i = osd_pool_statfs.erase(i);
+      } else {
+	++i;
+      }
     }
   }
 
@@ -1341,25 +1374,27 @@ void PGMap::encode_digest(const OSDMap& osdmap,
 
 void PGMap::encode(bufferlist &bl, uint64_t features) const
 {
-  ENCODE_START(7, 7, bl);
+  ENCODE_START(8, 8, bl);
   encode(version, bl);
   encode(pg_stat, bl);
   encode(osd_stat, bl, features);
   encode(last_osdmap_epoch, bl);
   encode(last_pg_scan, bl);
   encode(stamp, bl);
+  encode(osd_pool_statfs, bl, features);
   ENCODE_FINISH(bl);
 }
 
 void PGMap::decode(bufferlist::iterator &bl)
 {
-  DECODE_START(7, bl);
+  DECODE_START(8, bl);
   decode(version, bl);
   decode(pg_stat, bl);
   decode(osd_stat, bl);
   decode(last_osdmap_epoch, bl);
   decode(last_pg_scan, bl);
   decode(stamp, bl);
+  decode(osd_pool_statfs, bl);
   DECODE_FINISH(bl);
 
   calc_stats();

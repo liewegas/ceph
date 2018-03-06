@@ -221,6 +221,13 @@ public:
   mempool::pgmap::unordered_map<int32_t,osd_stat_t> osd_stat;
   mempool::pgmap::unordered_map<pg_t,pg_stat_t> pg_stat;
 
+  typedef mempool::pgmap::map<
+    std::pair<int64_t, int>,  // <pool, osd>
+    store_statfs_t>
+      per_osd_pool_statfs_t;
+
+  per_osd_pool_statfs_t osd_pool_statfs;
+
   class Incremental {
   public:
     MEMPOOL_CLASS_HELPERS();
@@ -230,6 +237,7 @@ public:
     epoch_t pg_scan;  // osdmap epoch
     mempool::pgmap::set<pg_t> pg_remove;
     utime_t stamp;
+    per_osd_pool_statfs_t osd_pool_statfs_updates;
 
   private:
     mempool::pgmap::map<int32_t,osd_stat_t> osd_stat_updates;
@@ -287,6 +295,15 @@ public:
   void clear_delta();
 
   void deleted_pool(int64_t pool) {
+    auto i = osd_pool_statfs.begin();
+    while (i != osd_pool_statfs.end()) {
+      if (i->first.first == pool) {
+	i = osd_pool_statfs.erase(i);
+      } else {
+	++i;
+      }
+    }
+
     pg_pool_sum.erase(pool);
     num_pg_by_pool.erase(pool);
     per_pool_sum_deltas.erase(pool);
