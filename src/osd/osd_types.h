@@ -2085,6 +2085,26 @@ struct store_statfs_t
   bool is_zero() const {
     return *this == store_statfs_t();
   }
+  void add(const store_statfs_t& o) {
+    total += o.total;
+    available += o.available;
+    internally_reserved += o.internally_reserved;
+    allocated += o.allocated;
+    stored += o.stored;
+    compressed += o.compressed;
+    compressed_allocated += o.compressed_allocated;
+    compressed_original += o.compressed_original;
+  }
+  void sub(const store_statfs_t& o) {
+    total -= o.total;
+    available -= o.available;
+    allocated -= o.allocated;
+    internally_reserved -= o.internally_reserved;
+    stored -= o.stored;
+    compressed -= o.compressed;
+    compressed_allocated -= o.compressed_allocated;
+    compressed_original -= o.compressed_original;
+  }
   void dump(Formatter *f) const;
   DENC(store_statfs_t, v, p) {
     DENC_START(1, 1, p);
@@ -2109,16 +2129,20 @@ ostream &operator<<(ostream &lhs, const store_statfs_t &rhs);
  */
 struct pool_stat_t {
   object_stat_collection_t stats;
+  store_statfs_t store_stats_sum;
   int64_t log_size;
   int64_t ondisk_log_size;    // >= active_log_size
   int32_t up;       ///< number of up replicas or shards
   int32_t acting;   ///< number of acting replicas or shards
+  int32_t num_store_stats; ///< amount of store_stats accumulated
 
-  pool_stat_t() : log_size(0), ondisk_log_size(0), up(0), acting(0)
+  pool_stat_t() : log_size(0), ondisk_log_size(0), up(0), acting(0),
+    num_store_stats(0)
   { }
 
   void floor(int64_t f) {
     stats.floor(f);
+    store_stats_sum.floor(f);
     if (log_size < f)
       log_size = f;
     if (ondisk_log_size < f)
@@ -2127,6 +2151,17 @@ struct pool_stat_t {
       up = f;
     if (acting < f)
       acting = f;
+    if (num_store_stats < f)
+      num_store_stats = f;
+  }
+
+  void add(const store_statfs_t& o) {
+    store_stats_sum.add(o);
+    ++num_store_stats;
+  }
+  void sub(const store_statfs_t& o) {
+    store_stats_sum.sub(o);
+    --num_store_stats;
   }
 
   void add(const pg_stat_t& o) {
@@ -2146,10 +2181,13 @@ struct pool_stat_t {
 
   bool is_zero() const {
     return (stats.is_zero() &&
+            store_stats_sum.is_zero() &&
 	    log_size == 0 &&
 	    ondisk_log_size == 0 &&
 	    up == 0 &&
-	    acting == 0);
+	    acting == 0 &&
+	    num_store_stats == 0);
+  }
   }
 
   void dump(Formatter *f) const;

@@ -2645,6 +2645,10 @@ void pool_stat_t::dump(Formatter *f) const
   f->dump_int("ondisk_log_size", ondisk_log_size);
   f->dump_int("up", up);
   f->dump_int("acting", acting);
+  f->open_object_section("store_stats_sum");
+  store_stats_sum.dump(f);
+  f->close_section();
+  f->dump_int("num_store_stats", acting);
 }
 
 void pool_stat_t::encode(bufferlist &bl, uint64_t features) const
@@ -2659,18 +2663,20 @@ void pool_stat_t::encode(bufferlist &bl, uint64_t features) const
     return;
   }
 
-  ENCODE_START(6, 5, bl);
+  ENCODE_START(7, 5, bl);
   encode(stats, bl);
   encode(log_size, bl);
   encode(ondisk_log_size, bl);
   encode(up, bl);
   encode(acting, bl);
+  encode(store_stats_sum, bl);
+  encode(num_store_stats, bl);
   ENCODE_FINISH(bl);
 }
 
 void pool_stat_t::decode(bufferlist::iterator &bl)
 {
-  DECODE_START_LEGACY_COMPAT_LEN(6, 5, 5, bl);
+  DECODE_START_LEGACY_COMPAT_LEN(7, 5, 5, bl);
   if (struct_v >= 4) {
     decode(stats, bl);
     decode(log_size, bl);
@@ -2682,6 +2688,14 @@ void pool_stat_t::decode(bufferlist::iterator &bl)
       up = 0;
       acting = 0;
     }
+    if (struct_v >= 7) {
+      decode(store_stats_sum, bl);
+      decode(num_store_stats, bl);
+    } else {
+      store_stats_sum.reset();
+      num_store_stats = 0;
+    }
+
   } else {
     decode(stats.sum.num_bytes, bl);
     uint64_t num_kb;
@@ -2713,11 +2727,15 @@ void pool_stat_t::generate_test_instances(list<pool_stat_t*>& o)
 
   list<object_stat_collection_t*> l;
   object_stat_collection_t::generate_test_instances(l);
+  list<store_statfs_t*> ll;
+  store_statfs_t::generate_test_instances(ll);
   a.stats = *l.back();
+  a.store_stats_sum = *ll.back();
   a.log_size = 123;
   a.ondisk_log_size = 456;
   a.acting = 3;
   a.up = 4;
+  a.num_store_stats = 1;
   o.push_back(new pool_stat_t(a));
 }
 
