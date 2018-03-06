@@ -393,7 +393,7 @@ public:
   void calc_stats();
   void stat_pg_add(const pg_t &pgid, const pg_stat_t &s,
 		   bool sameosds=false);
-  void stat_pg_sub(const pg_t &pgid, const pg_stat_t &s,
+  bool stat_pg_sub(const pg_t &pgid, const pg_stat_t &s,
 		   bool sameosds=false);
   void calc_purged_snaps();
   void stat_osd_add(int osd, const osd_stat_t &s);

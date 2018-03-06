@@ -1115,10 +1115,12 @@ void PGMap::apply_incremental(CephContext *cct, const Incremental& inc)
     const pg_t &removed_pg(*p);
     auto s = pg_stat.find(removed_pg);
     if (s != pg_stat.end()) {
-      stat_pg_sub(removed_pg, s->second);
+      bool pool_erased = stat_pg_sub(removed_pg, s->second);
       pg_stat.erase(s);
+      if (pool_erased) {
+        deleted_pools.insert(removed_pg.pool());
+      }
     }
-    deleted_pools.insert(removed_pg.pool());
   }
 
   for (auto p = inc.get_osd_stat_rm().begin();
@@ -1247,11 +1249,10 @@ void PGMap::stat_pg_add(const pg_t &pgid, const pg_stat_t &s,
   }
 }
 
-void PGMap::stat_pg_sub(const pg_t &pgid, const pg_stat_t &s,
+bool PGMap::stat_pg_sub(const pg_t &pgid, const pg_stat_t &s,
                         bool sameosds)
 {
-  pool_stat_t& ps = pg_pool_sum[pgid.pool()];
-  ps.sub(s);
+  bool pool_erased = false;
   pg_sum.sub(s);
 
   num_pg--;
@@ -1261,8 +1262,7 @@ void PGMap::stat_pg_sub(const pg_t &pgid, const pg_stat_t &s,
     num_pg_by_state.erase(s.state);
   end = --num_pg_by_pool[pgid.pool()];
   if (end == 0) {
-    num_pg_by_pool.erase(pgid.pool());
-    pg_pool_sum.erase(pgid.pool());
+    pool_erased = true;
   }
 
   if ((s.state & PG_STATE_CREATING) &&
@@ -1286,7 +1286,7 @@ void PGMap::stat_pg_sub(const pg_t &pgid, const pg_stat_t &s,
   }
 
   if (sameosds)
-    return;
+    return pool_erased;
 
   for (auto p = s.blocked_by.begin();
        p != s.blocked_by.end();
@@ -1322,6 +1322,7 @@ void PGMap::stat_pg_sub(const pg_t &pgid, const pg_stat_t &s,
     if (it != num_pg_by_osd.end() && it->second.primary > 0)
       it->second.primary--;
   }
+  return pool_erased;
 }
 
 void PGMap::calc_purged_snaps()
