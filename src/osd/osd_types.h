@@ -2188,6 +2188,32 @@ struct pool_stat_t {
 	    acting == 0 &&
 	    num_store_stats == 0);
   }
+
+  // helper accessors to retrieve used/stored bytes depending on the
+  // collection method: new per-pool objectstore report or legacy PG
+  // summation at OSD.
+  // In legacy mode used and stored values are the same. But for new per-pool
+  // collection 'used' provides amount of space ALLOCATED at all related OSDs 
+  // and 'stored' is amount of stored user data.
+  uint64_t get_used_bytes() const {
+    uint64_t used_bytes;
+    if (num_store_stats) {
+      used_bytes = store_stats_sum.allocated;
+    } else {
+      // legacy mode, use numbers from 'stats'
+      used_bytes = stats.sum.num_bytes;
+    }
+    return used_bytes;
+  }
+  uint64_t get_stored_bytes(float raw_used_rate) const {
+    uint64_t stored_bytes;
+    if (num_store_stats) {
+      stored_bytes = raw_used_rate ? store_stats_sum.stored / raw_used_rate : 0;
+    } else {
+      // legacy mode, use numbers from 'stats'
+      stored_bytes = stats.sum.num_bytes;
+    }
+    return stored_bytes;
   }
 
   void dump(Formatter *f) const;
