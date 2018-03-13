@@ -156,7 +156,7 @@ public:
 				    Formatter *f, bool verbose) const;
   void dump_fs_stats(stringstream *ss, Formatter *f, bool verbose) const;
   static void dump_object_stat_sum(TextTable &tbl, Formatter *f,
-			    const object_stat_sum_t &sum,
+			    const pool_stat_t &pool_stat,
 			    uint64_t avail,
 			    float raw_used_rate,
 			    bool verbose, const pg_pool_t *pool);
@@ -291,7 +291,7 @@ public:
   void update_pool_deltas(
     CephContext *cct,
     const utime_t ts,
-    const mempool::pgmap::unordered_map<uint64_t, pool_stat_t>& pg_pool_sum_old);
+    const mempool::pgmap::unordered_map<int32_t, pool_stat_t>& pg_pool_sum_old);
   void clear_delta();
 
   void deleted_pool(int64_t pool) {
