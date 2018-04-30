@@ -4,6 +4,10 @@ overrides:
     conf:
       mon:
         mon osd initial require min compat client: hammer
+      client:
+        debug ms: 1
+        debug librados: 20
+        debug objecter: 20
 tasks:
 - install:
     branch: hammer
