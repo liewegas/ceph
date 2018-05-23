@@ -365,7 +365,7 @@ int main(int argc, const char **argv)
       } else if (!g_conf->public_addr.is_blank_ip()) {
 	entity_addr_t a = g_conf->public_addr;
 	if (a.get_port() == 0)
-	  a.set_port(CEPH_MON_PORT);
+	  a.set_port(CEPH_MON_PORT_LEGACY);
 	if (monmap.contains(a)) {
 	  string name;
 	  monmap.get_addr_name(a, name);
@@ -632,7 +632,7 @@ int main(int argc, const char **argv)
 				       mon_addr_str, true) == 0) {
       if (conf_addr.parse(mon_addr_str.c_str())) {
         if (conf_addr.get_port() == 0)
-          conf_addr.set_port(CEPH_MON_PORT);
+          conf_addr.set_port(CEPH_MON_PORT_LEGACY);
         if (ipaddr != conf_addr) {
 	  derr << "WARNING: 'mon addr' config option " << conf_addr
 	       << " does not match monmap file" << std::endl
@@ -649,7 +649,7 @@ int main(int argc, const char **argv)
     if (!g_conf->public_addr.is_blank_ip()) {
       ipaddr = g_conf->public_addr;
       if (ipaddr.get_port() == 0)
-	ipaddr.set_port(CEPH_MON_PORT);
+	ipaddr.set_port(CEPH_MON_PORT_LEGACY);
       dout(0) << "using public_addr " << g_conf->public_addr << " -> "
 	      << ipaddr << dendl;
     } else {
@@ -721,7 +721,7 @@ int main(int argc, const char **argv)
 
     // set the default port if not already set
     if (bind_addr.get_port() == 0) {
-      bind_addr.set_port(CEPH_MON_PORT);
+      bind_addr.set_port(CEPH_MON_PORT_LEGACY);
     }
   }
 
