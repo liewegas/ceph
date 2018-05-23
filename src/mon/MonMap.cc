@@ -93,8 +93,8 @@ namespace {
   };
 }
 
-void MonMap::calc_ranks() {
-
+void MonMap::calc_legacy_ranks()
+{
   ranks.resize(mon_info.size());
   addr_mons.clear();
 
@@ -176,7 +176,7 @@ void MonMap::encode(bufferlist& blist, uint64_t con_features) const
     encode(created, blist);
   }
 
-  ENCODE_START(5, 3, blist);
+  ENCODE_START(6, 3, blist);
   encode_raw(fsid, blist);
   encode(epoch, blist);
   encode(mon_addr, blist, con_features);
@@ -185,13 +185,14 @@ void MonMap::encode(bufferlist& blist, uint64_t con_features) const
   encode(persistent_features, blist);
   encode(optional_features, blist);
   encode(mon_info, blist, con_features);
+  encode(ranks, blist);
   ENCODE_FINISH(blist);
 }
 
 void MonMap::decode(bufferlist::const_iterator& p)
 {
   map<string,entity_addr_t> mon_addr;
-  DECODE_START_LEGACY_COMPAT_LEN_16(5, 3, 3, p);
+  DECODE_START_LEGACY_COMPAT_LEN_16(6, 3, 3, p);
   decode_raw(fsid, p);
   decode(epoch, p);
   if (struct_v == 1) {
@@ -223,7 +224,11 @@ void MonMap::decode(bufferlist::const_iterator& p)
   }
   DECODE_FINISH(p);
   sanitize_mons(mon_addr);
-  calc_ranks();
+  if (struct_v >= 6) {
+    decode(ranks, p);
+  } else {
+    calc_legacy_ranks();
+  }
 }
 
 void MonMap::generate_test_instances(list<MonMap*>& o)
