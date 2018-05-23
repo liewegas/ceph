@@ -551,6 +551,27 @@ struct entity_addrvec_t {
       return out << av.v;
     }
   }
+
+  friend bool operator==(const entity_addrvec_t& l, const entity_addrvec_t& r) {
+    return l.v == r.v;
+  }
+  friend bool operator!=(const entity_addrvec_t& l, const entity_addrvec_t& r) {
+    return l.v != r.v;
+  }
+  friend bool operator<(const entity_addrvec_t& l, const entity_addrvec_t& r) {
+    for (unsigned p = 0; l.v.size() >= p && r.v.size() >= p; ++p) {
+      if (l.v[p] < r.v[p]) {
+	return true;
+      }
+      if (l.v[p] != r.v[p]) {
+	return false;
+      }
+    }
+    if (l.v.size() < r.v.size()) {
+      return true;
+    }
+    return false;
+  }
 };
 WRITE_CLASS_ENCODER_FEATURES(entity_addrvec_t);
 
