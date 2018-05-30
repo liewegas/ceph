@@ -18,3 +18,7 @@
 * The JSON output of the ``osd find`` command has replaced the ``ip``
   field with an ``addrs`` section to reflect that OSDs may bind to
   multiple addresses.
+
+* The ``osd_heartbeat_addr`` option has been removed as it served no
+  (good) purpose: the OSD should always check heartbeats on both the
+  public and cluster networks.
