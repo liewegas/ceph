@@ -1610,7 +1610,7 @@ ssize_t AsyncConnection::handle_connect_msg(ceph_msg_connect &connect, bufferlis
       }
 
       // connection race?
-      if (peer_addrs.legacy_addr() < async_msgr->get_myaddr() ||
+      if (peer_addrs.legacy_addr() < async_msgr->get_myaddrs().legacy_addr() ||
 	  existing->policy.server) {
         // incoming wins
         ldout(async_msgr->cct, 10) << __func__ << " accept connection race, existing " << existing
@@ -1622,7 +1622,7 @@ ssize_t AsyncConnection::handle_connect_msg(ceph_msg_connect &connect, bufferlis
         ldout(async_msgr->cct,10) << __func__ << " accept connection race, existing "
                             << existing << ".cseq " << existing->connect_seq
                             << " == " << connect.connect_seq << ", sending WAIT" << dendl;
-        assert(peer_addrs.legacy_addr() > async_msgr->get_myaddr());
+        assert(peer_addrs.legacy_addr() > async_msgr->get_myaddrs().legacy_addr());
         existing->lock.unlock();
         return _reply_accept(CEPH_MSGR_TAG_WAIT, connect, reply, authorizer_reply);
       }
