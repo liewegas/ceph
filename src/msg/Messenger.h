@@ -43,6 +43,7 @@ private:
   list <Dispatcher*> fast_dispatchers;
   ZTracer::Endpoint trace_endpoint;
 
+protected:
   void set_endpoint_addr(const entity_addr_t& a,
                          const entity_name_t &name);
 
@@ -51,7 +52,7 @@ protected:
   entity_name_t my_name;
 
   /// my addr
-  entity_addr_t my_addr;
+  entity_addrvec_t my_addrs;
 
   int default_send_priority;
   /// set to true once the Messenger has started, and set to false on shutdown
@@ -210,9 +211,11 @@ public:
    * @return A const reference to the address this Messenger
    * currently believes to be its own.
    */
-  const entity_addr_t& get_myaddr() { return my_addr; }
-  entity_addrvec_t get_myaddrs() {
-    return entity_addrvec_t(my_addr);
+  entity_addr_t get_myaddr() {
+    return my_addrs.front();
+  }
+  const entity_addrvec_t& get_myaddrs() {
+    return my_addrs;
   }
 
   /**
@@ -225,9 +228,9 @@ protected:
   /**
    * set messenger's address
    */
-  virtual void set_myaddr(const entity_addr_t& a) {
-    my_addr = a;
-    set_endpoint_addr(a, my_name);
+  virtual void set_myaddrs(const entity_addrvec_t& a) {
+    my_addrs = a;
+    set_endpoint_addr(a.front(), my_name);
   }
 public:
   /**
@@ -263,7 +266,7 @@ public:
    *
    * @param addr The address to use.
    */
-  virtual void set_addr(const entity_addr_t &addr) = 0;
+  virtual void set_addrs(const entity_addrvec_t &addr) = 0;
   /// Get the default send priority.
   int get_default_send_priority() { return default_send_priority; }
   /**
