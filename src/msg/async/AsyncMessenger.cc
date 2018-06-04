@@ -301,7 +301,7 @@ AsyncMessenger::~AsyncMessenger()
 
 void AsyncMessenger::ready()
 {
-  ldout(cct,10) << __func__ << " " << get_myaddr() << dendl;
+  ldout(cct,10) << __func__ << " " << get_myaddrs() << dendl;
 
   stack->ready();
   if (pending_bind) {
@@ -320,7 +320,7 @@ void AsyncMessenger::ready()
 
 int AsyncMessenger::shutdown()
 {
-  ldout(cct,10) << __func__ << " " << get_myaddr() << dendl;
+  ldout(cct,10) << __func__ << " " << get_myaddrs() << dendl;
 
   // done!  clean up.
   for (auto &&p : processors)
