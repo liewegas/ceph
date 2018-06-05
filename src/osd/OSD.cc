@@ -5348,13 +5348,14 @@ void OSD::_send_boot()
     if (a.is_blank_ip()) {
       int port = a.get_port();
       for (auto& b : client_addrs.v) {
-	if (a.get_type() == b.get_type() ||
+	if (a.get_type() == b.get_type() &&
 	    a.get_family() == b.get_family()) {
 	  dout(10) << " assuming cluster_addr " << a
 		   << " matches client_addr " << b << dendl;
 	  a = b;
 	  a.set_port(port);
 	  cluster_messenger->set_addr_unknowns(a);
+	  break;
 	}
       }
     }
@@ -5368,13 +5369,14 @@ void OSD::_send_boot()
     if (a.is_blank_ip()) {
       int port = a.get_port();
       for (auto& b : cluster_addrs.v) {
-	if (a.get_type() == b.get_type() ||
+	if (a.get_type() == b.get_type() &&
 	    a.get_family() == b.get_family()) {
 	  dout(10) << " assuming hb_back_addr " << a
 		   << " matches cluster_addr " << b << dendl;
 	  a = b;
 	  a.set_port(port);
 	  hb_back_server_messenger->set_addr_unknowns(a);
+	  break;
 	}
       }
     }
@@ -5388,13 +5390,14 @@ void OSD::_send_boot()
     if (a.is_blank_ip()) {
       int port = a.get_port();
       for (auto& b : client_addrs.v) {
-	if (a.get_type() == b.get_type() ||
+	if (a.get_type() == b.get_type() &&
 	    a.get_family() == b.get_family()) {
 	  dout(10) << " assuming hb_front_addr " << a
 		   << " matches client_addr " << b << dendl;
 	  a = b;
 	  a.set_port(port);
 	  hb_front_server_messenger->set_addr_unknowns(a);
+	  break;
 	}
       }
     }
