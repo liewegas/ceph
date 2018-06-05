@@ -765,7 +765,8 @@ void AsyncMessenger::learned_addr(const entity_addr_t &peer_addr_for_me)
       set_myaddrs(entity_addrvec_t(a));
     } else {
       for (auto& a : my_addrs.v) {
-	if (a.get_family() == peer_addr_for_me.get_family()) {
+	if (a.get_type() == peer_addr_for_me.get_type() &&
+	    a.get_family() == peer_addr_for_me.get_family()) {
 	  entity_addr_t t = peer_addr_for_me;
 	  t.set_port(a.get_port());
 	  t.set_nonce(a.get_nonce());
