@@ -23,6 +23,7 @@
 #include <tuple>
 #include <boost/optional/optional_io.hpp>
 #include <boost/tuple/tuple.hpp>
+#include <boost/container/small_vector.hpp>
 
 #include "include/unordered_map.h"
 #include "include/unordered_set.h"
@@ -802,6 +803,7 @@ inline void decode(std::multiset<T,Comp,Alloc>& s, bufferlist::const_iterator& p
   }
 }
 
+// vector
 template<class T, class Alloc, typename traits>
 inline std::enable_if_t<!traits::supported>
   encode(const std::vector<T,Alloc>& v, bufferlist& bl, uint64_t features)
@@ -885,6 +887,53 @@ inline void decode(std::vector<ceph::shared_ptr<T>,Alloc>& v,
     decode(*v[i], p);
   }
 }
+
+// small_vector
+template<class T, std::size_t Size, typename traits>
+inline std::enable_if_t<!traits::supported>
+  encode(const boost::container::small_vector<T,Size>& v, bufferlist& bl, uint64_t features)
+{
+  __u32 n = (__u32)(v.size());
+  encode(n, bl);
+  for (auto p = v.begin(); p != v.end(); ++p)
+    encode(*p, bl, features);
+}
+template<class T, std::size_t Size, typename traits>
+inline std::enable_if_t<!traits::supported>
+  encode(const boost::container::small_vector<T,Size>& v, bufferlist& bl)
+{
+  __u32 n = (__u32)(v.size());
+  encode(n, bl);
+  for (auto p = v.begin(); p != v.end(); ++p)
+    encode(*p, bl);
+}
+template<class T, std::size_t Size, typename traits>
+inline std::enable_if_t<!traits::supported>
+  decode(boost::container::small_vector<T,Size>& v, bufferlist::const_iterator& p)
+{
+  __u32 n;
+  decode(n, p);
+  v.resize(n);
+  for (__u32 i=0; i<n; i++) 
+    decode(v[i], p);
+}
+
+template<class T, std::size_t Size, typename traits>
+inline std::enable_if_t<!traits::supported>
+  encode_nohead(const boost::container::small_vector<T,Size>& v, bufferlist& bl)
+{
+  for (auto p = v.begin(); p != v.end(); ++p)
+    encode(*p, bl);
+}
+template<class T, std::size_t Size, typename traits>
+inline std::enable_if_t<!traits::supported>
+  decode_nohead(int len, boost::container::small_vector<T,Size>& v, bufferlist::const_iterator& p)
+{
+  v.resize(len);
+  for (__u32 i=0; i<v.size(); i++) 
+    decode(v[i], p);
+}
+
 
 // map
 template<class T, class U, class Comp, class Alloc,

@@ -35,6 +35,7 @@
 
 #include <boost/container/flat_map.hpp>
 #include <boost/container/flat_set.hpp>
+#include <boost/container/small_vector.hpp>
 #include <boost/intrusive/set.hpp>
 #include <boost/optional.hpp>
 
@@ -993,6 +994,14 @@ struct denc_traits<
   : public _denc::container_base<std::vector,
 				 _denc::pushback_details<std::vector<T, Ts...>>,
 				 T, Ts...> {};
+
+template<typename T, std::size_t Size, typename ...Ts>
+struct denc_traits<
+  boost::container::small_vector<T, Size, Ts...>,
+  typename std::enable_if_t<denc_traits<T>::supported>>
+  : public _denc::container_base<boost::container::small_vector,
+				 _denc::pushback_details<boost::container::small_vector<T, Size, Ts...>>,
+				 T, Size, Ts...> {};
 
 namespace _denc {
   template<typename Container>

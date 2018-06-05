@@ -16,6 +16,7 @@
 #define CEPH_MSG_TYPES_H
 
 #include <netinet/in.h>
+#include <boost/container/small_vector.hpp>
 
 #include "include/ceph_features.h"
 #include "include/types.h"
@@ -530,7 +531,7 @@ namespace std {
 } // namespace std
 
 struct entity_addrvec_t {
-  vector<entity_addr_t> v;
+  boost::container::small_vector<entity_addr_t,2> v;
 
   entity_addrvec_t() {}
   explicit entity_addrvec_t(const entity_addr_t& a) : v({ a }) {}

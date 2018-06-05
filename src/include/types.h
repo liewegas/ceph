@@ -56,6 +56,7 @@ extern "C" {
 #include <set>
 #include <boost/container/flat_set.hpp>
 #include <boost/container/flat_map.hpp>
+#include <boost/container/small_vector.hpp>
 #include <map>
 #include <vector>
 #include <iostream>
@@ -127,6 +128,16 @@ inline ostream& operator<<(ostream& out, const pair<A,B>& v) {
 
 template<class A, class Alloc>
 inline ostream& operator<<(ostream& out, const vector<A,Alloc>& v) {
+  out << "[";
+  for (auto p = v.begin(); p != v.end(); ++p) {
+    if (p != v.begin()) out << ",";
+    out << *p;
+  }
+  out << "]";
+  return out;
+}
+template<class A, std::size_t Size>
+inline ostream& operator<<(ostream& out, const boost::container::small_vector<A,Size>& v) {
   out << "[";
   for (auto p = v.begin(); p != v.end(); ++p) {
     if (p != v.begin()) out << ",";
