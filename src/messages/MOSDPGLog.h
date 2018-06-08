@@ -60,7 +60,7 @@ public:
       true,
       new PGCreateInfo(
 	get_spg(),
-	query_epoch,
+	epoch,
 	info.history,
 	past_intervals,
 	false));
