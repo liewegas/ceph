@@ -601,6 +601,7 @@ void PGLog::write_log_and_missing(
       dirty_from_dups,
       write_from_dups,
       &rebuilt_missing_with_deletes,
+      &rolled_forward,
       (pg_log_debug ? &log_keys_debug : nullptr));
     undirty();
   } else {
@@ -634,7 +635,8 @@ void PGLog::write_log_and_missing(
     const ghobject_t &log_oid,
     const pg_missing_tracker_t &missing,
     bool require_rollback,
-    bool *rebuilt_missing_with_deletes)
+    bool *rebuilt_missing_with_deletes,
+    bool *rolled_forward)
 {
   _write_log_and_missing(
     t, km, log, coll, log_oid,
@@ -648,7 +650,9 @@ void PGLog::write_log_and_missing(
     eversion_t::max(),
     eversion_t(),
     eversion_t(),
-    rebuilt_missing_with_deletes, nullptr);
+    rebuilt_missing_with_deletes,
+    rolled_forward,
+    nullptr);
 }
 
 // static
@@ -785,6 +789,7 @@ void PGLog::_write_log_and_missing(
   eversion_t dirty_from_dups,
   eversion_t write_from_dups,
   bool *rebuilt_missing_with_deletes, // in/out param
+  bool *rolled_forward,  // in/out param
   set<string> *log_keys_debug
   ) {
   set<string> to_remove;
@@ -909,6 +914,7 @@ void PGLog::_write_log_and_missing(
     encode(
       log.get_rollback_info_trimmed_to(),
       (*km)["rollback_info_trimmed_to"]);
+    *rolled_forward = false;
   }
 
   if (!to_remove.empty())

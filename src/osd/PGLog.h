@@ -102,12 +102,17 @@ public:
       rollback_info_trimmed_to_riter;
 
     template <typename F>
-    void advance_can_rollback_to(eversion_t to, F &&f) {
-      if (to > can_rollback_to)
+    bool advance_can_rollback_to(eversion_t to, F &&f) {
+      bool r = false;
+      if (to > can_rollback_to) {
 	can_rollback_to = to;
+	r = true;
+      }
 
-      if (to > rollback_info_trimmed_to)
+      if (to > rollback_info_trimmed_to) {
 	rollback_info_trimmed_to = to;
+	r = true;
+      }
 
       while (rollback_info_trimmed_to_riter != log.rbegin()) {
 	--rollback_info_trimmed_to_riter;
@@ -116,7 +121,9 @@ public:
 	  break;
 	}
 	f(*rollback_info_trimmed_to_riter);
+	r = true;
       }
+      return r;
     }
 
     void reset_rollback_info_trimmed_to_riter() {
@@ -171,8 +178,8 @@ public:
 	  h->trim(entry);
 	});
     }
-    void roll_forward_to(eversion_t to, LogEntryHandler *h) {
-      advance_can_rollback_to(
+    bool roll_forward_to(eversion_t to, LogEntryHandler *h) {
+      return advance_can_rollback_to(
 	to,
 	[&](pg_log_entry_t &entry) {
 	  h->rollforward(entry);
@@ -180,6 +187,8 @@ public:
     }
 
     void skip_can_rollback_to_to_head() {
+      // note: this may dirty can_rollback_to but we'll also dirty the log
+      // itself from the caller
       advance_can_rollback_to(head, [&](const pg_log_entry_t &entry) {});
     }
 
@@ -528,6 +537,8 @@ public:
       }
 
       if (!applied) {
+	// note: this may dirty can_rollback_to but we'll also dirty the log
+	// itself and force it to write out
 	skip_can_rollback_to_to_head();
       }
     } // add
@@ -563,6 +574,7 @@ protected:
   bool touched_log;
   bool clear_divergent_priors;
   bool rebuilt_missing_with_deletes = false;
+  bool rolled_forward = false;
 
   void mark_dirty_to(eversion_t to) {
     if (to > dirty_to)
@@ -596,7 +608,8 @@ public:
       (dirty_to_dups != eversion_t()) ||
       (dirty_from_dups != eversion_t::max()) ||
       (write_from_dups != eversion_t::max()) ||
-      rebuilt_missing_with_deletes;
+      rebuilt_missing_with_deletes ||
+      rolled_forward;
   }
   void mark_log_for_rewrite() {
     mark_dirty_to(eversion_t::max());
@@ -640,6 +653,7 @@ protected:
     dirty_to_dups = eversion_t();
     dirty_from_dups = eversion_t::max();
     write_from_dups = eversion_t::max();
+    rolled_forward = false;
   }
 public:
 
@@ -709,9 +723,11 @@ public:
   void roll_forward_to(
     eversion_t roll_forward_to,
     LogEntryHandler *h) {
-    log.roll_forward_to(
+    if (log.roll_forward_to(
       roll_forward_to,
-      h);
+      h)) {
+      rolled_forward = true;
+    }
   }
 
   eversion_t get_can_rollback_to() const {
@@ -729,6 +745,7 @@ public:
   void reset_backfill_claim_log(const pg_log_t &o, LogEntryHandler *h) {
     log.trim_rollback_info_to(log.head, h);
     log.claim_log_and_clear_rollback_info(o);
+    rolled_forward = true;
     missing.clear();
     mark_dirty_to(eversion_t::max());
     mark_dirty_to_dups(eversion_t::max());
@@ -1247,6 +1264,7 @@ public:
     eversion_t dirty_from_dups,
     eversion_t write_from_dups,
     bool *rebuilt_missing_with_deletes,
+    bool *rolled_forward,
     set<string> *log_keys_debug
     );
 
