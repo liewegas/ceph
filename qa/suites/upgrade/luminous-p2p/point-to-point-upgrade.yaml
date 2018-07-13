@@ -127,6 +127,43 @@ workload_luminous:
            rgw_server: client.0
            scan_for_encryption_keys: false
      - print: "**** done s3tests workload_luminous"
+   - sequential:
+     - workunit:
+        tag: v12.2.2
+        clients:
+          client.0:
+          - rbd/test_librbd.sh
+     - workunit:
+        tag: v12.2.2
+        clients:
+          client.0:
+          - rados/load-gen-big.sh
+   - sequential:
+     - rados:
+       clients:
+       - client.0
+       ec_pool: true
+       objects: 50
+       op_weights:
+         append: 100
+         copy_from: 50
+         delete: 50
+         read: 100
+         rmattr: 25
+         rollback: 50
+         setattr: 25
+         snap_create: 50
+         snap_remove: 50
+         write: 0
+       ops: 4000
+       write_append_excl: false
+   - sequential:
+     - ceph-fuse: null
+     - workunit:
+         clients:
+           client.2:
+           - suites/blogbench.sh
+
 upgrade-sequence_luminous:
    sequential:
    - print: "**** done branch: luminous install.upgrade"
