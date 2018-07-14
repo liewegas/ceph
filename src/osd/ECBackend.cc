@@ -2427,7 +2427,8 @@ int ECBackend::be_deep_scrub(
   dout(10) << __func__ << " " << poid << " pos " << pos << dendl;
   int r;
   bool skip_data_digest = store->has_builtin_csum() &&
-    g_conf->osd_skip_data_digest;
+    g_conf->osd_skip_data_digest ||
+    g_conf->osd_distrust_data_digest;;
 
   uint32_t fadvise_flags = CEPH_OSD_OP_FLAG_FADVISE_SEQUENTIAL |
                            CEPH_OSD_OP_FLAG_FADVISE_DONTNEED;
