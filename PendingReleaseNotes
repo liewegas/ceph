@@ -36,3 +36,7 @@
 * The ``osd_heartbeat_addr`` option has been removed as it served no
   (good) purpose: the OSD should always check heartbeats on both the
   public and cluster networks.
+
+* The ``rados`` tool's ``mkpool`` and ``rmpool`` commands have been
+  removed because they are redundant; please use the ``ceph osd pool
+  create`` and ``ceph osd pool rm`` commands instead.
