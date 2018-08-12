@@ -636,7 +636,6 @@ bool AuthMonitor::prep_auth(MonOpRequestRef op, bool paxos_writable)
   }
 
   try {
-    uint64_t auid = 0;
     if (start) {
       // new session
 
@@ -668,7 +667,6 @@ bool AuthMonitor::prep_auth(MonOpRequestRef op, bool paxos_writable)
 	str.clear();
       }
       s->caps.parse(str, NULL);
-      s->auid = auid;
       s->authenticated = true;
       finished = true;
     }
