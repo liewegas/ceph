@@ -1,0 +1,9 @@
+tasks:
+- ceph.upgrade:
+    mon.a:
+      tag: v13.2.1
+    mon.b:
+      tag: v13.2.1
+    client.0:
+      tag: v13.2.1
+- ceph.restart:

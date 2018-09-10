@@ -1,0 +1,33 @@
+tasks:
+- ceph:
+    log-whitelist:
+      - overall HEALTH_
+      - \(FS_
+      - \(MDS_
+      - \(OSD_
+      - \(MON_DOWN\)
+      - \(CACHE_POOL_
+      - \(POOL_
+      - \(MGR_DOWN\)
+      - \(PG_
+      - \(SMALLER_PGP_NUM\)
+      - \(POOL_APP_NOT_ENABLED\)
+      - scrub mismatch
+      - ScrubResult
+      - wrongly marked
+      - \(SLOW_OPS\)
+      - Monitor daemon marked osd
+      - Behind on trimming
+      - Manager daemon
+    conf:
+      global:
+        mon warn on pool no app: false
+        enable experimental unrecoverable data corrupting features: "*"
+      mon:
+        mon warn on osd down out interval zero: false
+      osd:
+        osd_class_load_list: "cephfs hello journal lock log numops rbd refcount 
+                              replica_log rgw sdk statelog timeindex user version"
+        osd_class_default_list: "cephfs hello journal lock log numops rbd refcount 
+                                 replica_log rgw sdk statelog timeindex user version"
+    fs: xfs

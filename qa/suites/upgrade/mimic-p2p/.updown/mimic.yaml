@@ -1,0 +1,9 @@
+tasks:
+- ceph.upgrade:
+    mon.a:
+      branch: mimic
+    mon.b:
+      branch: mimic
+    client.0:
+      branch: mimic
+- ceph.restart:

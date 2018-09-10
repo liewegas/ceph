@@ -1,0 +1,11 @@
+tasks:
+- full_sequential:
+  - sequential:
+    - rgw: [client.0]
+    - print: "**** done rgw workload_mimic"
+    - s3tests:
+        client.0:
+        force-branch: ceph-mimic
+        rgw_server: client.0
+        scan_for_encryption_keys: false
+    - print: "**** done s3tests workload_mimic"
