@@ -14,9 +14,9 @@
 #define dout_prefix _conn_prefix(_dout)
 ostream &ProtocolV2::_conn_prefix(std::ostream *_dout) {
   return *_dout << "--2- " << messenger->get_myaddrs() << " >> "
-                << connection->peer_addrs << " conn("
-                << connection << (connection->msgr2 ? " msgr2" : " legacy")
-                << " :" << connection->port << " s=" << get_state_name(state)
+                << connection->peer_addrs << " conn(" << connection
+                << (connection->msgr2 ? " msgr2" : " legacy") << " :"
+                << connection->port << " s=" << get_state_name(state)
                 << " pgs=" << peer_global_seq << " cs=" << connect_seq
                 << " l=" << connection->policy.lossy << ").";
 }
@@ -1964,7 +1964,6 @@ CtPtr ProtocolV2::handle_message_complete() {
     // yes, that was the case, let's do nothing
     return nullptr;
   }
-
 
   if (need_dispatch_writer && connection->is_connected()) {
     connection->center->dispatch_event_external(connection->write_handler);
