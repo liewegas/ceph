@@ -53,14 +53,6 @@ static void alloc_aligned_buffer(bufferlist &data, unsigned len, unsigned off) {
   data.push_back(std::move(ptr));
 }
 
-Protocol::Protocol(int type, AsyncConnection *connection)
-  : proto_type(type),
-    connection(connection),
-    messenger(connection->async_msgr),
-    cct(connection->async_msgr->cct) {}
-
-Protocol::~Protocol() {}
-
 /**
  * Protocol V1
  **/
@@ -1796,7 +1788,7 @@ CtPtr ProtocolV1::handle_client_banner(char *buffer, int r) {
     peer_addr.set_port(port);
 
     ldout(cct, 0) << __func__ << " accept peer addr is really " << peer_addr
-                  << " (socket is " << connection->socket_addr << ")" << dendl;
+                  << " (socket is " << connection->target_addr << ")" << dendl;
   }
   connection->set_peer_addr(peer_addr);  // so that connection_state gets set up
   connection->target_addr = peer_addr;
