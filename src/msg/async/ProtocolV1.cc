@@ -1527,7 +1527,8 @@ CtPtr ProtocolV1::handle_connect_reply_auth(char *buffer, int r) {
   }
 
   auto iter = authorizer_reply.cbegin();
-  if (authorizer && !authorizer->verify_reply(iter)) {
+  if (authorizer && !authorizer->verify_reply(iter,
+					      nullptr /* connection_secret */)) {
     ldout(cct, 0) << __func__ << " failed verifying authorize reply" << dendl;
     return _fault();
   }
@@ -1690,6 +1691,7 @@ CtPtr ProtocolV1::client_ready() {
 		   << authorizer << dendl;
     session_security.reset(get_auth_session_handler(
         cct, authorizer->protocol, authorizer->session_key,
+	authorizer->session_key /* connection_secret */,
         connection->get_features()));
   } else {
     // We have no authorizer, so we shouldn't be applying security to messages
@@ -1922,6 +1924,7 @@ CtPtr ProtocolV1::handle_connect_message_2() {
   if (!messenger->ms_deliver_verify_authorizer(
           connection, connection->peer_type, connect_msg.authorizer_protocol,
           authorizer_buf, authorizer_reply, authorizer_valid, session_key,
+	  nullptr /* connection_secret */,
           need_challenge ? &authorizer_challenge : nullptr) ||
       !authorizer_valid) {
     connection->lock.lock();
@@ -2342,7 +2345,9 @@ CtPtr ProtocolV1::open(ceph_msg_connect_reply &reply,
 
   session_security.reset(
       get_auth_session_handler(cct, connect_msg.authorizer_protocol,
-                               session_key, connection->get_features()));
+                               session_key,
+			       session_key /* connection secret */,
+			       connection->get_features()));
 
   bufferlist reply_bl;
   reply_bl.append((char *)&reply, sizeof(reply));
