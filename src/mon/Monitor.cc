@@ -699,9 +699,10 @@ int Monitor::preinit()
     list<string> initial_members;
     get_str_list(g_conf()->mon_initial_members, initial_members);
 
-    if (!initial_members.empty()) {
-      dout(1) << " initial_members " << initial_members << ", filtering seed monmap" << dendl;
-
+    if (!initial_members.empty() || monmap->get_epoch() > 0) {
+      dout(1) << " initial_members non-empty (" << initial_members
+	      << ") or monmap epoch " << monmap->get_epoch() << " > 0,"
+	      << " filtering seed monmap" << dendl;
       monmap->set_initial_members(
 	g_ceph_context, initial_members, name, messenger->get_myaddrs(),
 	&extra_probe_peers);
