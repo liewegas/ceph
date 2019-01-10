@@ -708,6 +708,16 @@ int Monitor::preinit()
 
       dout(10) << " monmap is " << *monmap << dendl;
       dout(10) << " extra probe peers " << extra_probe_peers << dendl;
+    } else {
+      dout(10) << " WARNING: allowing formation of (potentially) new cluster"
+	       << " based on seed monmap; consider using mon_initial_members"
+	       << dendl;
+      // NOTE: we generally want to be careful about this case because we do
+      // not want to every enable more than one instance of an initial quorum
+      // and cluster being formed with the same FSID.  If we take this path,
+      // then we want to be *very* sure that all mons are sharing their
+      // seed monmap (i.e., have same manually-generated monmap, or have
+      // identical mon_host settings).
     }
   } else if (!monmap->contains(name)) {
     derr << "not in monmap and have been in a quorum before; "
