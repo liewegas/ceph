@@ -74,14 +74,20 @@ private:
   char *temp_buffer;
   State state;
   uint64_t peer_required_features;
-  AuthAuthorizer *authorizer;
-  uint32_t auth_method;
-  bool got_bad_auth;
-  uint32_t got_bad_method;
+  uint32_t auth_method = CEPH_AUTH_UNKNOWN;
   CryptoKey session_key;
   CryptoKey connection_secret;
   std::shared_ptr<AuthSessionHandler> session_security;
+
+  // client
+  AuthAuthorizer *authorizer;
+  bool got_bad_auth;
+  uint32_t got_bad_method;
+
+  // server
   std::unique_ptr<AuthAuthorizerChallenge> authorizer_challenge;
+  bool mon_auth_mode = false;
+
   uint64_t auth_flags;
   uint64_t connection_features;
   uint64_t cookie;
@@ -259,6 +265,7 @@ private:
   Ct<ProtocolV2> *post_server_banner_exchange();
   Ct<ProtocolV2> *handle_auth_request(char *payload, uint32_t length);
   Ct<ProtocolV2> *handle_auth_request_more(char *payload, uint32_t length);
+  Ct<ProtocolV2> *_handle_mon_auth(bufferlist& auth_payload, bool more);
   Ct<ProtocolV2> *_handle_authorizer(bufferlist& auth_payload, bool more);
   Ct<ProtocolV2> *handle_client_ident(char *payload, uint32_t length);
   Ct<ProtocolV2> *handle_ident_missing_features_write(int r);
