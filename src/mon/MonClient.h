@@ -25,6 +25,8 @@
 #include "common/Finisher.h"
 #include "common/config.h"
 
+#include "auth/AuthClient.h"
+
 class MMonMap;
 class MConfig;
 class MMonGetVersionReply;
@@ -98,7 +100,8 @@ class MonConnection {
 public:
   MonConnection(CephContext *cct,
 		ConnectionRef conn,
-		uint64_t global_id);
+		uint64_t global_id,
+		const list<uint32_t>& auto_supported);
   ~MonConnection();
   MonConnection(MonConnection&& rhs) = default;
   MonConnection& operator=(MonConnection&&) = default;
@@ -123,8 +126,28 @@ public:
     return auth;
   }
 
+  int get_auth_request(
+    uint32_t *method, bufferlist *out,
+    const EntityName& entity_name,
+    uint32_t want_keys,
+    RotatingKeyRing* keyring);
+  int handle_auth_reply_more(
+    const bufferlist& bl,
+    bufferlist *reply);
+  void handle_auth_bad_method(
+    uint32_t old_auth_method,
+    const std::vector<uint32_t>& allowed_methods);
+
+  bool is_con(Connection *c) const {
+    return con.get() == c;
+  }
+
 private:
   int _negotiate(MAuthReply *m,
+		 const EntityName& entity_name,
+		 uint32_t want_keys,
+		 RotatingKeyRing* keyring);
+  int _init_auth(uint32_t method,
 		 const EntityName& entity_name,
 		 uint32_t want_keys,
 		 RotatingKeyRing* keyring);
@@ -133,21 +156,26 @@ private:
   CephContext *cct;
   enum class State {
     NONE,
-    NEGOTIATING,
-    AUTHENTICATING,
+    NEGOTIATING,       // v1
+    AUTHENTICATING,    // v1
+    MSGR2_CONNECTING,  // v2
+    FAILED_AUTH,       // v2
     HAVE_SESSION,
   };
   State state = State::NONE;
   ConnectionRef con;
+  int auth_method = -1;
 
   std::unique_ptr<AuthClientHandler> auth;
   uint64_t global_id;
+  const list<uint32_t>& auth_supported;
 };
 
-class MonClient : public Dispatcher {
+class MonClient : public Dispatcher, public AuthClient {
 public:
   MonMap monmap;
   map<string,string> config_mgr;
+
 private:
   Messenger *messenger;
 
@@ -230,6 +258,20 @@ private:
   }
 
 public:
+  // AuthClient
+  int get_auth_request(
+    Connection *con,
+    uint32_t *method,
+    bufferlist *bl) override;
+  int handle_auth_reply_more(
+    Connection *con,
+    const bufferlist& bl,
+    bufferlist *reply) override;
+  void handle_auth_bad_method(
+    Connection *con,
+    uint32_t old_auth_method,
+    const std::vector<uint32_t>& allowed_methods) override;
+
   void set_entity_name(EntityName name) { entity_name = name; }
 
   int _check_auth_tickets();

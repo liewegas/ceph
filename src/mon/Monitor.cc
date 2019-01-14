@@ -3840,9 +3840,9 @@ void Monitor::handle_forward(MonOpRequestRef op)
     ceph_assert(req != NULL);
 
     ConnectionRef c(new AnonConnection(cct, m->client_socket_addr));
-    MonSession *s = new MonSession(req->get_source(),
-				   req->get_source_addrs(),
-				   static_cast<Connection*>(c.get()));
+    MonSession *s = new MonSession(static_cast<Connection*>(c.get()));
+    s->_ident(req->get_source(),
+	      req->get_source_addrs());
     c->set_priv(RefCountedPtr{s, false});
     c->set_peer_addrs(m->client_addrs);
     c->set_peer_type(m->client_type);
@@ -5890,6 +5890,74 @@ bool Monitor::ms_get_authorizer(int service_id, AuthAuthorizer **authorizer)
 KeyStore *Monitor::ms_get_auth1_authorizer_keystore()
 {
   return &keyring;
+}
+
+int Monitor::ms_handle_auth_request(
+  Connection *con,
+  bool more,
+  uint32_t auth_method,
+  const bufferlist &payload,
+  bufferlist *reply,
+  CryptoKey *session_key,
+  CryptoKey *connection_secret)
+{
+  // NOTE: be careful, the Connection hasn't fully negotiated yet!
+  RefCountedPtr priv;
+  MonSession *s;
+  int r = 0;
+  auto p = payload.begin();
+  if (!more) {
+    assert(!con->get_priv());
+
+    // handler?
+    AuthServiceHandler *auth_handler = get_auth_service_handler(
+      auth_method, g_ceph_context, &key_server);
+    if (!auth_handler) {
+      dout(1) << __func__ << " auth_method " << auth_method << " not supported"
+	      << dendl;
+      return -EOPNOTSUPP;
+    }
+
+    uint8_t mode;
+    EntityName entity_name;
+
+    decode(mode, p);
+    assert(mode == AUTH_MODE_MON);
+    decode(entity_name, p);
+    decode(con->peer_global_id, p);
+
+#warning a couple FIXMEs here
+    // FIXME: check if this is an allowed method, given the type
+    // FIXME: check for required signatures (and lack thereof)
+
+    if (!con->peer_global_id) {
+      con->peer_global_id = authmon()->assign_global_id(false);
+      if (!con->peer_global_id) {
+	dout(1) << __func__ << " failed to assign global_id" << dendl;
+	return -EBUSY;
+      }
+    }
+
+    // set up partial session
+    s = new MonSession(con);
+    s->auth_handler = auth_handler;
+    con->set_priv(RefCountedPtr{s, false});
+
+    r = s->auth_handler->start_session(entity_name, reply, &con->peer_caps_info);
+  } else {
+    priv = con->get_priv();
+    s = static_cast<MonSession*>(priv.get());
+    r = s->auth_handler->handle_request(p, reply, &con->peer_global_id,
+					&con->peer_caps_info);
+  }
+  if (r > 0) {
+    if (!s->authenticated) {
+      ms_handle_authentication(con);
+    }
+    r = 0;
+  }
+
+  return r;
 }
 
 int Monitor::ms_handle_authentication(Connection *con)

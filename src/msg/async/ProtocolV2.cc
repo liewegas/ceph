@@ -8,6 +8,7 @@
 #include "common/ceph_crypto.h"
 #include "common/errno.h"
 #include "include/random.h"
+#include "auth/AuthClient.h"
 
 #define dout_subsys ceph_subsys_ms
 #undef dout_prefix
@@ -44,13 +45,6 @@ struct DecryptionError : public std::exception {};
 void ProtocolV2::get_auth_allowed_methods(
   int peer_type, std::vector<uint32_t> &allowed_methods)
 {
-  // FIXME: this is for legacy MAuth-based authentication
-  if (messenger->get_mytype() == CEPH_ENTITY_TYPE_MON &&
-      peer_type != CEPH_ENTITY_TYPE_MON) {
-    allowed_methods.push_back(CEPH_AUTH_NONE);
-    return;
-  }
-
   std::string method;
   if (!cct->_conf->auth_supported.empty()) {
     method = cct->_conf->auth_supported;
@@ -2047,7 +2041,25 @@ CtPtr ProtocolV2::post_client_banner_exchange() {
 }
 
 CtPtr ProtocolV2::send_auth_request(std::vector<uint32_t> &allowed_methods) {
-  ldout(cct, 20) << __func__ << dendl;
+  ldout(cct, 20) << __func__ << " peer_type " << (int)connection->peer_type
+		 << " auth_client " << messenger->auth_client << dendl;
+
+  // (non-mon entity) -> mon authentication is special
+  if (messenger->auth_client &&
+      connection->peer_type == CEPH_ENTITY_TYPE_MON) {
+    bufferlist bl;
+    int r = messenger->auth_client->get_auth_request(
+      connection, &auth_method, &bl);
+    if (r < 0) {
+      ldout(cct, 0) << __func__ << " get_initial_auth_request returned " << r
+		    << dendl;
+      stop();
+      connection->dispatch_queue->queue_reset(connection);
+      return nullptr;
+    }
+    AuthRequestFrame frame(auth_method, bl.length(), bl);
+    return WRITE(frame.get_buffer(), "auth request", read_frame);
+  }
 
   if (!authorizer) {
     authorizer =
@@ -2091,10 +2103,8 @@ CtPtr ProtocolV2::send_auth_request(std::vector<uint32_t> &allowed_methods) {
   // reconnect
   bufferlist auth_blob;
   auth_blob.append(authorizer->bl);
-  AuthRequestFrame authFrame(auth_method, authorizer->bl.length(),
-                             auth_blob);
-  bufferlist &bl = authFrame.get_buffer();
-  return WRITE(bl, "auth request", read_frame);
+  AuthRequestFrame frame(auth_method, authorizer->bl.length(), auth_blob);
+  return WRITE(frame.get_buffer(), "auth request", read_frame);
 }
 
 CtPtr ProtocolV2::handle_auth_bad_method(char *payload, uint32_t length) {
@@ -2104,6 +2114,11 @@ CtPtr ProtocolV2::handle_auth_bad_method(char *payload, uint32_t length) {
   ldout(cct, 1) << __func__ << " auth method=" << bad_method.method()
                 << " rejected, allowed methods=" << bad_method.allowed_methods()
                 << dendl;
+
+  if (messenger->auth_client) {
+    messenger->auth_client->handle_auth_bad_method(
+      connection, auth_method, bad_method.allowed_methods());
+  }
 
   if (got_bad_method == bad_method.allowed_methods().size()) {
     ldout(cct, 1) << __func__ << " too many attempts, closing connection"
@@ -2129,21 +2144,38 @@ CtPtr ProtocolV2::handle_auth_bad_auth(char *payload, uint32_t length) {
 CtPtr ProtocolV2::handle_auth_reply_more(char *payload, uint32_t length)
 {
   ldout(cct, 20) << __func__ << " payload_len=" << length << dendl;
-
   AuthReplyMoreFrame auth_more(payload, length);
   ldout(cct, 5) << __func__
                 << " auth reply more len=" << auth_more.auth_payload().length()
                 << dendl;
-  ldout(cct, 10) << __func__ << " connect got auth challenge" << dendl;
-  if (auth_method == CEPH_AUTH_CEPHX) {
+  bufferlist reply;
+  if (mon_auth_mode) {
+    if (!messenger->auth_client) {
+      lderr(cct) << __func__ << " got auth_reply_more, mon mode,"
+		 << " but no auth_client" << dendl;
+      return _fault();
+    }
+    bufferlist bl;
+    bl.append(payload, length);
+    int r = messenger->auth_client->handle_auth_reply_more(connection, bl,
+							   &reply);
+    if (r < 0) {
+      lderr(cct) << __func__ << " auth_client handle_auth_reply_more returned "
+		 << r << dendl;
+      return _fault();
+    }
+  } else {
+    if (auth_method != CEPH_AUTH_CEPHX) {
+      lderr(cct) << __func__ << " got auth_reply_more with non-cephx" << dendl;
+      return _fault();
+    }
+    ldout(cct, 10) << __func__ << " connect got auth challenge" << dendl;
     ceph_assert(authorizer);
     authorizer->add_challenge(cct, auth_more.auth_payload());
-    AuthRequestMoreFrame more_reply(authorizer->bl.length(), authorizer->bl);
-    return WRITE(more_reply.get_buffer(), "auth request more", read_frame);
-  } else {
-    ceph_abort("Auth method %d not implemented", auth_method);
+    reply = authorizer->bl;
   }
-  return nullptr;
+  AuthRequestMoreFrame more_reply(authorizer->bl.length(), authorizer->bl);
+  return WRITE(more_reply.get_buffer(), "auth request more", read_frame);
 }
 
 CtPtr ProtocolV2::handle_auth_done(char *payload, uint32_t length) {
@@ -2413,8 +2445,54 @@ CtPtr ProtocolV2::handle_auth_request(char *payload, uint32_t length) {
 		 << auth_request.auth_payload().length() << dendl;
 
   auth_method = auth_request.method();
+  auto& bl = auth_request.auth_payload();
+  if (bl.length() == 0) {
+    ldout(cct, 1) << __func__ << " empty auth payload" << dendl;
+    AuthBadMethodFrame bad_method(auth_request.method(), allowed_methods);
+    bufferlist &bl = bad_method.get_buffer();
+    return WRITE(bl, "bad auth method", read_frame);
+  }
+  if (bl[0] == AUTH_MODE_AUTHORIZER) {
+    mon_auth_mode = false;
+    return _handle_authorizer(auth_request.auth_payload(), false);
+  } else if (bl[0] == AUTH_MODE_MON) {
+    mon_auth_mode = true;
+    return _handle_mon_auth(auth_request.auth_payload(), false);
+  } else {
+    ldout(cct, 1) << __func__ << " unrecognized AUTH_MODE_ " << (int)bl[0]
+		  << dendl;
+    AuthBadMethodFrame bad_method(auth_request.method(), allowed_methods);
+    bufferlist &bl = bad_method.get_buffer();
+    return WRITE(bl, "bad auth method", read_frame);
+  }
+}
 
-  return _handle_authorizer(auth_request.auth_payload(), false);
+CtPtr ProtocolV2::_handle_mon_auth(bufferlist& auth_payload, bool more)
+{
+  bufferlist reply;
+  connection->lock.unlock();
+  int r = messenger->ms_deliver_auth_request(
+    connection, more, auth_method,
+    auth_payload,
+    &reply, &session_key, &connection_secret);
+  connection->lock.lock();
+#warning fixme check state
+  if (r == 1) {
+    AuthDoneFrame auth_done(auth_flags, reply.length(), reply);
+    return WRITE(auth_done.get_buffer(), "auth done", read_frame);
+  } else if (r == 0) {
+    AuthReplyMoreFrame more(reply.length(), reply);
+    return WRITE(more.get_buffer(), "auth reply more", read_frame);
+  } else if (r == -EBUSY) {
+    // kick the client and maybe they'll come back later
+    return _fault();
+  } else {
+    assert(r < 0);
+    std::vector<uint32_t> allowed_methods;
+    get_auth_allowed_methods(connection->peer_type, allowed_methods);
+    AuthBadMethodFrame bad_method(auth_method, allowed_methods);
+    return WRITE(bad_method.get_buffer(), "bad auth method", read_frame);
+  }
 }
 
 CtPtr ProtocolV2::_handle_authorizer(bufferlist& auth_payload, bool more)
@@ -2490,7 +2568,11 @@ CtPtr ProtocolV2::handle_auth_request_more(char *payload, uint32_t length)
   ldout(cct, 5) << __func__
                 << " auth request more len=" << auth_more.auth_payload().length()
                 << dendl;
-  return _handle_authorizer(auth_more.auth_payload(), true);
+  if (mon_auth_mode) {
+    return _handle_mon_auth(auth_more.auth_payload(), true);
+  } else {
+    return _handle_authorizer(auth_more.auth_payload(), true);
+  }
 }
 
 CtPtr ProtocolV2::handle_client_ident(char *payload, uint32_t length) {

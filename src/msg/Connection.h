@@ -37,6 +37,7 @@
 // abstract Connection, for keeping per-connection state
 
 class Messenger;
+class AuthClient;
 
 struct Connection : public RefCountedObject {
   mutable Mutex lock;

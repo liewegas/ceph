@@ -183,3 +183,21 @@ bool Messenger::ms_deliver_verify_authorizer(
   }
   return false;
 }
+
+bool Messenger::ms_deliver_auth_request(
+  Connection *con, bool more, uint32_t auth_method,
+  const bufferlist& payload,
+  bufferlist *reply,
+  CryptoKey *session_key,
+  CryptoKey *connection_secret)
+{
+  for (auto dis : dispatchers) {
+    int r = dis->ms_handle_auth_request(
+      con, more, auth_method, payload,
+      reply, session_key, connection_secret);
+    if (r != -EOPNOTSUPP) {
+      return r;
+    }
+  }
+  return -EOPNOTSUPP;
+}

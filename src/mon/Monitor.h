@@ -890,6 +890,14 @@ public:
   MonCap mon_caps;
   bool ms_get_authorizer(int dest_type, AuthAuthorizer **authorizer) override;
   KeyStore *ms_get_auth1_authorizer_keystore();
+  int ms_handle_auth_request(
+    Connection *con,
+    bool more,
+    uint32_t auth_method,
+    const bufferlist &payload,
+    bufferlist *reply,
+    CryptoKey *session_key,
+    CryptoKey *connection_secret) override;
 public: // for AuthMonitor msgr1:
   int ms_handle_authentication(Connection *con) override;
 private:

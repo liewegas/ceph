@@ -48,6 +48,11 @@ public:
 
   virtual void reset() = 0;
   virtual void prepare_build_request() = 0;
+  virtual void build_initial_request(bufferlist *bl) const {
+    // this is empty for cephx and none
+  }
+  //virtual int handle_auth_reply_more(
+    //const bufferlist& bl, bufferlist *reply) = 0;
   virtual int build_request(bufferlist& bl) const = 0;
   virtual int handle_response(int ret, bufferlist::const_iterator& iter,
 			      CryptoKey *session_key,

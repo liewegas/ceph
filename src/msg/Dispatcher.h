@@ -203,6 +203,17 @@ public:
    * @{
    */
 
+  virtual int ms_handle_auth_request(
+    Connection *con,
+    bool more,
+    uint32_t auth_method,
+    const bufferlist &payload,
+    bufferlist *reply,
+    CryptoKey *session_key,
+    CryptoKey *connection_secret) {
+    return -EOPNOTSUPP;
+  }
+
   /**
    * handle successful authentication (msgr2)
    *
