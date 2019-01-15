@@ -5901,11 +5901,16 @@ int Monitor::ms_handle_auth_request(
   CryptoKey *session_key,
   CryptoKey *connection_secret)
 {
+  dout(10) << __func__ << " con " << con << (more ? " (more)":" (start)")
+	   << " method " << auth_method
+	   << " payload " << payload.length()
+	   << dendl;
   // NOTE: be careful, the Connection hasn't fully negotiated yet!
   RefCountedPtr priv;
   MonSession *s;
-  int r = 0;
+  int32_t r = 0;
   auto p = payload.begin();
+  bufferlist auth_reply;
   if (!more) {
     assert(!con->get_priv());
 
@@ -5936,6 +5941,8 @@ int Monitor::ms_handle_auth_request(
 	dout(1) << __func__ << " failed to assign global_id" << dendl;
 	return -EBUSY;
       }
+      dout(10) << __func__ << "  assigned global_id " << con->peer_global_id
+	       << dendl;
     }
 
     // set up partial session
@@ -5943,20 +5950,25 @@ int Monitor::ms_handle_auth_request(
     s->auth_handler = auth_handler;
     con->set_priv(RefCountedPtr{s, false});
 
-    r = s->auth_handler->start_session(entity_name, reply, &con->peer_caps_info);
+    r = s->auth_handler->start_session(entity_name, &auth_reply,
+				       &con->peer_caps_info);
   } else {
     priv = con->get_priv();
     s = static_cast<MonSession*>(priv.get());
-    r = s->auth_handler->handle_request(p, reply, &con->peer_global_id,
+    r = s->auth_handler->handle_request(p, &auth_reply, &con->peer_global_id,
 					&con->peer_caps_info);
   }
-  if (r > 0) {
-    if (!s->authenticated) {
-      ms_handle_authentication(con);
-    }
-    r = 0;
+  if (r > 0 &&
+      !s->authenticated) {
+    ms_handle_authentication(con);
   }
 
+  encode(con->peer_global_id, *reply);
+  reply->claim_append(auth_reply);
+
+  derr << __func__ << " reply:\n";
+  reply->hexdump(*_dout);
+  *_dout << dendl;
   return r;
 }
 

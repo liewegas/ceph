@@ -7,6 +7,7 @@
 
 class EntityName;
 class AuthMethodList;
+class CryptoKey;
 
 class AuthClient {
 public:
@@ -19,7 +20,11 @@ public:
     Connection *con,
     const bufferlist& bl,
     bufferlist *reply) = 0;
-
+  virtual void handle_auth_done(
+    Connection *con,
+    const bufferlist& bl,
+    CryptoKey *session_key,
+    CryptoKey *connection_key) = 0;
   virtual void handle_auth_bad_method(
     Connection *con,
     uint32_t old_auth_method,

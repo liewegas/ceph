@@ -906,7 +906,7 @@ else
         debug paxos = 20
         debug auth = 20
 	debug mgrc = 20
-        debug ms = 1'
+        debug ms = 30'
 fi
 
 if [ -n "$MON_ADDR" ]; then
@@ -976,7 +976,8 @@ fi
 
 if [ $CEPH_NUM_MON -gt 0 ]; then
     start_mon
-
+    exit 0
+    
     echo Populating config ...
     cat <<EOF | $CEPH_BIN/ceph -c $conf_fn config assimilate-conf -i -
 [global]
