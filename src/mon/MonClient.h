@@ -132,8 +132,15 @@ public:
     uint32_t want_keys,
     RotatingKeyRing* keyring);
   int handle_auth_reply_more(
+    int r,
     const bufferlist& bl,
     bufferlist *reply);
+  int handle_auth_done(
+    int r,
+    uint64_t global_id,
+    const bufferlist& bl,
+    CryptoKey *session_key,
+    CryptoKey *connection_secret);
   void handle_auth_bad_method(
     uint32_t old_auth_method,
     const std::vector<uint32_t>& allowed_methods);
@@ -239,7 +246,7 @@ private:
   bool _opened() const;
   bool _hunting() const;
   void _start_hunting();
-  void _finish_hunting();
+  void _finish_hunting(int auth_err);
   void _finish_auth(int auth_err);
   void _reopen_session(int rank = -1);
   MonConnection& _add_conn(unsigned rank, uint64_t global_id);
@@ -267,6 +274,11 @@ public:
     Connection *con,
     const bufferlist& bl,
     bufferlist *reply) override;
+  void handle_auth_done(
+    Connection *con,
+    const bufferlist& bl,
+    CryptoKey *session_key,
+    CryptoKey *connection_key) override;
   void handle_auth_bad_method(
     Connection *con,
     uint32_t old_auth_method,

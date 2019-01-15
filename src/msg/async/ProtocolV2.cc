@@ -1413,7 +1413,7 @@ CtPtr ProtocolV2::handle_read_frame_length_and_tag(char *buffer, int r) {
       lderr(cct) << __func__
                  << " received unknown tag=" << static_cast<uint32_t>(next_tag)
                  << dendl;
-      ceph_abort();
+      return _fault();
     }
   }
 
@@ -1429,6 +1429,12 @@ CtPtr ProtocolV2::handle_frame_payload(char *buffer, int r) {
     return _fault();
   }
 
+  ldout(cct, 30) << __func__ << "\n";
+  bufferlist bl;
+  bl.append(buffer, next_payload_len);
+  bl.hexdump(*_dout);
+  *_dout << dendl;
+  
   switch (next_tag) {
     case Tag::AUTH_REQUEST:
       return handle_auth_request(buffer, next_payload_len);
@@ -2042,6 +2048,7 @@ CtPtr ProtocolV2::send_auth_request(std::vector<uint32_t> &allowed_methods) {
   if (messenger->auth_client &&
       connection->peer_type == CEPH_ENTITY_TYPE_MON) {
     bufferlist bl;
+    mon_auth_mode = true;
     int r = messenger->auth_client->get_auth_request(
       connection, &auth_method, &bl);
     if (r < 0) {
@@ -2054,6 +2061,7 @@ CtPtr ProtocolV2::send_auth_request(std::vector<uint32_t> &allowed_methods) {
     AuthRequestFrame frame(auth_method, bl.length(), bl);
     return WRITE(frame.get_buffer(), "auth request", read_frame);
   }
+  mon_auth_mode = false;
 
   if (!authorizer) {
     authorizer =
@@ -2182,7 +2190,7 @@ CtPtr ProtocolV2::handle_auth_reply_more(char *payload, uint32_t length)
     authorizer->add_challenge(cct, auth_more.auth_payload());
     reply = authorizer->bl;
   }
-  AuthRequestMoreFrame more_reply(authorizer->bl.length(), authorizer->bl);
+  AuthRequestMoreFrame more_reply(reply.length(), reply);
   return WRITE(more_reply.get_buffer(), "auth request more", read_frame);
 }
 
@@ -2190,34 +2198,51 @@ CtPtr ProtocolV2::handle_auth_done(char *payload, uint32_t length) {
   ldout(cct, 20) << __func__ << " payload_len=" << length << dendl;
 
   AuthDoneFrame auth_done(payload, length);
-  CryptoKey connection_secret;
-  if (authorizer) {
-    auto iter = auth_done.auth_payload().cbegin();
-    if (!authorizer->verify_reply(iter, &connection_secret)) {
-      ldout(cct, 0) << __func__ << " failed verifying authorize reply" << dendl;
+
+  if (mon_auth_mode) {
+    if (!messenger->auth_client) {
       return _fault();
     }
-  }
-
-  ldout(cct, 1) << __func__ << " authentication done,"
-                << " flags=" << std::hex << auth_done.flags() << std::dec
-                << dendl;
-
-  if (authorizer) {
-    ldout(cct, 10) << __func__ << " setting up session_security with auth "
-                   << authorizer << dendl;
-    session_security.reset(get_auth_session_handler(
-        cct, authorizer->protocol, authorizer->session_key,
-	connection_secret,
-        CEPH_FEATURE_MSG_AUTH | CEPH_FEATURE_CEPHX_V2));
+    bufferlist bl;
+    bl.append(payload, length);
+    CryptoKey session_key, connection_secret;
+    messenger->auth_client->handle_auth_done(
+      connection, bl,
+      &session_key,
+      &connection_secret);
+    session_security.reset(
+      get_auth_session_handler(
+	cct, auth_method, session_key, connection_secret,
+	CEPH_FEATURE_MSG_AUTH | CEPH_FEATURE_CEPHX_V2));
     auth_flags = auth_done.flags();
   } else {
-    // We have no authorizer, so we shouldn't be applying security to messages
-    // in this connection.
-    ldout(cct, 10) << __func__ << " no authorizer, clearing session_security"
-                   << dendl;
-    session_security.reset();
-    auth_flags = 0;
+    if (authorizer) {
+      auto iter = auth_done.auth_payload().cbegin();
+      if (!authorizer->verify_reply(iter, &connection_secret)) {
+	ldout(cct, 0) << __func__ << " failed verifying authorizer reply"
+		      << dendl;
+	return _fault();
+      }
+
+      ldout(cct, 1) << __func__ << " authentication done,"
+		    << " flags=" << std::hex << auth_done.flags() << std::dec
+		    << dendl;
+      ldout(cct, 10) << __func__ << " setting up session_security with auth "
+		     << authorizer << dendl;
+      session_security.reset(
+	get_auth_session_handler(
+	  cct, authorizer->protocol, authorizer->session_key,
+	  connection_secret,
+	  CEPH_FEATURE_MSG_AUTH | CEPH_FEATURE_CEPHX_V2));
+      auth_flags = auth_done.flags();
+    } else {
+      // We have no authorizer, so we shouldn't be applying security to messages
+      // in this connection.
+      ldout(cct, 10) << __func__ << " no authorizer, clearing session_security"
+		     << dendl;
+      session_security.reset();
+      auth_flags = 0;
+    }
   }
 
   if (!cookie) {
@@ -2474,10 +2499,10 @@ CtPtr ProtocolV2::_handle_mon_auth(bufferlist& auth_payload, bool more)
   connection->lock.lock();
 #warning fixme check state
   if (r == 1) {
-    AuthDoneFrame auth_done(auth_flags, reply.length(), reply);
+    AuthDoneFrame auth_done(r, auth_flags, reply.length(), reply);
     return WRITE(auth_done.get_buffer(), "auth done", read_frame);
   } else if (r == 0) {
-    AuthReplyMoreFrame more(reply.length(), reply);
+    AuthReplyMoreFrame more((int32_t)r, reply);
     return WRITE(more.get_buffer(), "auth reply more", read_frame);
   } else if (r == -EBUSY) {
     // kick the client and maybe they'll come back later

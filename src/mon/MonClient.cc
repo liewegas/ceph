@@ -592,37 +592,7 @@ void MonClient::handle_auth(MAuthReply *m)
     pending_cons.clear();
   }
 
-  _finish_hunting();
-
-  if (!auth_err) {
-    last_rotating_renew_sent = utime_t();
-    while (!waiting_for_session.empty()) {
-      _send_mon_message(waiting_for_session.front());
-      waiting_for_session.pop_front();
-    }
-    _resend_mon_commands();
-    send_log(true);
-    if (active_con) {
-      std::swap(auth, active_con->get_auth());
-      if (global_id && global_id != active_con->get_global_id()) {
-	lderr(cct) << __func__ << " global_id changed from " << global_id
-		   << " to " << active_con->get_global_id() << dendl;
-      }
-      global_id = active_con->get_global_id();
-    }
-  }
-  _finish_auth(auth_err);
-  if (!auth_err) {
-    Context *cb = nullptr;
-    if (session_established_context) {
-      cb = session_established_context.release();
-    }
-    if (cb) {
-      monc_lock.Unlock();
-      cb->complete(0);
-      monc_lock.Lock();
-    }
-  }
+  _finish_hunting(auth_err);
 }
 
 void MonClient::_finish_auth(int auth_err)
@@ -785,7 +755,7 @@ void MonClient::_start_hunting()
   }
 }
 
-void MonClient::_finish_hunting()
+void MonClient::_finish_hunting(int auth_err)
 {
   ceph_assert(monc_lock.is_locked());
   // the pending conns have been cleaned.
@@ -801,6 +771,36 @@ void MonClient::_finish_hunting()
 
   had_a_connection = true;
   _un_backoff();
+
+  if (!auth_err) {
+    last_rotating_renew_sent = utime_t();
+    while (!waiting_for_session.empty()) {
+      _send_mon_message(waiting_for_session.front());
+      waiting_for_session.pop_front();
+    }
+    _resend_mon_commands();
+    send_log(true);
+    if (active_con) {
+      std::swap(auth, active_con->get_auth());
+      if (global_id && global_id != active_con->get_global_id()) {
+	lderr(cct) << __func__ << " global_id changed from " << global_id
+		   << " to " << active_con->get_global_id() << dendl;
+      }
+      global_id = active_con->get_global_id();
+    }
+  }
+  _finish_auth(auth_err);
+  if (!auth_err) {
+    Context *cb = nullptr;
+    if (session_established_context) {
+      cb = session_established_context.release();
+    }
+    if (cb) {
+      monc_lock.Unlock();
+      cb->complete(0);
+      monc_lock.Lock();
+    }
+  }  
 }
 
 void MonClient::tick()
@@ -1253,6 +1253,36 @@ int MonClient::handle_auth_reply_more(
   return -ENOENT;
 }
 
+void MonClient::handle_auth_done(
+  Connection *con,
+  const bufferlist& bl,
+  CryptoKey *session_key,
+  CryptoKey *connection_key)
+{
+  std::lock_guard l(monc_lock);
+  assert(con->get_peer_type() == CEPH_ENTITY_TYPE_MON);
+  for (auto& i : pending_cons) {
+    if (i.second.is_con(con)) {
+      int auth_err = i.second.handle_auth_done(bl, session_key,
+					       connection_key);
+      ldout(cct,10) << __func__ << " auth_err " << auth_err << dendl;
+      if (auth_err) {
+	pending_cons.erase(i.first);
+	if (!pending_cons.empty()) {
+	  return;
+	}
+      } else {
+	active_con.reset(new MonConnection(std::move(i.second)));
+	pending_cons.clear();
+	ceph_assert(active_con->have_session());
+      }
+
+      _finish_hunting(auth_err);
+      return;
+    }
+  }
+}
+
 void MonClient::handle_auth_bad_method(
   Connection *con,
   uint32_t old_auth_method,
@@ -1371,20 +1401,15 @@ int MonConnection::handle_auth_reply_more(
   const bufferlist& bl,
   bufferlist *reply)
 {
+  ldout(cct, 10) << __func__ << " payload " << bl.length() << dendl;
+  ldout(cct, 30) << __func__ << " got\n";
+  bl.hexdump(*_dout);
+  *_dout << dendl;
+
   auto p = bl.cbegin();
   int32_t result;
   decode(result, p);
-  uint64_t new_global_id;
-  decode(new_global_id, p);
-  if (new_global_id != global_id) {
-    // it's a new session
-    auth->reset();
-    global_id = new_global_id;
-    auth->set_global_id(global_id);
-    ldout(cct, 10) << "my global_id is " << global_id << dendl;
-  }
   ldout(cct, 10) << __func__ << " got " << result
-		 << " global_id " << new_global_id
 		 << ", payload_len " << (bl.length() - 12) << dendl;
   int r = auth->handle_response(result, p);
   if (r == -EAGAIN) {
@@ -1401,6 +1426,28 @@ int MonConnection::handle_auth_reply_more(
     ceph_abort(cct, "write me");
   }
   return r;
+}
+
+int MonConnection::handle_auth_done(
+  int result,
+  uint64_t new_global_id,
+  const bufferlist& bl,
+  CryptoKey *session_key,
+  CryptoKey *connection_secret)
+{
+  ldout(cct,10) << __func__ << " result " << result
+		<< " global_id " << new_global_id
+		<< " payload " << bl.length()
+		<< dendl;
+  auth->reset();
+  global_id = new_global_id;
+  auth->set_global_id(global_id);
+  int auth_err = auth->handle_response(result, p);
+  if (!auth_err) {
+#warning populate the session_key and connection_key
+    state = State::HAVE_SESSION;
+  }
+  return auth_err;
 }
 
 void MonConnection::handle_auth_bad_method(
