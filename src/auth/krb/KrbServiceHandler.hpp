@@ -40,11 +40,15 @@ class KrbServiceHandler : public AuthServiceHandler {
     int handle_request(bufferlist::const_iterator& indata, 
                        bufferlist *buff_list, 
                        uint64_t *global_id, 
-                       AuthCapsInfo *caps) override;
+                       AuthCapsInfo *caps,
+		       CryptoKey *session_key,
+		       CryptoKey *connection_secret) override;
 
     int start_session(const EntityName& name, 
                       bufferlist *buff_list, 
-                      AuthCapsInfo *caps) override;
+                      AuthCapsInfo *caps,
+		      CryptoKey *session_key,
+		      CryptoKey *connection_secret) override;
 
   private: 
     gss_buffer_desc m_gss_buffer_out; 
