@@ -470,6 +470,17 @@ bool AsyncConnection::update_socket_addr(uint32_t type) {
   return false;
 }
 
+
+CryptoKey *AsyncConnection::get_session_key_ptr()
+{
+  return protocol->get_session_key_ptr();
+}
+
+CryptoKey *AsyncConnection::get_connection_secret_ptr()
+{
+  return protocol->get_connection_secret_ptr();
+}
+
 void AsyncConnection::connect(const entity_addrvec_t &addrs, int type,
                               entity_addr_t &target) {
 

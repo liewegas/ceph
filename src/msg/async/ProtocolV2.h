@@ -209,6 +209,13 @@ public:
   virtual void write_event() override;
   virtual bool is_queued() override;
 
+  CryptoKey *get_session_key_ptr() override {
+    return &session_key;
+  }
+  CryptoKey *get_connection_secret_ptr() override {
+    return &connection_secret;
+  }
+
   void sign_payload(bufferlist &payload);
   void verify_signature(char *payload, uint32_t length);
   void encrypt_payload(bufferlist &payload);

@@ -101,6 +101,13 @@ public:
   virtual void read_event() = 0;
   virtual void write_event() = 0;
   virtual bool is_queued() = 0;
+
+  virtual CryptoKey *get_session_key_ptr() {
+    return nullptr;
+  }
+  virtual CryptoKey *get_connection_secret_ptr() {
+    return nullptr;
+  }
 };
 
 #endif /* _MSG_ASYNC_PROTOCOL_ */

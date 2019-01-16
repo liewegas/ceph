@@ -132,11 +132,14 @@ class AsyncConnection : public Connection {
     policy.lossy = true;
   }
 
- entity_addr_t get_peer_socket_addr() const override {
-   return target_addr;
- }
+  entity_addr_t get_peer_socket_addr() const override {
+    return target_addr;
+  }
 
- bool update_socket_addr(uint32_t type);
+  bool update_socket_addr(uint32_t type);
+
+  CryptoKey *get_session_key_ptr() override;
+  CryptoKey *get_connection_secret_ptr() override;
 
  private:
   enum {

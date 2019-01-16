@@ -102,6 +102,13 @@ public:
     return msgr;
   }
 
+  virtual CryptoKey *get_session_key_ptr() {
+    return nullptr;
+  }
+  virtual CryptoKey *get_connection_secret_ptr() {
+    return nullptr;
+  }
+
   /**
    * Queue the given Message to send out on the given Connection.
    * Success in this function does not guarantee Message delivery, only
