@@ -5968,6 +5968,30 @@ int Monitor::ms_handle_auth_request(
   return r;
 }
 
+void Monitor::ms_handle_accept(Connection *con)
+{
+  auto priv = con->get_priv();
+  MonSession *s = static_cast<MonSession*>(priv.get());
+  if (!s) {
+    // legacy protocol v1?
+    dout(10) << __func__ << " con " << con << " no session" << dendl;
+    return;
+  }
+
+  if (s->item.is_on_list()) {
+    dout(10) << __func__ << " con " << con << " session " << s
+	     << " already on list" << dendl;
+  } else {
+    dout(10) << __func__ << " con " << con << " session " << s
+	     << " registering session for "
+	     << con->get_peer_addrs() << dendl;
+    s->_ident(entity_name_t(con->get_peer_type(), con->get_peer_global_id()),
+	      con->get_peer_addrs());
+    std::lock_guard l(session_map_lock);
+    session_map.add_session(s);
+  }
+}
+
 int Monitor::ms_handle_authentication(Connection *con)
 {
   if (con->get_peer_type() == CEPH_ENTITY_TYPE_MON) {
