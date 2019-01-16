@@ -5910,7 +5910,6 @@ int Monitor::ms_handle_auth_request(
   MonSession *s;
   int32_t r = 0;
   auto p = payload.begin();
-  bufferlist auth_reply;
   if (!more) {
     assert(!con->get_priv());
 
@@ -5950,21 +5949,18 @@ int Monitor::ms_handle_auth_request(
     s->auth_handler = auth_handler;
     con->set_priv(RefCountedPtr{s, false});
 
-    r = s->auth_handler->start_session(entity_name, &auth_reply,
+    r = s->auth_handler->start_session(entity_name, reply,
 				       &con->peer_caps_info);
   } else {
     priv = con->get_priv();
     s = static_cast<MonSession*>(priv.get());
-    r = s->auth_handler->handle_request(p, &auth_reply, &con->peer_global_id,
+    r = s->auth_handler->handle_request(p, reply, &con->peer_global_id,
 					&con->peer_caps_info);
   }
   if (r > 0 &&
       !s->authenticated) {
     ms_handle_authentication(con);
   }
-
-  encode(con->peer_global_id, *reply);
-  reply->claim_append(auth_reply);
 
   derr << __func__ << " reply:\n";
   reply->hexdump(*_dout);

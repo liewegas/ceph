@@ -272,10 +272,13 @@ public:
     bufferlist *bl) override;
   int handle_auth_reply_more(
     Connection *con,
+    int result,
     const bufferlist& bl,
     bufferlist *reply) override;
   void handle_auth_done(
     Connection *con,
+    int result,
+    uint64_t global_id,
     const bufferlist& bl,
     CryptoKey *session_key,
     CryptoKey *connection_key) override;
