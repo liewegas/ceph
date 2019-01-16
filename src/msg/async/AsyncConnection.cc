@@ -471,6 +471,11 @@ bool AsyncConnection::update_socket_addr(uint32_t type) {
 }
 
 
+AuthConnectionMeta *AsyncConnection::get_auth_meta()
+{
+  return &protocol->auth_meta;
+}
+
 CryptoKey *AsyncConnection::get_session_key_ptr()
 {
   return protocol->get_session_key_ptr();

@@ -140,6 +140,7 @@ class AsyncConnection : public Connection {
 
   CryptoKey *get_session_key_ptr() override;
   CryptoKey *get_connection_secret_ptr() override;
+  AuthConnectionMeta *get_auth_meta() override;
 
  private:
   enum {

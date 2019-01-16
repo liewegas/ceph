@@ -78,6 +78,8 @@ protected:
   AsyncConnection *connection;
   AsyncMessenger *messenger;
   CephContext *cct;
+public:
+  AuthConnectionMeta auth_meta;
 
 public:
   Protocol(int type, AsyncConnection *connection);
@@ -102,6 +104,9 @@ public:
   virtual void write_event() = 0;
   virtual bool is_queued() = 0;
 
+  virtual AuthConnectionMeta *get_auth_meta() {
+    return nullptr;
+  }
   virtual CryptoKey *get_session_key_ptr() {
     return nullptr;
   }

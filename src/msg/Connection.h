@@ -109,6 +109,9 @@ public:
   virtual CryptoKey *get_connection_secret_ptr() {
     return nullptr;
   }
+  virtual AuthConnectionMeta *get_auth_meta() {
+    return nullptr;
+  }
 
   /**
    * Queue the given Message to send out on the given Connection.
