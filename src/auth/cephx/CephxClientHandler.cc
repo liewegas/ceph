@@ -63,6 +63,9 @@ int CephxClientHandler::build_request(bufferlist& bl) const
 
     req.old_ticket = ticket_handler->ticket;
 
+    // for nautilus+ servers: request other keys at the same time
+    req.other_keys = need;
+
     if (req.old_ticket.blob.length()) {
       ldout(cct, 20) << "old ticket len=" << req.old_ticket.blob.length() << dendl;
     }
@@ -143,6 +146,20 @@ int CephxClientHandler::handle_response(int ret, bufferlist::const_iterator& ind
 	return -EPERM;
       }
       ldout(cct, 10) << " want=" << want << " need=" << need << " have=" << have << dendl;
+      if (!indata.end()) {
+	bufferlist extra;
+	decode(extra, indata);
+	ldout(cct, 10) << " got extra tickets, " << extra.length() << dendl;
+	auto p = extra.cbegin();
+	CephXTicketHandler& ticket_handler =
+	  tickets.get_handler(CEPH_ENTITY_TYPE_AUTH);
+        if (!tickets.verify_service_ticket_reply(
+	      ticket_handler.session_key, p)) {
+	  ldout(cct, 0) << "could not verify extra service_tickets" << dendl;
+	} else {
+	  ldout(cct, 10) << " got extra service_tickets" << dendl;
+	}
+      }
       validate_tickets();
       if (_need_tickets())
 	ret = -EAGAIN;
