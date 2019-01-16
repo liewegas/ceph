@@ -80,7 +80,7 @@ private:
   std::shared_ptr<AuthSessionHandler> session_security;
 
   // client
-  AuthAuthorizer *authorizer;
+  std::unique_ptr<AuthAuthorizer> authorizer;
   bool got_bad_auth;
   uint32_t got_bad_method;
 
