@@ -5923,12 +5923,14 @@ int Monitor::ms_handle_auth_request(
     con->set_priv(RefCountedPtr{s, false});
 
     r = s->auth_handler->start_session(entity_name, reply,
-				       &con->peer_caps_info);
+				       &con->peer_caps_info,
+				       session_key, connection_secret);
   } else {
     priv = con->get_priv();
     s = static_cast<MonSession*>(priv.get());
     r = s->auth_handler->handle_request(p, reply, &con->peer_global_id,
-					&con->peer_caps_info);
+					&con->peer_caps_info,
+					session_key, connection_secret);
   }
   if (r > 0 &&
       !s->authenticated) {
