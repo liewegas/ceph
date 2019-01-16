@@ -901,6 +901,7 @@ public:
 public: // for AuthMonitor msgr1:
   int ms_handle_authentication(Connection *con) override;
 private:
+  void ms_handle_accept(Connection *con) override;  
   bool ms_handle_reset(Connection *con) override;
   void ms_handle_remote_reset(Connection *con) override {}
   bool ms_handle_refused(Connection *con) override;
