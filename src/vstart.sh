@@ -976,7 +976,6 @@ fi
 
 if [ $CEPH_NUM_MON -gt 0 ]; then
     start_mon
-    exit 0
     
     echo Populating config ...
     cat <<EOF | $CEPH_BIN/ceph -c $conf_fn config assimilate-conf -i -
