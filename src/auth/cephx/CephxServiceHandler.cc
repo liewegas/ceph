@@ -151,6 +151,33 @@ int CephxServiceHandler::handle_request(
           ldout(cct,0) << "mon caps null for " << entity_name << dendl;
           ret = -EACCES;
         }
+
+	if (req.other_keys) {
+	  // nautilus+ client: provite all of the other tickets at the same time
+	  bufferlist extra;
+	  vector<CephXSessionAuthInfo> info_vec;
+	  for (uint32_t service_id = 1; service_id <= req.other_keys;
+	       service_id <<= 1) {
+	    if (req.other_keys & service_id) {
+	      ldout(cct, 10) << " adding key for service "
+			     << ceph_entity_type_name(service_id) << dendl;
+	      CephXSessionAuthInfo info;
+	      key_server->build_session_auth_info(
+		service_id,
+		info.ticket,
+		info);
+	      info.validity += cct->_conf->auth_service_ticket_ttl;
+	      info_vec.push_back(info);
+	    }
+	  }
+	  if (!info_vec.empty()) {
+	    CryptoKey no_key;
+	    cephx_build_service_ticket_reply(
+	      cct, session_key, info_vec, false, no_key, extra);
+	    encode(extra, *result_bl);
+	  }
+	}
+
 	// caller should try to finish authentication
 	ret = 1;
       }

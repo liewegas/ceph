@@ -142,8 +142,9 @@ bool cephx_build_service_ticket_reply(CephContext *cct,
  * PRINCIPAL: verify our attempt to authenticate succeeded.  fill out
  * this ServiceTicket with the result.
  */
-bool CephXTicketHandler::verify_service_ticket_reply(CryptoKey& secret,
-						     bufferlist::const_iterator& indata)
+bool CephXTicketHandler::verify_service_ticket_reply(
+  CryptoKey& secret,
+  bufferlist::const_iterator& indata)
 {
   __u8 service_ticket_v;
   decode(service_ticket_v, indata);
@@ -281,9 +282,6 @@ bool CephXTicketManager::verify_service_ticket_reply(CryptoKey& secret,
     }
     handler.service_id = type;
   }
-
-  if (!indata.end())
-    return false;
 
   return true;
 }
