@@ -28,6 +28,13 @@
 #undef dout_prefix
 #define dout_prefix *_dout << "cephx client: "
 
+void CephxClientHandler::reset()
+{
+  ldout(cct,10) << __func__ << dendl;
+  starting = true;
+  server_challenge = 0;
+}
+
 int CephxClientHandler::build_request(bufferlist& bl) const
 {
   ldout(cct, 10) << "build_request" << dendl;
@@ -114,7 +121,7 @@ int CephxClientHandler::handle_response(
   CryptoKey *session_key,
   CryptoKey *connection_secret)
 {
-  ldout(cct, 10) << "handle_response ret = " << ret << dendl;
+  ldout(cct, 10) << this << " handle_response ret = " << ret << dendl;
   
   if (ret < 0)
     return ret; // hrm!

@@ -1240,6 +1240,7 @@ int MonClient::get_auth_request(
 
 int MonClient::handle_auth_reply_more(
   Connection *con,
+  int result,
   const bufferlist& bl,
   bufferlist *reply)
 {
@@ -1247,7 +1248,7 @@ int MonClient::handle_auth_reply_more(
   assert(con->get_peer_type() == CEPH_ENTITY_TYPE_MON);
   for (auto& i : pending_cons) {
     if (i.second.is_con(con)) {
-      return i.second.handle_auth_reply_more(bl, reply);
+      return i.second.handle_auth_reply_more(result, bl, reply);
     }
   }
   return -ENOENT;
@@ -1255,6 +1256,8 @@ int MonClient::handle_auth_reply_more(
 
 void MonClient::handle_auth_done(
   Connection *con,
+  int result,
+  uint64_t global_id,
   const bufferlist& bl,
   CryptoKey *session_key,
   CryptoKey *connection_key)
@@ -1263,8 +1266,9 @@ void MonClient::handle_auth_done(
   assert(con->get_peer_type() == CEPH_ENTITY_TYPE_MON);
   for (auto& i : pending_cons) {
     if (i.second.is_con(con)) {
-      int auth_err = i.second.handle_auth_done(bl, session_key,
-					       connection_key);
+      int auth_err = i.second.handle_auth_done(
+	result, global_id, bl,
+	session_key, connection_key);
       ldout(cct,10) << __func__ << " auth_err " << auth_err << dendl;
       if (auth_err) {
 	pending_cons.erase(i.first);
@@ -1398,6 +1402,7 @@ int MonConnection::get_auth_request(
 }
 
 int MonConnection::handle_auth_reply_more(
+  int result,
   const bufferlist& bl,
   bufferlist *reply)
 {
@@ -1407,10 +1412,8 @@ int MonConnection::handle_auth_reply_more(
   *_dout << dendl;
 
   auto p = bl.cbegin();
-  int32_t result;
-  decode(result, p);
   ldout(cct, 10) << __func__ << " got " << result
-		 << ", payload_len " << (bl.length() - 12) << dendl;
+		 << ", payload_len " << bl.length() << dendl;
   int r = auth->handle_response(result, p);
   if (r == -EAGAIN) {
     auth->prepare_build_request();
@@ -1439,11 +1442,11 @@ int MonConnection::handle_auth_done(
 		<< " global_id " << new_global_id
 		<< " payload " << bl.length()
 		<< dendl;
-  auth->reset();
   global_id = new_global_id;
   auth->set_global_id(global_id);
+  auto p = bl.begin();
   int auth_err = auth->handle_response(result, p);
-  if (!auth_err) {
+  if (auth_err >= 0) {
 #warning populate the session_key and connection_key
     state = State::HAVE_SESSION;
   }
@@ -1523,6 +1526,7 @@ int MonConnection::_init_auth(
   uint32_t want_keys,
   RotatingKeyRing* keyring )
 {
+  ldout(cct,10) << __func__ << " method " << method << dendl;
   auth.reset(
     AuthClientHandler::create(cct, method, keyring));
   if (!auth) {

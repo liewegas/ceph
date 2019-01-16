@@ -18,10 +18,13 @@ public:
     uint32_t *method, bufferlist *out) = 0;
   virtual int handle_auth_reply_more(
     Connection *con,
+    int result,
     const bufferlist& bl,
     bufferlist *reply) = 0;
   virtual void handle_auth_done(
     Connection *con,
+    int result,
+    uint64_t global_id,
     const bufferlist& bl,
     CryptoKey *session_key,
     CryptoKey *connection_key) = 0;
