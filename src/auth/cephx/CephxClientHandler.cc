@@ -158,17 +158,38 @@ int CephxClientHandler::handle_response(
       }
       ldout(cct, 10) << " want=" << want << " need=" << need << " have=" << have << dendl;
       if (!indata.end()) {
-	bufferlist extra;
-	decode(extra, indata);
-	ldout(cct, 10) << " got extra tickets, " << extra.length() << dendl;
-	auto p = extra.cbegin();
-	CephXTicketHandler& ticket_handler =
-	  tickets.get_handler(CEPH_ENTITY_TYPE_AUTH);
-        if (!tickets.verify_service_ticket_reply(
-	      ticket_handler.session_key, p)) {
-	  ldout(cct, 0) << "could not verify extra service_tickets" << dendl;
-	} else {
-	  ldout(cct, 10) << " got extra service_tickets" << dendl;
+	bufferlist cbl, extra_tickets;
+	decode(cbl, indata);
+	decode(extra_tickets, indata);
+	ldout(cct, 10) << " got connection bl " << cbl.length()
+		       << " and extra tickets " << extra_tickets.length()
+		       << dendl;
+	if (session_key && connection_secret) {
+	  CephXTicketHandler& ticket_handler =
+	    tickets.get_handler(CEPH_ENTITY_TYPE_AUTH);
+	  if (session_key) {
+	    *session_key = ticket_handler.session_key;
+	  }
+	  if (cbl.length() && connection_secret) {
+	    auto p = cbl.cbegin();
+	    string err;
+	    if (decode_decrypt(cct, *connection_secret, *session_key, p,
+			       err) < 0) {
+	      lderr(cct) << __func__ << " failed to decrypt connection_secret"
+			 << dendl;
+	    } else {
+	      ldout(cct, 10) << " got connection_secret " << dendl;
+	    }
+	  }
+	  if (extra_tickets.length())  {
+	    auto p = extra_tickets.cbegin();
+	    if (!tickets.verify_service_ticket_reply(
+		  *session_key, p)) {
+	      lderr(cct) << "could not verify extra service_tickets" << dendl;
+	    } else {
+	      ldout(cct, 10) << " got extra service_tickets" << dendl;
+	    }
+	  }
 	}
       }
       validate_tickets();
@@ -176,7 +197,7 @@ int CephxClientHandler::handle_response(
 	ret = -EAGAIN;
       else
 	ret = 0;
-    }
+      }
     break;
 
   case CEPHX_GET_PRINCIPAL_SESSION_KEY:
