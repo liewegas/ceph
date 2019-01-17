@@ -1418,8 +1418,9 @@ int MonConnection::handle_auth_reply_more(
   auto p = bl.cbegin();
   ldout(cct, 10) << __func__ << " got " << result
 		 << ", payload_len " << bl.length() << dendl;
-  int r = auth->handle_response(result, p, con->get_session_key_ptr(),
-				con->get_connection_secret_ptr());
+  auto auth_meta = con->get_auth_meta();
+  int r = auth->handle_response(result, p, &auth_meta->session_key,
+				&auth_meta->connection_secret);
   if (r == -EAGAIN) {
     auth->prepare_build_request();
     auth->build_request(*reply);
@@ -1450,8 +1451,9 @@ int MonConnection::handle_auth_done(
   global_id = new_global_id;
   auth->set_global_id(global_id);
   auto p = bl.begin();
-  int auth_err = auth->handle_response(result, p, con->get_session_key_ptr(),
-				       con->get_connection_secret_ptr());
+  auto auth_meta = con->get_auth_meta();
+  int auth_err = auth->handle_response(result, p, &auth_meta->session_key,
+				       &auth_meta->connection_secret);
   if (auth_err >= 0) {
     state = State::HAVE_SESSION;
   }
