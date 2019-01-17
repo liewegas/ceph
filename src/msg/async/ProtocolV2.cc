@@ -2203,7 +2203,8 @@ CtPtr ProtocolV2::handle_auth_done(char *payload, uint32_t length) {
   } else {
     if (auth_meta.authorizer) {
       auto iter = auth_done.auth_payload().cbegin();
-      if (!auth_meta.authorizer->verify_reply(iter, &connection_secret)) {
+      if (!auth_meta.authorizer->verify_reply(iter,
+					      &auth_meta.connection_secret)) {
 	ldout(cct, 0) << __func__ << " failed verifying authorizer reply"
 		      << dendl;
 	return _fault();
@@ -2215,7 +2216,7 @@ CtPtr ProtocolV2::handle_auth_done(char *payload, uint32_t length) {
       session_security.reset(
 	get_auth_session_handler(
 	  cct, auth_meta.authorizer->protocol, auth_meta.authorizer->session_key,
-	  connection_secret,
+	  auth_meta.connection_secret,
 	  CEPH_FEATURE_MSG_AUTH | CEPH_FEATURE_CEPHX_V2));
     } else {
       // We have no authorizer, so we shouldn't be applying security to messages
