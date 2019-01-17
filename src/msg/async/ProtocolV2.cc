@@ -2503,7 +2503,14 @@ CtPtr ProtocolV2::_handle_mon_auth(bufferlist& auth_payload, bool more)
     auth_payload,
     &reply, &session_key, &connection_secret);
   connection->lock.lock();
-#warning fixme check state
+  if (state != ACCEPTING) {
+    ldout(cct, 1) << __func__
+		  << " state changed while accept, it must be mark_down"
+		  << dendl;
+    ceph_assert(state == CLOSED);
+    return _fault();
+  }
+
   if (r == 1) {
     AuthDoneFrame auth_done(0, connection->peer_global_id, reply);
     return WRITE(auth_done.get_buffer(), "auth done", read_frame);

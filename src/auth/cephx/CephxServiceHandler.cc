@@ -119,6 +119,8 @@ int CephxServiceHandler::handle_request(
         should_enc_ticket = true;
       }
 
+      ldout(cct,10) << __func__ << " auth ticket global_id " << *global_id
+		    << dendl;
       info.ticket.init_timestamps(ceph_clock_now(),
 				  cct->_conf->auth_mon_ticket_ttl);
       info.ticket.name = entity_name;
@@ -209,7 +211,6 @@ int CephxServiceHandler::handle_request(
       // note: no challenge here.
       if (!cephx_verify_authorizer(
 	    cct, key_server, indata, auth_ticket_info, nullptr,
-#warning FIXME mon connection needs connection_secret too
 	    nullptr,
 	    tmp_bl)) {
         ret = -EPERM;

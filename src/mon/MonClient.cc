@@ -1295,7 +1295,9 @@ void MonClient::handle_auth_bad_method(
   const std::vector<uint32_t>& allowed_methods)
 {
   std::lock_guard l(monc_lock);
-  assert(con->get_peer_type() == CEPH_ENTITY_TYPE_MON);
+  if (con->get_peer_type() != CEPH_ENTITY_TYPE_MON) {
+    return;
+  }
   for (auto& i : pending_cons) {
     if (i.second.is_con(con)) {
       return i.second.handle_auth_bad_method(old_auth_method, allowed_methods);
@@ -1389,7 +1391,7 @@ int MonConnection::get_auth_request(
   if (auth) {
     auth.reset();
   }
-  int r = _init_auth(*method, entity_name, want_keys, keyring);
+  int r = _init_auth(*method, entity_name, want_keys, keyring, true);
   ceph_assert(r == 0);
 
   // initial requset includes some boilerplate...
@@ -1512,7 +1514,7 @@ int MonConnection::_negotiate(MAuthReply *m,
     return 0;
   }
 
-  int r = _init_auth(m->protocol, entity_name, want_keys, keyring);
+  int r = _init_auth(m->protocol, entity_name, want_keys, keyring, false);
   if (r == -ENOTSUP) {
     if (m->result == -ENOTSUP) {
       ldout(cct, 10) << "none of our auth protocols are supported by the server"
@@ -1527,7 +1529,8 @@ int MonConnection::_init_auth(
   uint32_t method,
   const EntityName& entity_name,
   uint32_t want_keys,
-  RotatingKeyRing* keyring )
+  RotatingKeyRing* keyring,
+  bool msgr2)
 {
   ldout(cct,10) << __func__ << " method " << method << dendl;
   auth.reset(
@@ -1541,7 +1544,8 @@ int MonConnection::_init_auth(
   // feature.  otherwise it will give us an auth error.  note that
   // we have to use the FEATUREMASK because pre-jewel the kraken
   // feature bit was used for something else.
-  if ((want_keys & CEPH_ENTITY_TYPE_MGR) &&
+  if (!msgr2 &&
+      (want_keys & CEPH_ENTITY_TYPE_MGR) &&
       !(con->has_features(CEPH_FEATUREMASK_SERVER_KRAKEN))) {
     ldout(cct, 1) << __func__
 		  << " not requesting MGR keys from pre-kraken monitor"

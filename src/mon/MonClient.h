@@ -157,7 +157,8 @@ private:
   int _init_auth(uint32_t method,
 		 const EntityName& entity_name,
 		 uint32_t want_keys,
-		 RotatingKeyRing* keyring);
+		 RotatingKeyRing* keyring,
+		 bool msgr2);
 
 private:
   CephContext *cct;
