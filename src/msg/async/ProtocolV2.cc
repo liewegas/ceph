@@ -2118,20 +2118,24 @@ CtPtr ProtocolV2::handle_auth_bad_method(char *payload, uint32_t length) {
 
   if (messenger->auth_client) {
     connection->lock.unlock();
-    messenger->auth_client->handle_auth_bad_method(
+    int r = messenger->auth_client->handle_auth_bad_method(
       connection, auth_meta.auth_method, bad_method.allowed_methods());
     connection->lock.lock();
     if (state != State::CONNECTING) {
       return _fault();
     }
+    if (r < 0) {
+      return _fault();
+    }
+  } else {
+    // fIXME: remove this later....
+    if (got_bad_method == bad_method.allowed_methods().size()) {
+      ldout(cct, 1) << __func__ << " too many attempts, closing connection"
+		    << dendl;
+      return _fault();
+    }
+    got_bad_method++;
   }
-
-  if (got_bad_method == bad_method.allowed_methods().size()) {
-    ldout(cct, 1) << __func__ << " too many attempts, closing connection"
-                  << dendl;
-    return _fault();
-  }
-  got_bad_method++;
 
   return send_auth_request(bad_method.allowed_methods());
 }

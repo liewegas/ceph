@@ -1466,6 +1466,8 @@ void MonConnection::handle_auth_bad_method(
 {
   ldout(cct,10) << __func__ << " old_auth_method " << old_auth_method
 		<< " allowed_methods " << allowed_methods << dendl;
+  con->get_auth_meta()->allowed_methods = allowed_methods;
+
   auto p = std::find(auth_supported.begin(), auth_supported.end(),
 		     old_auth_method);
   assert(p != auth_supported.end());
