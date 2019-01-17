@@ -446,7 +446,6 @@ ProtocolV2::ProtocolV2(AsyncConnection *connection)
       temp_buffer(nullptr),
       state(NONE),
       peer_required_features(0),
-      authorizer(nullptr),
       got_bad_method(0),
       auth_flags(0),
       cookie(0),
@@ -464,19 +463,12 @@ ProtocolV2::ProtocolV2(AsyncConnection *connection)
 
 ProtocolV2::~ProtocolV2() {
   delete[] temp_buffer;
-  if (authorizer) {
-    delete authorizer;
-  }
 }
 
 void ProtocolV2::connect() {
   state = START_CONNECT;
 
   got_bad_method = 0;
-  if (authorizer) {
-    delete authorizer;
-    authorizer = nullptr;
-  }
 }
 
 void ProtocolV2::accept() { state = START_ACCEPT; }
@@ -591,10 +583,7 @@ uint64_t ProtocolV2::discard_requeued_up_to(uint64_t out_seq, uint64_t seq) {
 
 void ProtocolV2::reset_recv_state() {
   if (state == CONNECTING) {
-    if (authorizer) {
-      delete authorizer;
-    }
-    authorizer = nullptr;
+    authorizer.reset(nullptr);
     got_bad_method = 0;
   }
 
@@ -2070,10 +2059,8 @@ CtPtr ProtocolV2::send_auth_request(std::vector<uint32_t> &allowed_methods) {
   }
   mon_auth_mode = false;
 
-  if (!authorizer) {
-    authorizer =
-        messenger->ms_deliver_get_authorizer(connection->peer_type);
-  }
+  authorizer.reset(
+    messenger->ms_deliver_get_authorizer(connection->peer_type));
 
   auth_method = CEPH_AUTH_NONE;
   if (!authorizer) {
@@ -2224,7 +2211,7 @@ CtPtr ProtocolV2::handle_auth_done(char *payload, uint32_t length) {
 
       ldout(cct, 1) << __func__ << " authentication done," << dendl;
       ldout(cct, 10) << __func__ << " setting up session_security with auth "
-		     << authorizer << dendl;
+		     << authorizer.get() << dendl;
       session_security.reset(
 	get_auth_session_handler(
 	  cct, authorizer->protocol, authorizer->session_key,
