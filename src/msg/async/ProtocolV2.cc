@@ -2045,8 +2045,13 @@ CtPtr ProtocolV2::send_auth_request(std::vector<uint32_t> &allowed_methods) {
       connection->peer_type == CEPH_ENTITY_TYPE_MON) {
     bufferlist bl;
     mon_auth_mode = true;
+    connection->lock.unlock();
     int r = messenger->auth_client->get_auth_request(
       connection, &auth_meta.auth_method, &bl);
+    connection->lock.lock();
+    if (state != State::CONNECTING) {
+      return _fault();
+    }
     if (r < 0) {
       ldout(cct, 0) << __func__ << " get_initial_auth_request returned " << r
 		    << dendl;
@@ -2112,8 +2117,13 @@ CtPtr ProtocolV2::handle_auth_bad_method(char *payload, uint32_t length) {
                 << dendl;
 
   if (messenger->auth_client) {
+    connection->lock.unlock();
     messenger->auth_client->handle_auth_bad_method(
       connection, auth_meta.auth_method, bad_method.allowed_methods());
+    connection->lock.lock();
+    if (state != State::CONNECTING) {
+      return _fault();
+    }
   }
 
   if (got_bad_method == bad_method.allowed_methods().size()) {
@@ -2153,9 +2163,13 @@ CtPtr ProtocolV2::handle_auth_reply_more(char *payload, uint32_t length)
     }
     bufferlist bl;
     bl.append(payload, length);
+    connection->lock.unlock();
     int r = messenger->auth_client->handle_auth_reply_more(
       connection, auth_more.result(), auth_more.auth_payload(),
       &reply);
+    if (state != State::CONNECTING) {
+      return _fault();
+    }
     if (r < 0) {
       lderr(cct) << __func__ << " auth_client handle_auth_reply_more returned "
 		 << r << dendl;
@@ -2187,6 +2201,7 @@ CtPtr ProtocolV2::handle_auth_done(char *payload, uint32_t length) {
     if (!messenger->auth_client) {
       return _fault();
     }
+    connection->lock.unlock();
     messenger->auth_client->handle_auth_done(
       connection,
       auth_done.result(),
@@ -2194,6 +2209,10 @@ CtPtr ProtocolV2::handle_auth_done(char *payload, uint32_t length) {
       auth_done.auth_payload(),
       &auth_meta.session_key,
       &auth_meta.connection_secret);
+    connection->lock.lock();
+    if (state != State::CONNECTING) {
+      return _fault();
+    }
     session_security.reset(
       get_auth_session_handler(
 	cct, auth_meta.auth_method, auth_meta.session_key,

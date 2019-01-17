@@ -12,6 +12,7 @@ private:
     NONE,
     START_CONNECT,
     CONNECTING,
+#warning TODO: add and use AUTHENTICATING state
     START_ACCEPT,
     ACCEPTING,
     ACCEPTING_SESSION,
