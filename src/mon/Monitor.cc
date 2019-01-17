@@ -5987,7 +5987,7 @@ void Monitor::ms_handle_accept(Connection *con)
     dout(10) << __func__ << " con " << con << " session " << s
 	     << " registering session for "
 	     << con->get_peer_addrs() << dendl;
-    s->_ident(entity_name_t(con->get_peer_type(), con->get_peer_global_id()),
+    s->_ident(entity_name_t(con->get_peer_type(), con->get_peer_id()),
 	      con->get_peer_addrs());
     std::lock_guard l(session_map_lock);
     session_map.add_session(s);

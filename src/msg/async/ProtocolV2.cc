@@ -2655,6 +2655,7 @@ CtPtr ProtocolV2::handle_client_ident(char *payload, uint32_t length) {
     connection->target_addr = peer_addr;
   }
   peer_name = entity_name_t(connection->get_peer_type(), client_ident.gid());
+  connection->set_peer_id(client_ident.gid());
 
   uint64_t feat_missing = connection->policy.features_required &
                           ~(uint64_t)client_ident.supported_features();
