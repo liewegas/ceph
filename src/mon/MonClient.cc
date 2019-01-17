@@ -1264,6 +1264,7 @@ void MonClient::handle_auth_done(
   CryptoKey *session_key,
   CryptoKey *connection_key)
 {
+  std::map<entity_addrvec_t, MonConnection> con_discard;
   std::lock_guard l(monc_lock);
   assert(con->get_peer_type() == CEPH_ENTITY_TYPE_MON);
   for (auto& i : pending_cons) {
@@ -1273,13 +1274,15 @@ void MonClient::handle_auth_done(
 	session_key, connection_key);
       ldout(cct,10) << __func__ << " auth_err " << auth_err << dendl;
       if (auth_err) {
+	con_discard.emplace(i.first, std::move(i.second));
 	pending_cons.erase(i.first);
 	if (!pending_cons.empty()) {
 	  return;
 	}
       } else {
 	active_con.reset(new MonConnection(std::move(i.second)));
-	pending_cons.clear();
+	// clear these MonConnections after monc_lock is dropped
+	con_discard.swap(pending_cons);
 	ceph_assert(active_con->have_session());
       }
 
