@@ -74,17 +74,12 @@ private:
   char *temp_buffer;
   State state;
   uint64_t peer_required_features;
-  uint32_t auth_method = CEPH_AUTH_UNKNOWN;
-  CryptoKey session_key;
-  CryptoKey connection_secret;
   std::shared_ptr<AuthSessionHandler> session_security;
 
   // client
-  std::unique_ptr<AuthAuthorizer> authorizer;
   uint32_t got_bad_method;
 
   // server
-  std::unique_ptr<AuthAuthorizerChallenge> authorizer_challenge;
   bool mon_auth_mode = false;
 
   uint64_t auth_flags;
