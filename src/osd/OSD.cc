@@ -2923,6 +2923,13 @@ int OSD::init()
   if (r < 0)
     goto out;
 
+  cluster_messenger->set_auth_client(monc);
+  objecter_messenger->set_auth_client(monc);
+  hb_front_client_messenger->set_auth_client(monc);
+  hb_back_client_messenger->set_auth_client(monc);
+  hb_front_server_messenger->set_auth_client(monc);
+  hb_back_server_messenger->set_auth_client(monc);
+  
   mgrc.set_pgstats_cb([this](){ return collect_pg_stats(); });
   mgrc.set_perf_metric_query_cb(
     [this](const std::map<OSDPerfMetricQuery, OSDPerfMetricLimits> &queries) {

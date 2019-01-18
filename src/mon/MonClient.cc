@@ -1355,6 +1355,8 @@ int MonClient::handle_auth_bad_method(
 }
 
 AuthAuthorizer* MonClient::build_authorizer(int service_id) const {
+#warning temporary, to make sure i got all the authorizer users
+  ceph_abort();
   std::lock_guard l(monc_lock);
   if (auth) {
     return auth->build_authorizer(service_id);

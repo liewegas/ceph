@@ -120,6 +120,7 @@ MonCommand mon_commands[] = {
 #undef COMMAND_WITH_FLAG
 
 
+
 void C_MonContext::finish(int r) {
   if (mon->is_shutdown())
     return;
@@ -872,11 +873,13 @@ int Monitor::init()
 
   // i'm ready!
   messenger->add_dispatcher_tail(this);
+  messenger->set_auth_client(this);
 
   mgr_client.init();
   mgr_messenger->add_dispatcher_tail(&mgr_client);
   mgr_messenger->add_dispatcher_tail(this);  // for auth ms_* calls
-
+  mgr_messenger->set_auth_client(this);
+  
   bootstrap();
   // add features of myself into feature_map
   session_map.feature_map.add_mon(con_self->get_features());
@@ -5797,6 +5800,66 @@ void Monitor::extract_save_mon_key(KeyRing& keyring)
     write_default_keyring(bl);
     keyring.remove(mon_name);
   }
+}
+
+// AuthClient methods -- for mon <-> mon communication
+int Monitor::get_auth_request(
+  Connection *con,
+  uint32_t *method, bufferlist *out)
+{
+  AuthAuthorizer *auth;
+  if (!ms_get_authorizer(con->get_peer_type(), &auth)) {
+    return -EPERM;
+  }
+  auto auth_meta = con->get_auth_meta();
+  auth_meta->authorizer.reset(auth);
+  *method = auth->protocol;
+  *out = auth->bl;
+  return 0;
+}
+
+int Monitor::handle_auth_reply_more(
+  Connection *con,
+  int result,
+  const bufferlist& bl,
+  bufferlist *reply)
+{
+  auto auth_meta = con->get_auth_meta();
+  if (!auth_meta->authorizer) {
+    derr << __func__ << " no authorizer?" << dendl;
+    return -EPERM;
+  }
+  auth_meta->authorizer->add_challenge(cct, bl);
+  *reply = auth_meta->authorizer->bl;
+  return 0;
+}
+
+int Monitor::handle_auth_done(
+  Connection *con,
+  int result,
+  uint64_t global_id,
+  const bufferlist& bl,
+  CryptoKey *session_key,
+  CryptoKey *connection_key)
+{
+  // verify authorizer reply
+  auto auth_meta = con->get_auth_meta();
+  auto p = bl.begin();
+  if (!auth_meta->authorizer->verify_reply(p, &auth_meta->connection_secret)) {
+    dout(0) << __func__ << " failed verifying authorizer reply" << dendl;
+    return -EPERM;
+  }
+  auth_meta->session_key = auth_meta->authorizer->session_key;
+  return 0;
+}
+
+int Monitor::handle_auth_bad_method(
+  Connection *con,
+  uint32_t old_auth_method,
+  const std::vector<uint32_t>& allowed_methods)
+{
+  derr << __func__ << " hmm, they didn't like " << old_auth_method << dendl;
+  return -EPERM;
 }
 
 bool Monitor::ms_get_authorizer(int service_id, AuthAuthorizer **authorizer)

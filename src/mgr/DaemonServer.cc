@@ -111,6 +111,8 @@ int DaemonServer::init(uint64_t gid, entity_addrvec_t client_addrs)
 			   getpid(), 0);
   msgr->set_default_policy(Messenger::Policy::stateless_server(0));
 
+  msgr->set_auth_client(monc);
+  
   // throttle clients
   msgr->set_policy_throttlers(entity_name_t::TYPE_CLIENT,
 			      client_byte_throttler.get(),

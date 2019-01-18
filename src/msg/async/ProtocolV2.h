@@ -77,9 +77,6 @@ private:
   uint64_t peer_required_features;
   std::shared_ptr<AuthSessionHandler> session_security;
 
-  // client
-  uint32_t got_bad_method;
-
   // server
   bool mon_auth_mode = false;
 

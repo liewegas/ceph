@@ -43,6 +43,7 @@
 
 #include "common/config_obs.h"
 #include "common/LogClient.h"
+#include "auth/AuthClient.h"
 #include "auth/cephx/CephxKeyServer.h"
 #include "auth/AuthMethodList.h"
 #include "auth/KeyRing.h"
@@ -123,6 +124,7 @@ public:
 };
 
 class Monitor : public Dispatcher,
+		public AuthClient,
                 public md_config_obs_t {
 public:
   // me
@@ -906,6 +908,28 @@ private:
   void ms_handle_remote_reset(Connection *con) override {}
   bool ms_handle_refused(Connection *con) override;
 
+  // AuthClient
+  int get_auth_request(
+    Connection *con,
+    uint32_t *method, bufferlist *out) override;
+  int handle_auth_reply_more(
+    Connection *con,
+    int result,
+    const bufferlist& bl,
+    bufferlist *reply) override;
+  int handle_auth_done(
+    Connection *con,
+    int result,
+    uint64_t global_id,
+    const bufferlist& bl,
+    CryptoKey *session_key,
+    CryptoKey *connection_key) override;
+  int handle_auth_bad_method(
+    Connection *con,
+    uint32_t old_auth_method,
+    const std::vector<uint32_t>& allowed_methods) override;
+  // /AuthClient
+  
   int write_default_keyring(bufferlist& bl);
   void extract_save_mon_key(KeyRing& keyring);
 
