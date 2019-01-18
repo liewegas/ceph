@@ -21,14 +21,14 @@ public:
     int result,
     const bufferlist& bl,
     bufferlist *reply) = 0;
-  virtual void handle_auth_done(
+  virtual int handle_auth_done(
     Connection *con,
     int result,
     uint64_t global_id,
     const bufferlist& bl,
     CryptoKey *session_key,
     CryptoKey *connection_key) = 0;
-  virtual void handle_auth_bad_method(
+  virtual int handle_auth_bad_method(
     Connection *con,
     uint32_t old_auth_method,
     const std::vector<uint32_t>& allowed_methods) = 0;

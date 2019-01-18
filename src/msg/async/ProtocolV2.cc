@@ -2041,8 +2041,8 @@ CtPtr ProtocolV2::send_auth_request(std::vector<uint32_t> &allowed_methods) {
 		 << " auth_client " << messenger->auth_client << dendl;
 
   // (non-mon entity) -> mon authentication is special
-  if (messenger->auth_client &&
-      connection->peer_type == CEPH_ENTITY_TYPE_MON) {
+  if (messenger->auth_client) {/* &&
+				  connection->peer_type == CEPH_ENTITY_TYPE_MON) {*/
     bufferlist bl;
     mon_auth_mode = true;
     connection->lock.unlock();
@@ -2206,7 +2206,7 @@ CtPtr ProtocolV2::handle_auth_done(char *payload, uint32_t length) {
       return _fault();
     }
     connection->lock.unlock();
-    messenger->auth_client->handle_auth_done(
+    int r = messenger->auth_client->handle_auth_done(
       connection,
       auth_done.result(),
       auth_done.global_id(),
@@ -2215,6 +2215,9 @@ CtPtr ProtocolV2::handle_auth_done(char *payload, uint32_t length) {
       &auth_meta.connection_secret);
     connection->lock.lock();
     if (state != State::CONNECTING) {
+      return _fault();
+    }
+    if (r < 0) {
       return _fault();
     }
     session_security.reset(

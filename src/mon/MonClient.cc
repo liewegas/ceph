@@ -1229,15 +1229,32 @@ int MonClient::get_auth_request(
   bufferlist *bl)
 {
   std::lock_guard l(monc_lock);
-  assert(con->get_peer_type() == CEPH_ENTITY_TYPE_MON);
-  for (auto& i : pending_cons) {
-    if (i.second.is_con(con)) {
-      return i.second.get_auth_request(
-	auth_method, bl,
-	entity_name, want_keys, rotating_secrets.get());
+  ldout(cct,10) << __func__ << " con " << con << " auth_method " << *auth_method
+		<< dendl;
+
+  // connection to mon?
+  if (con->get_peer_type() == CEPH_ENTITY_TYPE_MON) {
+    ceph_assert(!con->get_auth_meta()->authorizer);
+    for (auto& i : pending_cons) {
+      if (i.second.is_con(con)) {
+	return i.second.get_auth_request(
+	  auth_method, bl,
+	  entity_name, want_keys, rotating_secrets.get());
+      }
     }
+    return -ENOENT;
   }
-  return -ENOENT;
+
+  // generate authorizer
+  auto auth_meta = con->get_auth_meta();
+  if (!auth) {
+    lderr(cct) << __func__ << " but no auth handler is set up" << dendl;
+    return -1;
+  }
+  auth_meta->authorizer.reset(auth->build_authorizer(con->get_peer_type()));
+  auth_meta->auth_method = auth_meta->authorizer->protocol;
+  *bl = auth_meta->authorizer->bl;
+  return 0;
 }
 
 int MonClient::handle_auth_reply_more(
@@ -1247,16 +1264,28 @@ int MonClient::handle_auth_reply_more(
   bufferlist *reply)
 {
   std::lock_guard l(monc_lock);
-  assert(con->get_peer_type() == CEPH_ENTITY_TYPE_MON);
-  for (auto& i : pending_cons) {
-    if (i.second.is_con(con)) {
-      return i.second.handle_auth_reply_more(result, bl, reply);
+
+  if (con->get_peer_type() == CEPH_ENTITY_TYPE_MON) {
+    for (auto& i : pending_cons) {
+      if (i.second.is_con(con)) {
+	return i.second.handle_auth_reply_more(result, bl, reply);
+      }
     }
+    return -ENOENT;
   }
-  return -ENOENT;
+
+  // authorizer challenges
+  auto auth_meta = con->get_auth_meta();
+  if (!auth || !auth_meta->authorizer) {
+    lderr(cct) << __func__ << " no authorizer?" << dendl;
+    return -1;
+  }
+  auth_meta->authorizer->add_challenge(cct, bl);
+  *reply = auth_meta->authorizer->bl;
+  return 0;
 }
 
-void MonClient::handle_auth_done(
+int MonClient::handle_auth_done(
   Connection *con,
   int result,
   uint64_t global_id,
@@ -1264,44 +1293,64 @@ void MonClient::handle_auth_done(
   CryptoKey *session_key,
   CryptoKey *connection_key)
 {
-  std::lock_guard l(monc_lock);
-  assert(con->get_peer_type() == CEPH_ENTITY_TYPE_MON);
-  for (auto& i : pending_cons) {
-    if (i.second.is_con(con)) {
-      int auth_err = i.second.handle_auth_done(
-	result, global_id, bl,
-	session_key, connection_key);
-      ldout(cct,10) << __func__ << " auth_err " << auth_err << dendl;
-      if (auth_err) {
-	pending_cons.erase(i.first);
-	if (!pending_cons.empty()) {
-	  return;
+  if (con->get_peer_type() == CEPH_ENTITY_TYPE_MON) {
+    std::lock_guard l(monc_lock);
+    for (auto& i : pending_cons) {
+      if (i.second.is_con(con)) {
+	int auth_err = i.second.handle_auth_done(
+	  result, global_id, bl,
+	  session_key, connection_key);
+	ldout(cct,10) << __func__ << " auth_err " << auth_err << dendl;
+	if (auth_err) {
+	  pending_cons.erase(i.first);
+	  if (!pending_cons.empty()) {
+	    return auth_err;
+	  }
+	} else {
+	  active_con.reset(new MonConnection(std::move(i.second)));
+	  pending_cons.clear();
+	  ceph_assert(active_con->have_session());
 	}
-      } else {
-	active_con.reset(new MonConnection(std::move(i.second)));
-	pending_cons.clear();
-	ceph_assert(active_con->have_session());
+	
+	_finish_hunting(auth_err);
+	return auth_err;
       }
-
-      _finish_hunting(auth_err);
-      return;
     }
+  } else {
+    // verify authorizer reply
+    auto auth_meta = con->get_auth_meta();
+    auto p = bl.begin();
+    if (!auth_meta->authorizer->verify_reply(p, &auth_meta->connection_secret)) {
+      ldout(cct, 0) << __func__ << " failed verifying authorizer reply"
+		    << dendl;
+      return -EPERM;
+    }
+    auth_meta->session_key = auth_meta->authorizer->session_key;
+    return 0;
   }
 }
 
-void MonClient::handle_auth_bad_method(
+int MonClient::handle_auth_bad_method(
   Connection *con,
   uint32_t old_auth_method,
   const std::vector<uint32_t>& allowed_methods)
 {
+  con->get_auth_meta()->allowed_methods = allowed_methods;
+
   std::lock_guard l(monc_lock);
-  if (con->get_peer_type() != CEPH_ENTITY_TYPE_MON) {
-    return;
-  }
-  for (auto& i : pending_cons) {
-    if (i.second.is_con(con)) {
-      return i.second.handle_auth_bad_method(old_auth_method, allowed_methods);
+  if (con->get_peer_type() == CEPH_ENTITY_TYPE_MON) {
+    for (auto& i : pending_cons) {
+      if (i.second.is_con(con)) {
+	return i.second.handle_auth_bad_method(old_auth_method, allowed_methods);
+      }
     }
+    return -ENOENT;
+  } else {
+    // huh...
+    ldout(cct,10) << __func__ << " hmm, they didn't like " << old_auth_method
+		  << " and auth is " << (auth ? auth->get_protocol() : 0)
+		  << dendl;
+    return -EPERM;
   }
 }
 
@@ -1376,11 +1425,6 @@ int MonConnection::get_auth_request(
   uint32_t want_keys,
   RotatingKeyRing* keyring)
 {
-  if (state == State::FAILED_AUTH) {
-    ldout(cct,10) << __func__ << " failed auth " << *method << dendl;
-    return -EACCES;
-  }
-
   // choose method
   if (auth_method < 0) {
     auth_method = auth_supported.front();
@@ -1460,14 +1504,12 @@ int MonConnection::handle_auth_done(
   return auth_err;
 }
 
-void MonConnection::handle_auth_bad_method(
+int MonConnection::handle_auth_bad_method(
   uint32_t old_auth_method,
   const std::vector<uint32_t>& allowed_methods)
 {
   ldout(cct,10) << __func__ << " old_auth_method " << old_auth_method
 		<< " allowed_methods " << allowed_methods << dendl;
-  con->get_auth_meta()->allowed_methods = allowed_methods;
-
   auto p = std::find(auth_supported.begin(), auth_supported.end(),
 		     old_auth_method);
   assert(p != auth_supported.end());
@@ -1482,10 +1524,11 @@ void MonConnection::handle_auth_bad_method(
   if (p == auth_supported.end()) {
     lderr(cct) << __func__ << " server allowed_methods " << allowed_methods
 	       << " but i only support " << auth_supported << dendl;
-    state = State::FAILED_AUTH;
+    return -EPERM;
   }
   auth_method = *p;
   ldout(cct,10) << __func__ << " will try " << auth_method << " next" << dendl;
+  return 0;
 }
 
 int MonConnection::handle_auth(MAuthReply* m,
