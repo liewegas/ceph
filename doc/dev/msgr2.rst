@@ -1,6 +1,8 @@
 msgr2 protocol
 ==============
 
+.. _msgr2:
+
 This is a revision of the legacy Ceph on-wire protocol that was
 implemented by the SimpleMessenger.  It addresses performance and
 security issues.
