@@ -950,13 +950,6 @@ class MgrModule(ceph_module.BaseMgrModule):
         """
         return self._ceph_get_store_prefix(key_prefix)
 
-    def _get_localized(self, key, default, getter):
-        r = getter(self.get_mgr_id() + '/' + key, None)
-        if r is None:
-            r = getter(key, default)
-
-        return r
-
     def _set_localized(self, key, val, setter):
         return setter(self.get_mgr_id() + '/' + key, val)
 
@@ -968,7 +961,15 @@ class MgrModule(ceph_module.BaseMgrModule):
         :return: str
         """
         self._validate_module_option(key)
-        return self._get_localized(key, default, self._get_module_option)
+        r = self._ceph_get_module_option(self.module_name,
+                                         self.get_mgr_id() + '/' + key)
+        if r:
+            return r
+        r = self._ceph_get_module_option(self.module_name, key)
+        if r:
+            return r
+        final_key = key.split('/')[-1]
+        return self.MODULE_OPTION_DEFAULTS.get(final_key, default)
 
     def _set_module_option(self, key, val):
         return self._ceph_set_module_option(self.module_name, key, str(val))
@@ -1027,7 +1028,10 @@ class MgrModule(ceph_module.BaseMgrModule):
             return r
 
     def get_localized_store(self, key, default=None):
-        return self._get_localized(key, default, self.get_store)
+        r = self.get_store(self.get_mgr_id() + '/' + key)
+        if r:
+            return r
+        return self.get_store(key, default)
 
     def set_localized_store(self, key, val):
         return self._set_localized(key, val, self.set_store)
