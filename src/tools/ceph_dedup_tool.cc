@@ -288,9 +288,10 @@ void EstimateDedupRatio::print_status(Formatter *f, ostream &out)
     f->dump_string("PID", stringify(get_pid()));
     for (auto p : local_chunk_statistics) {
       f->open_object_section("fingerprint object");
-      f->dump_string("fingperint", p.first);
+      f->dump_string("fingerprint", p.first);
       f->dump_string("count", stringify(p.second.first));
       f->dump_string("chunk_size", stringify(p.second.second));
+      f->close_section();
     }
     f->close_section();
     f->open_object_section("Status");
@@ -588,9 +589,11 @@ int estimate_dedup_ratio(const std::map < std::string, std::string > &opts,
   if (i != opts.end()) {
     chunk_algo = i->second.c_str();
     if (chunk_algo != "fixed" && chunk_algo != "rabin") {
+      cerr << "unrecognized algo " << chunk_algo << std::endl;
       usage_exit();
     }
   } else {
+    cerr << "must specify chunk-algorithm" << std::endl;
     usage_exit();
   }
 
@@ -601,6 +604,7 @@ int estimate_dedup_ratio(const std::map < std::string, std::string > &opts,
       usage_exit();
     }
   } else {
+    cerr << "must specify fingerprint-algorithm" << std::endl;
     usage_exit();
   }
 
@@ -611,6 +615,7 @@ int estimate_dedup_ratio(const std::map < std::string, std::string > &opts,
     }
   } else {
     if (chunk_algo != "rabin") {
+      cerr << "chunk_algo not rabin" << std::endl;
       usage_exit();
     }
   }
@@ -985,6 +990,7 @@ int main(int argc, const char **argv)
     }
   }
 
+  cout << "op_name " << op_name << std::endl;
   if (op_name == "estimate") {
     return estimate_dedup_ratio(opts, args);
   } else if (op_name == "chunk_scrub") {
@@ -994,6 +1000,7 @@ int main(int argc, const char **argv)
   } else if (op_name == "get_chunk_ref") {
     return chunk_scrub_common(opts, args);
   } else {
+    cout << " ... " << std::endl;
     usage();
     exit(0);
   }
