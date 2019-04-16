@@ -523,6 +523,8 @@ const char** Monitor::get_tracked_conf_keys() const
     // debug options - observed, not handled
     "mon_debug_extra_checks",
     "mon_debug_block_osdmap_trim",
+    "mon_memory_target",
+    ...,
     NULL
   };
   return KEYS;
@@ -551,6 +553,11 @@ void Monitor::handle_conf_change(const ConfigProxy& conf,
       changed.count("mon_health_to_clog_interval") ||
       changed.count("mon_health_to_clog_tick_interval")) {
     health_to_clog_update_conf(changed);
+  }
+
+  if (changed.count("mon_memory_target") ||
+      ...) {
+    _update_cache_parameters();
   }
 
   if (changed.count("mon_scrub_interval")) {
@@ -905,6 +912,8 @@ void Monitor::init_paxos()
   }
 
   refresh_from_paxos(NULL);
+
+  _update_cache_parameters();
 }
 
 void Monitor::refresh_from_paxos(bool *need_bootstrap)
@@ -5676,6 +5685,13 @@ void Monitor::scrub_reset_timeout()
     }));
 }
 
+void Monitor::_update_cache_parameters()
+{
+  // set up priority cache based on config options
+
+  ...
+}
+
 /************ TICK ***************/
 void Monitor::new_tick()
 {
@@ -5689,6 +5705,9 @@ void Monitor::tick()
   // ok go.
   dout(11) << "tick" << dendl;
   const utime_t now = ceph_clock_now();
+
+  // balance cache sizes
+  cache_manager.update() ... or whatever
   
   // Check if we need to emit any delayed health check updated messages
   if (is_leader()) {

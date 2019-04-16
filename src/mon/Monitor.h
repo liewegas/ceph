@@ -262,6 +262,10 @@ private:
   version_t scrub_version;            ///< paxos version we are scrubbing
   map<int,ScrubResult> scrub_result;  ///< results so far
 
+  CacheManager cache_manager;
+
+  void _update_cache_paramters();
+  
   /**
    * trigger a cross-mon scrub
    *
