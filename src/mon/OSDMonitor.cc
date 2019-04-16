@@ -452,6 +452,7 @@ void OSDMonitor::update_from_paxos(bool *need_bootstrap)
   if ((latest_full > 0) && (latest_full > osdmap.epoch)) {
     bufferlist latest_bl;
     get_version_full(latest_full, latest_bl);
+    latest_osdmap_full_size = latest_bl.length();
     ceph_assert(latest_bl.length() != 0);
     dout(7) << __func__ << " loading latest full map e" << latest_full << dendl;
     osdmap = OSDMap();
@@ -479,6 +480,7 @@ void OSDMonitor::update_from_paxos(bool *need_bootstrap)
     int err = get_version(osdmap.epoch+1, inc_bl);
     ceph_assert(err == 0);
     ceph_assert(inc_bl.length());
+    latest_osdmap_inc_size = inc_bl.length();
 
     dout(7) << "update_from_paxos  applying incremental " << osdmap.epoch+1
 	    << dendl;

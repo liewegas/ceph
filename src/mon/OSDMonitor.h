@@ -214,6 +214,9 @@ class OSDMonitor : public PaxosService {
 public:
   OSDMap osdmap;
 
+  size_t latest_osdmap_full_size = 0;
+  size_t latest_osdmap_inc_size = 0;
+
   // [leader]
   OSDMap::Incremental pending_inc;
   map<int, bufferlist> pending_metadata;
