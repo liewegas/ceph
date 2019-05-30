@@ -12811,7 +12811,7 @@ bool OSDMonitor::preprocess_pool_op(MonOpRequestRef op)
       _pool_op_reply(op, -EINVAL, osdmap.get_epoch());
       return true;
     }
-    if (p->is_removed_snap(m->snapid)) {
+    if (_is_removed_snap(m->pool, m->snapid)) {
       _pool_op_reply(op, 0, osdmap.get_epoch());
       return true;
     }
@@ -12829,6 +12829,28 @@ bool OSDMonitor::preprocess_pool_op(MonOpRequestRef op)
     break;
   }
 
+  return false;
+}
+
+bool OSDMonitor::_is_removed_snap(int64_t pool, snapid_t snap)
+{
+  if (!osdmap.have_pg_pool(pool)) {
+    dout(10) << __func__ << " pool " << pool << " snap " << snap
+	     << " - pool dne" << dendl;
+    return true;
+  }
+  if (osdmap.in_removed_snaps_queue(pool, snap)) {
+    dout(10) << __func__ << " pool " << pool << " snap " << snap
+	     << " - in osdmap removed_snaps_queue" << dendl;
+    return true;
+  }
+  snapid_t begin, end;
+  int r = lookup_pruned_snap(pool, snap, &begin, &end);
+  if (r == 0) {
+    dout(10) << __func__ << " pool " << pool << " snap " << snap
+	     << " - purged, [" << begin << "," << end << ")" << dendl;
+    return true;
+  }
   return false;
 }
 
@@ -12963,7 +12985,7 @@ bool OSDMonitor::prepare_pool_op(MonOpRequestRef op)
     break;
 
   case POOL_OP_DELETE_UNMANAGED_SNAP:
-    if (!pp.is_removed_snap(m->snapid)) {
+    if (!_is_removed_snap(m->pool, m->snapid)) {
       if (m->snapid > pp.get_snap_seq()) {
         _pool_op_reply(op, -ENOENT, osdmap.get_epoch());
         return false;

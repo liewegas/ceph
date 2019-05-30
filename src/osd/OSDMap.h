@@ -1240,6 +1240,14 @@ public:
     return false;
   }
 
+  bool in_removed_snaps_queue(int64_t pool, snapid_t snap) {
+    auto p = removed_snaps_queue.find(pool);
+    if (p == removed_snaps_queue.end()) {
+      return false;
+    }
+    return p->second.contains(snap);
+  }
+
   const mempool::osdmap::map<int64_t,snap_interval_set_t>&
   get_removed_snaps_queue() const {
     return removed_snaps_queue;
