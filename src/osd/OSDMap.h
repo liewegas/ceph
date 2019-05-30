@@ -1240,7 +1240,7 @@ public:
     return false;
   }
 
-  bool in_removed_snaps_queue(int64_t pool, snapid_t snap) {
+  bool in_removed_snaps_queue(int64_t pool, snapid_t snap) const {
     auto p = removed_snaps_queue.find(pool);
     if (p == removed_snaps_queue.end()) {
       return false;
