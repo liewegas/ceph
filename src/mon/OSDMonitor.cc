@@ -3590,7 +3590,8 @@ bool OSDMonitor::preprocess_remove_snaps(MonOpRequestRef op)
        q != m->snaps.end();
        ++q) {
     if (!osdmap.have_pg_pool(q->first)) {
-      dout(10) << " ignoring removed_snaps " << q->second << " on non-existent pool " << q->first << dendl;
+      dout(10) << " ignoring removed_snaps " << q->second
+	       << " on non-existent pool " << q->first << dendl;
       continue;
     }
     const pg_pool_t *pi = osdmap.get_pg_pool(q->first);
@@ -3598,8 +3599,9 @@ bool OSDMonitor::preprocess_remove_snaps(MonOpRequestRef op)
 	 p != q->second.end();
 	 ++p) {
       if (*p > pi->get_snap_seq() ||
-	  !pi->removed_snaps.contains(*p))
+	  !_is_removed_snap(q->first, *p)) {
 	return false;
+      }
     }
   }
 
