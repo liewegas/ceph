@@ -77,6 +77,15 @@ They are expected to report progress and status updates to the rest of
 the leadership team and to help facilitate any cross-component
 coordination of development.
 
+Current components and leads are:
+
+ * *CephFS*: Patrick Donnelly <pdonnell@redhat.com>
+ * *Dashboard*: Lenz Grimmer <lgrimmer@suse.com>
+ * *Orchestrator*: Sebastian Wagner <swagner@suse.com>
+ * *RADOS*: Neha Ojha <nojha@redhat.com>
+ * *RBD*: Jason Dillaman <dillaman@redhat.com>
+ * *RGW*: Casey Bodley <cbodley@redhat.com>
+
 
 Ceph Leadership Team
 --------------------
