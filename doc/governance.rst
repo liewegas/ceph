@@ -52,6 +52,32 @@ Committers are empowered to:
   satisfy the automated review requirements for merge.)
 
 
+Component Leads
+---------------
+
+Each major subcomponent of the Ceph project has a lead engineer who is
+responsible for guiding and coordinating development.  The component
+leads are nominated, appointed, and/or approved by the Ceph Leadership
+Team (see below).  In practice, most leads have been nominated by
+their predecessor.
+
+Lead responsibilities include:
+
+ * guiding the (usually) daily "stand-up" coordination calls over
+   video chat
+ * building the development roadmap for each release cycle
+ * coordinating development activity between contributors
+ * ensuring that contributions are reviewed
+ * ensuring that different proposed changes do not conflict
+ * ensuring that testing remains robust (new features include tests,
+   changes do not break tests, etc.)
+
+All component leads are included on the Ceph Leadership Team (below).
+They are expected to report progress and status updates to the rest of
+the leadership team and to help facilitate any cross-component
+coordination of development.
+
+
 Ceph Leadership Team
 --------------------
 
@@ -62,7 +88,8 @@ although voting may be used if necessary.
 
 The CLT meets weekly via video chat to discuss any pending issues or
 decisions.  Minutes for the CLT meetings are published at
-`https://pad.ceph.com/p/clt-weekly-minutes <https://pad.ceph.com/p/clt-weekly-minutes>`_.
+`https://pad.ceph.com/p/clt-weekly-minutes
+<https://pad.ceph.com/p/clt-weekly-minutes>`_.
 
 Committers are added to or removed from the CLT at the discretion of
 the CLT itself.
@@ -88,25 +115,6 @@ Current CLT members are:
  * Yehuda Sadeh <yehuda@redhat.com>
  * Zack Cerza <zcerza@redhat.com>
 
-Component Leads
----------------
-
-Each major subcomponent of the Ceph project has a lead engineer who is
-responsible for guiding and coordinating development.  The leads are
-nominated or appointed at the discretion of the project leader or the
-CLT.  Leads responsibilities include:
-
- * guiding the (usually) daily "stand-up" coordination calls over video chat
- * building the development roadmap for each release cycle
- * coordinating development activity between contributors
- * ensuring that contributions are reviewed
- * ensuring that different proposed changes do not conflict
- * ensuring that testing remains robust (new features include tests, changes do not break tests, etc.)
-
-All component leads are included on the CLT.  They are expected to
-report progress and status updates to the rest of the leadership team
-and to help facilitate any cross-component coordination of
-development.
 
 The Ceph Foundation
 -------------------
