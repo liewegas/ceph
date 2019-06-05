@@ -18,19 +18,38 @@ healthy.
 Committers
 ----------
 
-Committers are project contributors who have write access to the central
-Ceph code repositories, currently hosted on GitHub.  This group of developers
-is collectively empowered to make changes to the Ceph source code.
+Committers are project contributors who have (limited) write access
+to the central Ceph code repositories, currently hosted on GitHub.
+This group of developers is collectively empowered to make changes to
+the Ceph source code.
 
-Generally speaking, no individual should make a change in isolation:
-all code contributions go through a collaborative review process (and
-undergo testing) before being merged.  The specifics of this process
-are dynamic and evolving over time.
+No individual can make a change in isolation: all code contributions
+go through a collaborative review process (and undergo testing) before
+being merged.  Currently code review is handled via pull requests on
+GitHub.  All pull requests for code going into the Ceph project must
+be reviewed and approved by one or more committers before they can be merged.
+
+All pull requests also require some level of testing and high-level
+review by the relevant component lead (see below) before they are
+merged.  The specifics of this process are dynamic, may vary depending
+on which part of the code base is being modified (e.g., documentation
+vs test vs core code), and the specifics are evolving over time.
 
 New committers are added to the project (or committers removed from
-the project) at the discretion of the Ceph Leadership Team (below).
-The criteria for becoming a contributor include a consistent level of
-quality and engagement in the project over time.
+the project) at the discretion of the Ceph Leadership Team (see below).
+
+The criteria for becoming a committer include:
+
+* a history of non-trivial contributions to the project
+* a consistent level of quality
+* constructive engagement with other developers when reviewing others'
+  code and when having code reviewed
+
+Committers are empowered to:
+
+* making voting code reviews for incoming pull requests.  (Any GitHub
+  user may review code, but their reviews are not sufficient to
+  satisfy the automated review requirements for merge.)
 
 
 Ceph Leadership Team
