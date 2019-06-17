@@ -4592,7 +4592,10 @@ void OSD::handle_osd_ping(MOSDPing *m)
 
       Message *r = new MOSDPing(monc->get_fsid(),
 				curmap->get_epoch(),
-				MOSDPing::PING_REPLY, m->stamp,
+				MOSDPing::PING_REPLY,
+				m->stamp,
+				service.get_up_epoch(),
+				get_min_pg_epoch(),
 				cct->_conf->osd_heartbeat_min_size);
       con->send_message(r);
 
@@ -4611,6 +4614,8 @@ void OSD::handle_osd_ping(MOSDPing *m)
 				  curmap->get_epoch(),
 				  MOSDPing::YOU_DIED,
 				  m->stamp,
+				  service.get_up_epoch(),
+				  get_min_pg_epoch(),
 				  cct->_conf->osd_heartbeat_min_size);
 	con->send_message(r);
       }
@@ -4827,6 +4832,7 @@ void OSD::heartbeat()
   deadline += cct->_conf->osd_heartbeat_grace;
 
   // send heartbeats
+  auto min_pg_epoch = get_min_pg_epoch();
   for (map<int,HeartbeatInfo>::iterator i = heartbeat_peers.begin();
        i != heartbeat_peers.end();
        ++i) {
@@ -4837,16 +4843,24 @@ void OSD::heartbeat()
     i->second.ping_history[now] = make_pair(deadline,
       HeartbeatInfo::HEARTBEAT_MAX_CONN);
     dout(30) << "heartbeat sending ping to osd." << peer << dendl;
-    i->second.con_back->send_message(new MOSDPing(monc->get_fsid(),
-					  service.get_osdmap_epoch(),
-					  MOSDPing::PING, now,
-					  cct->_conf->osd_heartbeat_min_size));
+    i->second.con_back->send_message(
+      new MOSDPing(monc->get_fsid(),
+		   service.get_osdmap_epoch(),
+		   MOSDPing::PING,
+		   now,
+		   service.get_up_epoch(),
+		   min_pg_epoch,
+		   cct->_conf->osd_heartbeat_min_size));
 
     if (i->second.con_front)
-      i->second.con_front->send_message(new MOSDPing(monc->get_fsid(),
-					     service.get_osdmap_epoch(),
-					     MOSDPing::PING, now,
-					  cct->_conf->osd_heartbeat_min_size));
+      i->second.con_front->send_message(
+	new MOSDPing(monc->get_fsid(),
+		     service.get_osdmap_epoch(),
+		     MOSDPing::PING,
+		     now,
+		     service.get_up_epoch(),
+		     min_pg_epoch,
+		     cct->_conf->osd_heartbeat_min_size));
   }
 
   logger->set(l_osd_hb_to, heartbeat_peers.size());
