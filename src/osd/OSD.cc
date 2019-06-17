@@ -7583,13 +7583,7 @@ void OSD::handle_osd_map(MOSDMap *m)
     epoch_t max_lag = cct->_conf->osd_map_cache_size *
       m_osd_pg_epoch_max_lag_factor;
     ceph_assert(max_lag > 0);
-    epoch_t osd_min = 0;
-    for (auto shard : shards) {
-      epoch_t min = shard->get_min_pg_epoch();
-      if (osd_min == 0 || min < osd_min) {
-	osd_min = min;
-      }
-    }
+    epoch_t osd_min = get_min_pg_epoch();
     if (osd_min > 0 &&
 	osdmap->get_epoch() > max_lag &&
 	osdmap->get_epoch() - max_lag > osd_min) {
@@ -8242,6 +8236,18 @@ void OSD::_finish_splits(set<PGRef>& pgs)
 
   dispatch_context(rctx, 0, service.get_osdmap());
 };
+
+epoch_t OSD::get_min_pg_epoch()
+{
+  epoch_t osd_min = 0;
+  for (auto shard : shards) {
+    epoch_t min = shard->get_min_pg_epoch();
+    if (osd_min == 0 || min < osd_min) {
+      osd_min = min;
+    }
+  }
+  return osd_min;
+}
 
 bool OSD::add_merge_waiter(OSDMapRef nextmap, spg_t target, PGRef src,
 			   unsigned need)

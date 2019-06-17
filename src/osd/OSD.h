@@ -1752,6 +1752,8 @@ public:
   }
 
 protected:
+  epoch_t get_min_pg_epoch();
+
   Mutex merge_lock = {"OSD::merge_lock"};
   /// merge epoch -> target pgid -> source pgid -> pg
   map<epoch_t,map<spg_t,map<spg_t,PGRef>>> merge_waiters;
