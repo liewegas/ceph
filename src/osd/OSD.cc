@@ -9224,7 +9224,8 @@ void OSD::handle_fast_pg_notify(MOSDPGNotify* m)
 	    pgid, pg_shard_t(from, p.first.from),
 	    p.first,
 	    m->get_connection()->get_features(),
-	    p.second),
+	    p.second,
+	    m->get_recv_stamp()),
 	  true,
 	  new PGCreateInfo(
 	    pgid,

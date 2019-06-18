@@ -95,9 +95,11 @@ struct MNotifyRec : boost::statechart::event< MNotifyRec > {
   pg_notify_t notify;
   uint64_t features;
   PastIntervals past_intervals;
+  utime_t rx_stamp;
   MNotifyRec(spg_t p, pg_shard_t from, const pg_notify_t &notify, uint64_t f,
-	     const PastIntervals& pi)
-    : pgid(p), from(from), notify(notify), features(f), past_intervals(pi) {}
+	     const PastIntervals& pi, utime_t rxs)
+    : pgid(p), from(from), notify(notify), features(f), past_intervals(pi),
+      rx_stamp(rxs) {}
   void print(std::ostream *out) const {
     *out << "MNotifyRec " << pgid << " from " << from << " notify: " << notify
 	 << " features: 0x" << std::hex << features << std::dec
