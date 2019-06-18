@@ -436,6 +436,18 @@ void OSDService::need_heartbeat_peer_update()
   osd->need_heartbeat_peer_update();
 }
 
+HeartbeatStampsRef OSDService::get_hb_stamps(unsigned peer)
+{
+  std::lock_guard l(hb_stamp_lock);
+  if (peer >= hb_stamps.size()) {
+    hb_stamps.resize(peer + 1);
+  }
+  if (!hb_stamps[peer]) {
+    hb_stamps[peer].reset(new HeartbeatStamps(peer));
+  }
+  return hb_stamps[peer];
+}
+
 void OSDService::start_shutdown()
 {
   {
@@ -4355,24 +4367,31 @@ void OSD::_add_heartbeat_peer(int p)
     pair<ConnectionRef,ConnectionRef> cons = service.get_con_osd_hb(p, osdmap->get_epoch());
     if (!cons.first)
       return;
+    assert(cons.second);
+
     hi = &heartbeat_peers[p];
     hi->peer = p;
-    RefCountedPtr s{new HeartbeatSession{p}, false};
+
+    auto stamps = service.get_hb_stamps(p);
+
+    Session *sb = new Session(cct, cons.first.get());
+    sb->peer = p;
+    sb->stamps = stamps;
+    RefCountedPtr sbref{sb, false};
     hi->con_back = cons.first.get();
-    hi->con_back->set_priv(s);
-    if (cons.second) {
-      hi->con_front = cons.second.get();
-      hi->con_front->set_priv(s);
-      dout(10) << "_add_heartbeat_peer: new peer osd." << p
-	       << " " << hi->con_back->get_peer_addr()
-	       << " " << hi->con_front->get_peer_addr()
-	       << dendl;
-    } else {
-      hi->con_front.reset(NULL);
-      dout(10) << "_add_heartbeat_peer: new peer osd." << p
-	       << " " << hi->con_back->get_peer_addr()
-	       << dendl;
-    }
+    hi->con_back->set_priv(sbref);
+
+    Session *sf = new Session(cct, cons.second.get());
+    sf->peer = p;
+    sf->stamps = stamps;
+    RefCountedPtr sfref{sf, false};
+    hi->con_front = cons.second.get();
+    hi->con_front->set_priv(sfref);
+
+    dout(10) << "_add_heartbeat_peer: new peer osd." << p
+	     << " " << hi->con_back->get_peer_addr()
+	     << " " << hi->con_front->get_peer_addr()
+	     << dendl;
   } else {
     hi = &i->second;
   }
@@ -4536,7 +4555,8 @@ void OSD::handle_osd_ping(MOSDPing *m)
 {
   if (superblock.cluster_fsid != m->fsid) {
     dout(20) << "handle_osd_ping from " << m->get_source_inst()
-	     << " bad fsid " << m->fsid << " != " << superblock.cluster_fsid << dendl;
+	     << " bad fsid " << m->fsid << " != " << superblock.cluster_fsid
+	     << dendl;
     m->put();
     return;
   }
@@ -4551,13 +4571,24 @@ void OSD::handle_osd_ping(MOSDPing *m)
   }
 
   utime_t now = ceph_clock_now();
-  auto mnow = ceph::mono_clock::now();
+  auto mnow = ceph::mono_clock::now() - startup_time;
   ConnectionRef con(m->get_connection());
   OSDMapRef curmap = service.get_osdmap();
   if (!curmap) {
     heartbeat_lock.Unlock();
     m->put();
     return;
+  }
+
+  auto sref = con->get_priv();
+  Session *s = static_cast<Session*>(sref.get());
+  if (!s) {
+    m->put();
+    return;
+  }
+  if (!s->stamps) {
+    s->peer = from;
+    s->stamps = service.get_hb_stamps(from);
   }
 
   switch (m->op) {
@@ -4588,6 +4619,14 @@ void OSD::handle_osd_ping(MOSDPing *m)
 	}
       }
 
+      set<spg_t> wake_pgs;
+      s->stamps->got_ping(
+	mnow,
+	m->mono_send_stamp,
+	m->delta_ub,
+	m->consumed_epoch, &wake_pgs);
+      dout(20) << __func__ << " new stamps " << *s->stamps << dendl;
+
       if (!cct->get_heartbeat_map()->is_healthy()) {
 	dout(10) << "internal heartbeat not healthy, dropping ping request"
 		 << dendl;
@@ -4599,6 +4638,7 @@ void OSD::handle_osd_ping(MOSDPing *m)
 				MOSDPing::PING_REPLY,
 				m->ping_stamp,
 				m->mono_ping_stamp,
+				mnow,
 				service.get_up_epoch(),
 				get_min_pg_epoch(),
 				cct->_conf->osd_heartbeat_min_size);
@@ -4620,6 +4660,7 @@ void OSD::handle_osd_ping(MOSDPing *m)
 				  MOSDPing::YOU_DIED,
 				  m->ping_stamp,
 				  m->mono_ping_stamp,
+				  mnow,
 				  service.get_up_epoch(),
 				  get_min_pg_epoch(),
 				  cct->_conf->osd_heartbeat_min_size);
@@ -4712,6 +4753,14 @@ void OSD::handle_osd_ping(MOSDPing *m)
 	  }
 	}
       }
+
+      set<spg_t> wake_pgs;
+      s->stamps->got_ping_reply(
+	mnow,
+	m->mono_send_stamp,
+	m->mono_ping_stamp,
+	m->consumed_epoch, &wake_pgs);
+      dout(20) << __func__ << " new stamps " << *s->stamps << dendl;
     }
     break;
 
@@ -4834,7 +4883,7 @@ void OSD::heartbeat()
   service.check_full_status(ratio, pratio);
 
   utime_t now = ceph_clock_now();
-  auto mnow = ceph::mono_clock::now();
+  auto mnow = ceph::mono_clock::now() - startup_time;
   utime_t deadline = now;
   deadline += cct->_conf->osd_heartbeat_grace;
 
@@ -4851,16 +4900,22 @@ void OSD::heartbeat()
       i->second.first_tx = now;
     i->second.ping_history[now] = make_pair(deadline,
       HeartbeatInfo::HEARTBEAT_MAX_CONN);
-    dout(30) << "heartbeat sending ping to osd." << peer << dendl;
+
+    Session *s = static_cast<Session*>(i->second.con_back->get_priv().get());
+    boost::optional<ceph::time_detail::signedspan> delta_ub;
+    s->stamps->sent_ping(mnow, &delta_ub);
+
     i->second.con_back->send_message(
       new MOSDPing(monc->get_fsid(),
 		   service.get_osdmap_epoch(),
 		   MOSDPing::PING,
 		   now,
-		   mnow - startup_time,
+		   mnow,
+		   mnow,
 		   service.get_up_epoch(),
 		   min_pg_epoch,
-		   cct->_conf->osd_heartbeat_min_size));
+		   cct->_conf->osd_heartbeat_min_size,
+		   delta_ub));
 
     if (i->second.con_front)
       i->second.con_front->send_message(
@@ -4868,10 +4923,12 @@ void OSD::heartbeat()
 		     service.get_osdmap_epoch(),
 		     MOSDPing::PING,
 		     now,
-		     mnow - startup_time,
+		     mnow,
+		     mnow,
 		     service.get_up_epoch(),
 		     min_pg_epoch,
-		     cct->_conf->osd_heartbeat_min_size));
+		     cct->_conf->osd_heartbeat_min_size,
+		     delta_ub));
   }
 
   logger->set(l_osd_hb_to, heartbeat_peers.size());
@@ -4898,8 +4955,8 @@ bool OSD::heartbeat_reset(Connection *con)
     if (is_stopping()) {
       return true;
     }
-    auto heartbeat_session = static_cast<HeartbeatSession*>(s.get());
-    auto p = heartbeat_peers.find(heartbeat_session->peer);
+    auto session = static_cast<Session*>(s.get());
+    auto p = heartbeat_peers.find(session->peer);
     if (p != heartbeat_peers.end() &&
 	(p->second.con_back == con ||
 	 p->second.con_front == con)) {

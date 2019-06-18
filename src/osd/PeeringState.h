@@ -83,6 +83,184 @@ struct BufferedRecoveryMessages {
   }
 };
 
+struct HeartbeatStamps : public RefCountedObject {
+  mutable ceph::mutex lock = ceph::make_mutex("HeartbeatStamps::lock");
+
+  const int osd;
+
+  // all of these timestamps are in terms of durations since startup_time,
+  // which is set from the ceph::mono_clock during OSD startup.
+
+  /// (primary) last ping we sent
+  ceph::time_detail::signedspan last_sent = ceph::signedspan::zero();
+
+  /// (primary) the ping tx time for the most recent ping reply we received
+  /// from this peer.
+  ceph::time_detail::signedspan last_acked_ping = ceph::signedspan::zero();
+
+  /// (replica) last ack we send to this peer (aka last reply we sent)
+  ceph::time_detail::signedspan last_rx_ping = ceph::signedspan::zero();
+
+  /// (replica) peer's sender stamp on the last ping we received
+  ceph::time_detail::signedspan last_rx_ping_peer_stamp =
+    ceph::signedspan::zero();
+
+  // we maintain an upper and lower bound on the delta between our local
+  // mono_clock time (minus the startup_time) to the peer OSD's mono_clock
+  // time (minus its startup_time).
+  //
+  // delta is (remote_clock_time - local_clock_time), so that
+  // local_time + delta -> peer_time, and peer_time - delta -> local_time.
+  //
+  // we have an upper and lower bound value on this delta, meaning the
+  // value of the remote clock is somewhere between [my_time + lb, my_time + ub]
+  //
+  // conversely, if we have a remote timestamp T, then that is
+  // [T - ub, T - lb] in terms of the local clock.  i.e., if you are
+  // substracting the delta, then take care that you swap the role of the
+  // lb and ub values.
+
+  /// lower bound on peer clock - local clock
+  boost::optional<ceph::time_detail::signedspan> peer_clock_delta_lb;
+
+  /// upper bound on peer clock - local clock
+  boost::optional<ceph::time_detail::signedspan> peer_clock_delta_ub;
+
+  /// highest up_from we've seen from this rank
+  epoch_t up_from = 0;
+
+  /// lower bound on consumed epochs for peer's PGs
+  epoch_t consumed_epoch = 0;
+
+  /// PGs we should kick if we reply to a ping
+  set<spg_t> waiting_pgs_ping;
+
+  /// PGs we should kick if we get a reply (acking our ping)
+  set<spg_t> waiting_pgs_ping_reply;
+
+  HeartbeatStamps(int o) : osd(o) {}
+
+  void queue_primary(spg_t pg) {
+    std::lock_guard l(lock);
+    waiting_pgs_ping_reply.insert(pg);
+  }
+  void queue_replica(spg_t pg) {
+    std::lock_guard l(lock);
+    waiting_pgs_ping.insert(pg);
+  }
+
+  void print(ostream& out) const {
+    std::lock_guard l(lock);
+    out << "hbstamp(osd." << osd
+	<< " last_sent " << last_sent
+	<< " last_rx_ping " << last_rx_ping
+	<< " last_rx_ping_peer_stamp " << last_rx_ping_peer_stamp
+	<< " last_acked_ping " << last_acked_ping;
+    out << " peer_clock_delta [";
+    if (peer_clock_delta_lb) {
+      out << *peer_clock_delta_lb;
+    }
+    out << ",";
+    if (peer_clock_delta_ub) {
+      out << *peer_clock_delta_ub;
+    }
+    out << "]";
+    out << " up_from " << up_from
+	<< " consumed " << consumed_epoch
+	<< " wait_p " << waiting_pgs_ping.size()
+	<< " wait_pr " << waiting_pgs_ping_reply.size()
+	<< ")";
+  }
+
+  void sent_ping(ceph::time_detail::signedspan now,
+		 boost::optional<ceph::time_detail::signedspan> *delta_ub) {
+    std::lock_guard l(lock);
+    if (now > last_sent) {
+      last_sent = now;
+    }
+    // the non-primaries need a lower bound on remote clock - local clock.  if
+    // we assume the transit for the last ping_reply was
+    // instantaneous, that would be (the negative of) our last
+    // peer_clock_delta_lb value.
+    if (peer_clock_delta_lb) {
+      *delta_ub = - *peer_clock_delta_lb;
+    }
+  }
+
+  void got_ping(ceph::time_detail::signedspan now,
+		ceph::time_detail::signedspan peer_send_stamp,
+		boost::optional<ceph::time_detail::signedspan> delta_ub,
+		epoch_t consumed,
+		set<spg_t> *wake_pgs) {
+    std::lock_guard l(lock);
+    peer_clock_delta_lb = peer_send_stamp - now;
+    peer_clock_delta_ub = delta_ub;
+    if (consumed < consumed_epoch) {
+      return;
+    }
+    if (consumed > consumed_epoch) {
+      consumed_epoch = consumed;
+    }
+    if (now > last_rx_ping) {
+      last_rx_ping = now;
+      last_rx_ping_peer_stamp = peer_send_stamp;
+      wake_pgs->swap(waiting_pgs_ping);
+    }
+  }
+
+  void got_ping_reply(ceph::time_detail::signedspan now,
+		      ceph::time_detail::signedspan peer_send_stamp,
+		      ceph::time_detail::signedspan orig_ping_stamp,
+		      epoch_t consumed,
+		      set<spg_t> *wake_pgs) {
+    std::lock_guard l(lock);
+    peer_clock_delta_lb = peer_send_stamp - now;
+    if (consumed < consumed_epoch) {
+      return;
+    }
+    if (consumed > consumed_epoch) {
+      consumed_epoch = consumed;
+    }
+    if (orig_ping_stamp > last_acked_ping) {
+      last_acked_ping = orig_ping_stamp;
+      wake_pgs->swap(waiting_pgs_ping_reply);
+    }
+  }
+
+  void sample_primary(ceph::time_detail::signedspan *ls,
+		      ceph::time_detail::signedspan *lap) {
+    std::lock_guard l(lock);
+    *ls = last_sent;
+    *lap = last_acked_ping;
+  }
+
+  void sample_nonprimary(ceph::time_detail::signedspan *last_rx_ping_sent_lb,
+			 ceph::time_detail::signedspan *last_rx_ping_sent_ub) {
+    std::lock_guard l(lock);
+    if (peer_clock_delta_lb && peer_clock_delta_ub) {
+      // we have bounds on the clock delta
+      *last_rx_ping_sent_lb = last_rx_ping_peer_stamp - *peer_clock_delta_ub;
+      *last_rx_ping_sent_ub =
+	std::min(last_rx_ping_peer_stamp - *peer_clock_delta_lb,
+		 last_rx_ping /* the ping was not sent after we received it */);
+    } else {
+      // we don't know how the clock varies.
+      // the ping was certainly sent before we received it, but we don't have
+      // a lower bound.
+      *last_rx_ping_sent_ub = last_rx_ping;
+    }
+  }
+
+};
+typedef boost::intrusive_ptr<HeartbeatStamps> HeartbeatStampsRef;
+
+inline ostream& operator<<(ostream& out, const HeartbeatStamps& hb)
+{
+  hb.print(out);
+  return out;
+}
+
+
 struct PeeringCtx : BufferedRecoveryMessages {
   ObjectStore::Transaction transaction;
   HBHandle* handle = nullptr;
