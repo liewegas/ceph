@@ -78,6 +78,139 @@ struct BufferedRecoveryMessages {
   }
 };
 
+struct HeartbeatStamps : public RefCountedObject {
+  mutable ceph::mutex lock = ceph::make_mutex("HeartbeatStamps::lock");
+
+  const int osd;
+
+  // all of these timestamps are in terms of durations since startup_time,
+  // which is set from the ceph::mono_clock during OSD startup.
+
+  /// (primary) last ping we sent
+  ceph::time_detail::signedspan last_sent = ceph::signedspan::zero();
+
+  /// (primary) the ping tx time for the most recent ping reply we received
+  /// from this peer.
+  ceph::time_detail::signedspan last_acked_ping = ceph::signedspan::zero();
+
+  /// (replica) last ack we send to this peer (aka last reply we sent)
+  ceph::time_detail::signedspan last_rx_ping = ceph::signedspan::zero();
+
+  /// (replica) peer's sender stamp on the last ping we received
+  ceph::time_detail::signedspan last_rx_ping_peer_stamp =
+    ceph::signedspan::zero();
+
+  // we maintain an upper and lower bound on the delta between our local
+  // mono_clock time (minus the startup_time) to the peer OSD's mono_clock
+  // time (minus its startup_time).
+  //
+  // delta is (remote_clock_time - local_clock_time), so that
+  // local_time + delta -> peer_time, and peer_time - delta -> local_time.
+  //
+  // we have an upper and lower bound value on this delta, meaning the
+  // value of the remote clock is somewhere between [my_time + lb, my_time + ub]
+  //
+  // conversely, if we have a remote timestamp T, then that is
+  // [T - ub, T - lb] in terms of the local clock.  i.e., if you are
+  // substracting the delta, then take care that you swap the role of the
+  // lb and ub values.
+
+  /// lower bound on peer clock - local clock
+  boost::optional<ceph::time_detail::signedspan> peer_clock_delta_lb;
+
+  /// upper bound on peer clock - local clock
+  boost::optional<ceph::time_detail::signedspan> peer_clock_delta_ub;
+
+  /// highest up_from we've seen from this rank
+  epoch_t up_from = 0;
+
+  /// lower bound on consumed epochs for peer's PGs
+  epoch_t consumed_epoch = 0;
+
+  HeartbeatStamps(int o) : osd(o) {}
+
+  void print(ostream& out) const {
+    std::lock_guard l(lock);
+    out << "hbstamp(osd." << osd
+	<< " last_sent " << last_sent
+	<< " last_rx_ping " << last_rx_ping
+	<< " last_rx_ping_peer_stamp " << last_rx_ping_peer_stamp
+	<< " last_acked_ping " << last_acked_ping;
+    out << " peer_clock_delta [";
+    if (peer_clock_delta_lb) {
+      out << *peer_clock_delta_lb;
+    }
+    out << ",";
+    if (peer_clock_delta_ub) {
+      out << *peer_clock_delta_ub;
+    }
+    out << "]";
+    out << " up_from " << up_from
+	<< " consumed " << consumed_epoch
+	<< ")";
+  }
+
+  void sent_ping(ceph::time_detail::signedspan now,
+		 boost::optional<ceph::time_detail::signedspan> *delta_ub) {
+    std::lock_guard l(lock);
+    if (now > last_sent) {
+      last_sent = now;
+    }
+    // the non-primaries need a lower bound on remote clock - local clock.  if
+    // we assume the transit for the last ping_reply was
+    // instantaneous, that would be (the negative of) our last
+    // peer_clock_delta_lb value.
+    if (peer_clock_delta_lb) {
+      *delta_ub = - *peer_clock_delta_lb;
+    }
+  }
+
+  void got_ping(ceph::time_detail::signedspan now,
+		ceph::time_detail::signedspan peer_send_stamp,
+		boost::optional<ceph::time_detail::signedspan> delta_ub,
+		epoch_t consumed) {
+    std::lock_guard l(lock);
+    peer_clock_delta_lb = peer_send_stamp - now;
+    peer_clock_delta_ub = delta_ub;
+    if (consumed < consumed_epoch) {
+      return;
+    }
+    if (consumed > consumed_epoch) {
+      consumed_epoch = consumed;
+    }
+    if (now > last_rx_ping) {
+      last_rx_ping = now;
+      last_rx_ping_peer_stamp = peer_send_stamp;
+    }
+  }
+
+  void got_ping_reply(ceph::time_detail::signedspan now,
+		      ceph::time_detail::signedspan peer_send_stamp,
+		      ceph::time_detail::signedspan orig_ping_stamp,
+		      epoch_t consumed) {
+    std::lock_guard l(lock);
+    peer_clock_delta_lb = peer_send_stamp - now;
+    if (consumed < consumed_epoch) {
+      return;
+    }
+    if (consumed > consumed_epoch) {
+      consumed_epoch = consumed;
+    }
+    if (orig_ping_stamp > last_acked_ping) {
+      last_acked_ping = orig_ping_stamp;
+    }
+  }
+
+};
+typedef boost::intrusive_ptr<HeartbeatStamps> HeartbeatStampsRef;
+
+inline ostream& operator<<(ostream& out, const HeartbeatStamps& hb)
+{
+  hb.print(out);
+  return out;
+}
+
+
 struct PeeringCtx : BufferedRecoveryMessages {
   ObjectStore::Transaction transaction;
   HBHandle* handle = nullptr;
