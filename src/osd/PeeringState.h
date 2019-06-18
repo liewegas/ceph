@@ -307,6 +307,8 @@ public:
     /// Send pg_created to mon
     virtual void send_pg_created(pg_t pgid) = 0;
 
+    virtual HeartbeatStampsRef get_hb_stamps(int peer) = 0;
+
     // ============ Flush state ==================
     /**
      * try_flush_or_schedule_async()
@@ -1418,6 +1420,8 @@ public:
   /// union of acting, recovery, and backfill targets
   set<pg_shard_t> acting_recovery_backfill;
 
+  vector<HeartbeatStampsRef> hb_stamps;
+
   bool send_notify = false; ///< True if a notify needs to be sent to the primary
 
   bool dirty_info = false;          ///< small info structu on disk out of date
@@ -1704,6 +1708,7 @@ public:
     const vector<int> &newacting,
     int new_up_primary,
     int new_acting_primary);
+  void init_hb_stamps();
 
   /// Set initial role
   void set_role(int r) {
