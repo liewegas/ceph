@@ -34,7 +34,7 @@
 
 class MOSDPing : public Message {
 private:
-  static constexpr int HEAD_VERSION = 5;
+  static constexpr int HEAD_VERSION = 6;
   static constexpr int COMPAT_VERSION = 4;
 
  public:
@@ -61,15 +61,25 @@ private:
   uuid_d fsid;
   epoch_t map_epoch = 0;
   __u8 op = 0;
-  utime_t stamp;
+  utime_t ping_stamp;                            ///< when the PING was sent
+  ceph::time_detail::signedspan mono_ping_stamp; ///< relative to sender's clock
+  ceph::time_detail::signedspan mono_send_stamp; ///< replier's send stamp
+  boost::optional<ceph::time_detail::signedspan> delta_ub;  ///< ping sender
   epoch_t up_from = 0, consumed_epoch = 0;
   uint32_t min_message_size = 0;
 
   MOSDPing(const uuid_d& f, epoch_t e, __u8 o, utime_t s,
+	   ceph::mono_clock::duration ms,
+	   ceph::mono_clock::duration mss,
 	   epoch_t upf, epoch_t ce,
-	   uint32_t min_message)
+	   uint32_t min_message,
+	   boost::optional<ceph::time_detail::signedspan> delta_ub = {})
     : Message{MSG_OSD_PING, HEAD_VERSION, COMPAT_VERSION},
-      fsid(f), map_epoch(e), op(o), stamp(s),
+      fsid(f), map_epoch(e), op(o),
+      ping_stamp(s),
+      mono_ping_stamp(ms),
+      mono_send_stamp(mss),
+      delta_ub(delta_ub),
       up_from(upf),
       consumed_epoch(ce),
       min_message_size(min_message)
@@ -86,7 +96,7 @@ public:
     decode(fsid, p);
     decode(map_epoch, p);
     decode(op, p);
-    decode(stamp, p);
+    decode(ping_stamp, p);
 
     int payload_mid_length = p.get_off();
     uint32_t size;
@@ -97,6 +107,11 @@ public:
       decode(consumed_epoch, p);
       payload_mid_length += 8;
     }
+    if (header.version >= 6) {
+      decode(mono_ping_stamp, p);
+      decode(mono_send_stamp, p);
+      decode(delta_ub, p);
+    }
 
     p.advance(size);
     min_message_size = size + payload_mid_length;
@@ -106,7 +121,7 @@ public:
     encode(fsid, payload);
     encode(map_epoch, payload);
     encode(op, payload);
-    encode(stamp, payload);
+    encode(ping_stamp, payload);
 
     size_t s = 0;
     if (min_message_size > payload.length()) {
@@ -116,6 +131,9 @@ public:
 
     encode(up_from, payload);
     encode(consumed_epoch, payload);
+    encode(mono_ping_stamp, payload);
+    encode(mono_send_stamp, payload);
+    encode(delta_ub, payload);
 
     if (s) {
       // this should be big enough for normal min_message padding sizes. since
@@ -137,10 +155,13 @@ public:
   void print(ostream& out) const override {
     out << "osd_ping(" << get_op_name(op)
 	<< " e" << map_epoch
-	<< " stamp " << stamp
+	<< " ping_stamp " << ping_stamp << "/" << mono_ping_stamp
+	<< " send_stamp " << mono_send_stamp
 	<< " up_from " << up_from
-	<< " consumed " << consumed_epoch
-	<< ")";
+	<< " consumed " << consumed_epoch;
+    if (delta_ub)
+      out << " delta_ub " << *delta_ub;
+    out << ")";
   }
 private:
   template<class T, typename... Args>

@@ -4551,6 +4551,7 @@ void OSD::handle_osd_ping(MOSDPing *m)
   }
 
   utime_t now = ceph_clock_now();
+  auto mnow = ceph::mono_clock::now();
   ConnectionRef con(m->get_connection());
   OSDMapRef curmap = service.get_osdmap();
   if (!curmap) {
@@ -4596,7 +4597,8 @@ void OSD::handle_osd_ping(MOSDPing *m)
       Message *r = new MOSDPing(monc->get_fsid(),
 				curmap->get_epoch(),
 				MOSDPing::PING_REPLY,
-				m->stamp,
+				m->ping_stamp,
+				m->mono_ping_stamp,
 				service.get_up_epoch(),
 				get_min_pg_epoch(),
 				cct->_conf->osd_heartbeat_min_size);
@@ -4616,7 +4618,8 @@ void OSD::handle_osd_ping(MOSDPing *m)
 	Message *r = new MOSDPing(monc->get_fsid(),
 				  curmap->get_epoch(),
 				  MOSDPing::YOU_DIED,
-				  m->stamp,
+				  m->ping_stamp,
+				  m->mono_ping_stamp,
 				  service.get_up_epoch(),
 				  get_min_pg_epoch(),
 				  cct->_conf->osd_heartbeat_min_size);
@@ -4629,7 +4632,7 @@ void OSD::handle_osd_ping(MOSDPing *m)
     {
       map<int,HeartbeatInfo>::iterator i = heartbeat_peers.find(from);
       if (i != heartbeat_peers.end()) {
-        auto acked = i->second.ping_history.find(m->stamp);
+        auto acked = i->second.ping_history.find(m->ping_stamp);
         if (acked != i->second.ping_history.end()) {
           int &unacknowledged = acked->second.second;
           if (con == i->second.con_back) {
@@ -4665,7 +4668,7 @@ void OSD::handle_osd_ping(MOSDPing *m)
           if (unacknowledged == 0) {
             // succeeded in getting all replies
             dout(25) << "handle_osd_ping got all replies from osd." << from
-                     << " , erase pending ping(sent at " << m->stamp << ")"
+                     << " , erase pending ping(sent at " << m->ping_stamp << ")"
                      << " and older pending ping(s)"
                      << dendl;
             i->second.ping_history.erase(i->second.ping_history.begin(), ++acked);
@@ -4692,7 +4695,7 @@ void OSD::handle_osd_ping(MOSDPing *m)
           }
         } else {
           // old replies, deprecated by newly sent pings.
-          dout(10) << "handle_osd_ping no pending ping(sent at " << m->stamp
+          dout(10) << "handle_osd_ping no pending ping(sent at " << m->ping_stamp
                    << ") is found, treat as covered by newly sent pings "
                    << "and ignore"
                    << dendl;
@@ -4831,6 +4834,7 @@ void OSD::heartbeat()
   service.check_full_status(ratio, pratio);
 
   utime_t now = ceph_clock_now();
+  auto mnow = ceph::mono_clock::now();
   utime_t deadline = now;
   deadline += cct->_conf->osd_heartbeat_grace;
 
@@ -4840,6 +4844,8 @@ void OSD::heartbeat()
        i != heartbeat_peers.end();
        ++i) {
     int peer = i->first;
+    dout(30) << "heartbeat sending ping to osd." << peer << dendl;
+
     i->second.last_tx = now;
     if (i->second.first_tx == utime_t())
       i->second.first_tx = now;
@@ -4851,6 +4857,7 @@ void OSD::heartbeat()
 		   service.get_osdmap_epoch(),
 		   MOSDPing::PING,
 		   now,
+		   mnow - startup_time,
 		   service.get_up_epoch(),
 		   min_pg_epoch,
 		   cct->_conf->osd_heartbeat_min_size));
@@ -4861,6 +4868,7 @@ void OSD::heartbeat()
 		     service.get_osdmap_epoch(),
 		     MOSDPing::PING,
 		     now,
+		     mnow - startup_time,
 		     service.get_up_epoch(),
 		     min_pg_epoch,
 		     cct->_conf->osd_heartbeat_min_size));
