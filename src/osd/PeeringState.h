@@ -1428,6 +1428,10 @@ public:
   set<pg_shard_t> acting_recovery_backfill;
 
   vector<HeartbeatStampsRef> hb_stamps;
+  /// how long we can service reads in this interval
+  ceph::signedspan readable_until = ceph::signedspan::zero();
+  /// upper bound on any acting OSDs readable_until in this interval
+  ceph::signedspan readable_until_ub = ceph::signedspan::zero();
 
   bool send_notify = false; ///< True if a notify needs to be sent to the primary
 
@@ -2002,6 +2006,17 @@ public:
     dirty_big_info = true;
     write_if_dirty(t);
   }
+
+  /// get a sufficiently up-to-date readable_until value
+  ceph::signedspan get_readable_until(ceph::signedspan now) {
+    if (now >= readable_until) {
+      recalc_readable_until(now);
+    }
+    return readable_until;
+  }
+
+  /// recalc readable_until[_ub] for the current interval
+  void recalc_readable_until(ceph::signedspan now);
 
   //============================ const helpers ================================
   const char *get_current_state() const {

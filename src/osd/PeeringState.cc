@@ -1014,6 +1014,78 @@ bool PeeringState::set_force_backfill(bool b)
   return did;
 }
 
+void PeeringState::recalc_readable_until(ceph::time_detail::signedspan now)
+{
+  ceph::signedspan interval = pool.get_readable_interval();
+
+  if (is_primary()) {
+    if (hb_stamps.empty()) {
+      // we are all alone
+      readable_until = now + interval;
+      readable_until_ub = readable_until;
+    } else {
+      ceph::signedspan max_ls = ceph::signedspan::zero();  // last_sent
+      ceph::signedspan max_lap = ceph::signedspan::zero(); // last_acked_ping
+      for (auto p = hb_stamps.begin(); p != hb_stamps.end(); ++p) {
+	ceph::signedspan ls, lap;
+	(*p)->sample_primary(&ls, &lap);
+	if (ls > max_ls) {
+	  max_ls = ls;
+	}
+	if (lap > max_lap) {
+	  max_lap = lap;
+	};
+      }
+      if (max_ls != ceph::signedspan::zero()) {
+	// we sent a ping and therefore replicas may be readable; bound based
+	// on our last send time
+	readable_until_ub = max_ls + interval;
+	if (max_lap != ceph::signedspan::zero()) {
+	  // we've received replies; make our readability something
+	  // <= the replicas' upper bounds (i.e., base it on our ping
+	  // *send* time)
+	  readable_until = max_lap + interval;
+	} else {
+	  // we haven't received any replies; do not allow reads
+	  readable_until = ceph::signedspan::zero();
+	}
+      } else {
+	// we haven't sent a ping; nobody is readable
+	readable_until = ceph::signedspan::zero();
+	readable_until_ub = ceph::signedspan::zero();
+      }
+    }
+  } else if (is_replica()) {
+    assert(hb_stamps.size() == 1);
+    ceph::signedspan lrps_lb = ceph::signedspan::zero();
+    ceph::signedspan lrps_ub = ceph::signedspan::zero();
+    hb_stamps[0]->sample_nonprimary(&lrps_lb, &lrps_ub);
+    if (lrps_lb != ceph::signedspan::zero()) {
+      // base our readability on the *earlier* our last received ping could
+      // have been sent.
+      readable_until = lrps_lb + interval;
+    } else {
+      // no lower bound on when the ping was sent, so we can't allow
+      // reads on the replica.
+      readable_until = ceph::signedspan::zero();
+    }
+    if (lrps_ub != ceph::signedspan::zero()) {
+      readable_until_ub = lrps_ub + interval;
+    } else {
+      // we haven't received a ping, so nobody is readable yet
+      readable_until_ub = ceph::signedspan::zero();
+    }
+  } else {
+    // a stray PG is not readable
+    readable_until = ceph::signedspan::zero();
+    // and has no idea whether the pg is readable...
+    readable_until_ub = ceph::signedspan::max();
+  }
+  dout(20) << __func__ << " readable_until " << readable_until
+	   << " readable_until_ub " << readable_until_ub
+	   << dendl;
+}
+
 bool PeeringState::adjust_need_up_thru(const OSDMapRef osdmap)
 {
   epoch_t up_thru = osdmap->get_up_thru(pg_whoami.osd);
