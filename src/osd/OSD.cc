@@ -4629,6 +4629,9 @@ void OSD::handle_osd_ping(MOSDPing *m)
 	m->mono_send_stamp,
 	m->delta_ub,
 	m->consumed_epoch, &wake_pgs);
+      for (auto spgid : wake_pgs) {
+	service.queue_check_readable(spgid);
+      }
       dout(20) << __func__ << " new stamps " << *s->stamps << dendl;
 
       if (!cct->get_heartbeat_map()->is_healthy()) {
@@ -4764,6 +4767,9 @@ void OSD::handle_osd_ping(MOSDPing *m)
 	m->mono_send_stamp,
 	m->mono_ping_stamp,
 	m->consumed_epoch, &wake_pgs);
+      for (auto spgid : wake_pgs) {
+	service.queue_check_readable(spgid);
+      }
       dout(20) << __func__ << " new stamps " << *s->stamps << dendl;
     }
     break;
@@ -9348,6 +9354,28 @@ void OSD::handle_pg_query_nopg(const MQuery& q)
     }
     service.maybe_share_map(con.get(), osdmap);
     con->send_message(m);
+  }
+}
+
+void OSDService::queue_check_readable(spg_t spgid,
+				      ceph::signedspan delay)
+{
+  if (delay == ceph::signedspan::zero()) {
+    OSDMapRef osdmap = get_osdmap();
+    osd->enqueue_peering_evt(
+      spgid,
+      PGPeeringEventRef(
+	std::make_shared<PGPeeringEvent>(
+	  osdmap->get_epoch(), osdmap->get_epoch(),
+	  PeeringState::CheckReadable())));
+  } else {
+    std::lock_guard l(osd->readable_timer_lock);
+    osd->readable_timer.add_event_after(
+      std::chrono::duration<double>(delay).count(),
+      new FunctionContext(
+	[this, spgid](int r) {
+	  queue_check_readable(spgid);
+	}));
   }
 }
 

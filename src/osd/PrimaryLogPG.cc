@@ -810,6 +810,30 @@ bool PrimaryLogPG::check_laggy_requeue(OpRequestRef& op)
   return false;
 }
 
+void PrimaryLogPG::recheck_laggy()
+{
+  if (!is_laggy()) {
+    dout(10) << __func__ << " wasn't laggy" << dendl;
+    return;
+  }
+  auto mnow = osd->get_mnow();
+
+  auto ru = recovery_state.get_readable_until(mnow);
+  if (ru <= mnow) {
+    dout(10) << __func__ << " still laggy (readable_until " << ru
+	     << " <= mnow " << mnow << ")" << dendl;
+    recovery_state.queue_readable_check();
+    return;
+  }
+
+  dout(10) << __func__ << " no longer laggy (readable_until " << ru
+	   << " > mnow " << mnow << ")" << dendl;
+  state_clear(PG_STATE_LAGGY);
+  publish_stats_to_osd();
+  requeue_ops(waiting_for_readable);
+}
+
+
 class PGLSPlainFilter : public PGLSFilter {
   string val;
 public:
