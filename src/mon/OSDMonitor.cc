@@ -3137,7 +3137,9 @@ bool OSDMonitor::prepare_boot(MonOpRequestRef op)
 	pair<epoch_t,epoch_t>(begin, end);
     }
 
-    osd_xinfo_t xi = osdmap.get_xinfo(from);
+    if (pending_inc.new_xinfo.count(from) == 0)
+      pending_inc.new_xinfo[from] = osdmap.osd_xinfo[from];
+    osd_xinfo_t& xi = pending_inc.new_xinfo[from];
     if (m->boot_epoch == 0) {
       xi.laggy_probability *= (1.0 - g_conf()->mon_osd_laggy_weight);
       xi.laggy_interval *= (1.0 - g_conf()->mon_osd_laggy_weight);
@@ -3172,8 +3174,8 @@ bool OSDMonitor::prepare_boot(MonOpRequestRef op)
 	(g_conf()->mon_osd_auto_mark_new_in && (oldstate & CEPH_OSD_NEW)) ||
 	(g_conf()->mon_osd_auto_mark_in)) {
       if (can_mark_in(from)) {
-	if (osdmap.osd_xinfo[from].old_weight > 0) {
-	  pending_inc.new_weight[from] = osdmap.osd_xinfo[from].old_weight;
+	if (xi.old_weight > 0) {
+	  pending_inc.new_weight[from] = xi.old_weight;
 	  xi.old_weight = 0;
 	} else {
 	  pending_inc.new_weight[from] = CEPH_OSD_IN;
@@ -3183,8 +3185,6 @@ bool OSDMonitor::prepare_boot(MonOpRequestRef op)
 		<< m->get_orig_source_addr() << dendl;
       }
     }
-
-    pending_inc.new_xinfo[from] = xi;
 
     // wait
     wait_for_finished_proposal(op, new C_Booted(this, op));
