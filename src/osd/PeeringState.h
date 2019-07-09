@@ -2018,6 +2018,9 @@ public:
   /// recalc readable_until[_ub] for the current interval
   void recalc_readable_until(ceph::signedspan now);
 
+  /// queue the PG to be checked when we get a ping
+  void queue_readable_check();
+
   //============================ const helpers ================================
   const char *get_current_state() const {
     return state_history.get_current_state();

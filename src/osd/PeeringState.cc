@@ -1086,6 +1086,21 @@ void PeeringState::recalc_readable_until(ceph::time_detail::signedspan now)
 	   << dendl;
 }
 
+void PeeringState::queue_readable_check()
+{
+  if (is_primary()) {
+    for (auto& p : hb_stamps) {
+      dout(10) << __func__ << " primary " << this << " osd." << p->osd << dendl;
+      p->queue_primary(spgid);
+    }
+  } else if (is_replica()) {
+    for (auto& p : hb_stamps) {
+      dout(10) << __func__ << " replica " << this << " osd." << p->osd << dendl;
+      p->queue_replica(spgid);
+    }
+  }
+}
+
 bool PeeringState::adjust_need_up_thru(const OSDMapRef osdmap)
 {
   epoch_t up_thru = osdmap->get_up_thru(pg_whoami.osd);
