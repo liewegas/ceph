@@ -335,6 +335,10 @@ void OSDService::dump_live_pgids()
 #endif
 
 
+ceph::signedspan OSDService::get_mnow()
+{
+  return ceph::mono_clock::now() - osd->startup_time;
+}
 
 void OSDService::identify_splits_and_merges(
   OSDMapRef old_map,
@@ -4571,7 +4575,7 @@ void OSD::handle_osd_ping(MOSDPing *m)
   }
 
   utime_t now = ceph_clock_now();
-  auto mnow = ceph::mono_clock::now() - startup_time;
+  auto mnow = service.get_mnow();
   ConnectionRef con(m->get_connection());
   OSDMapRef curmap = service.get_osdmap();
   if (!curmap) {
@@ -4883,7 +4887,7 @@ void OSD::heartbeat()
   service.check_full_status(ratio, pratio);
 
   utime_t now = ceph_clock_now();
-  auto mnow = ceph::mono_clock::now() - startup_time;
+  auto mnow = service.get_mnow();
   utime_t deadline = now;
   deadline += cct->_conf->osd_heartbeat_grace;
 

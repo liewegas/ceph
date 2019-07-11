@@ -313,6 +313,7 @@ public:
     /// Send pg_created to mon
     virtual void send_pg_created(pg_t pgid) = 0;
 
+    virtual ceph::signedspan get_mnow() = 0;
     virtual HeartbeatStampsRef get_hb_stamps(int peer) = 0;
 
     // ============ Flush state ==================
