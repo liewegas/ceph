@@ -590,6 +590,16 @@ void PeeringState::start_peering_interval(
     info.history.same_primary_since = osdmap->get_epoch();
   }
 
+  auto mnow = pl->get_mnow();
+  recalc_readable_until(mnow);
+  prior_readable_until_ub = std::max(prior_readable_until_ub,
+				     readable_until_ub);
+  prior_readable_until_ub = info.history.refresh_prior_readable_until_ub(
+    mnow, prior_readable_until_ub);
+  psdout(10) << __func__ << " prior_readable_until_ub "
+	     << prior_readable_until_ub << " (mnow " << mnow << " + "
+	     << info.history.prior_readable_until_ub << ")" << dendl;
+
   pl->on_new_interval();
   pl->on_info_history_change();
 
