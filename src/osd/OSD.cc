@@ -2090,6 +2090,8 @@ OSD::OSD(CephContext *cct_, ObjectStore *store_,
   tick_timer_lock("OSD::tick_timer_lock"),
   tick_timer_without_osd_lock(cct, tick_timer_lock),
   gss_ktfile_client(cct->_conf.get_val<std::string>("gss_ktab_client_file")),
+  readable_timer_lock("OSD::readable_timer_lock"),
+  readable_timer(cct, readable_timer_lock),
   cluster_messenger(internal_messenger),
   client_messenger(external_messenger),
   objecter_messenger(osdc_messenger),
@@ -2729,6 +2731,7 @@ int OSD::init()
 
   tick_timer.init();
   tick_timer_without_osd_lock.init();
+  readable_timer.init();
   service.recovery_request_timer.init();
   service.sleep_timer.init();
 
@@ -3476,6 +3479,7 @@ int OSD::shutdown()
   boot_finisher.stop();
   reset_heartbeat_peers(true);
 
+  readable_timer.shutdown();
   tick_timer.shutdown();
 
   {

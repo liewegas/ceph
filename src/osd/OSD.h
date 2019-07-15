@@ -1122,6 +1122,10 @@ class OSD : public Dispatcher,
   SafeTimer tick_timer_without_osd_lock;
   std::string gss_ktfile_client{};
 
+  // Timer for readable
+  Mutex readable_timer_lock;
+  SafeTimer readable_timer;
+
 public:
   // config observer bits
   const char** get_tracked_conf_keys() const override;
