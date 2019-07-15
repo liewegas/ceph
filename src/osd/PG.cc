@@ -3394,6 +3394,12 @@ ostream& operator<<(ostream& out, const PG& pg)
     }
   }
 
+  if (pg.recovery_state.get_prior_readable_until_ub() !=
+      ceph::signedspan::zero()) {
+    out << " pruub=" << pg.recovery_state.get_prior_readable_until_ub() << "@"
+	<< pg.recovery_state.get_prior_readable_down_osds();
+  }
+
   out << "]";
 
 
