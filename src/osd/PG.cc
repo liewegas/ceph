@@ -1782,6 +1782,13 @@ HeartbeatStampsRef PG::get_hb_stamps(int peer)
   return osd->get_hb_stamps(peer);
 }
 
+void PG::queue_check_readable(
+  ceph::signedspan delay)
+{
+  osd->queue_check_readable(info.pgid, delay);
+}
+
+
 ceph::signedspan PG::get_mnow()
 {
   return osd->get_mnow();

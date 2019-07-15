@@ -484,6 +484,8 @@ public:
   void send_pg_created(pg_t pgid) override;
 
   HeartbeatStampsRef get_hb_stamps(int peer) override;
+  void queue_check_readable(
+    ceph::signedspan delay = ceph::signedspan::zero()) override;
   ceph::signedspan get_mnow() override;
 
   void rebuild_missing_set_with_deletes(PGLog &pglog) override;

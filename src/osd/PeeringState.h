@@ -316,6 +316,8 @@ public:
     virtual ceph::signedspan get_mnow() = 0;
     virtual HeartbeatStampsRef get_hb_stamps(int peer) = 0;
     virtual void recheck_laggy() = 0;
+    virtual void queue_check_readable(
+      ceph::signedspan delay = ceph::signedspan::zero()) = 0;
 
     // ============ Flush state ==================
     /**
