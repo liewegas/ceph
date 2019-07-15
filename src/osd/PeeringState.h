@@ -2022,6 +2022,11 @@ public:
     return prior_readable_until_ub;
   }
 
+  /// Reset prior intervals' readable_until upper bound (e.g., bc it passed)
+  void clear_prior_readable_until_ub() {
+    prior_readable_until_ub = ceph::signedspan::zero();
+  }
+
   /// get a sufficiently up-to-date readable_until value
   ceph::signedspan get_readable_until(ceph::signedspan now) {
     if (now >= readable_until) {
