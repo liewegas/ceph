@@ -1440,6 +1440,8 @@ public:
   ceph::signedspan readable_until = ceph::signedspan::zero();
   /// upper bound on any acting OSDs readable_until in this interval
   ceph::signedspan readable_until_ub = ceph::signedspan::zero();
+  /// upper bound from prior interval(s)
+  ceph::signedspan prior_readable_until_ub = ceph::signedspan::zero();
 
   bool send_notify = false; ///< True if a notify needs to be sent to the primary
 
@@ -2013,6 +2015,11 @@ public:
     dirty_info = true;
     dirty_big_info = true;
     write_if_dirty(t);
+  }
+
+  /// Get prior intervals' readable_until upper bound
+  ceph::signedspan get_prior_readable_until_ub() const {
+    return prior_readable_until_ub;
   }
 
   /// get a sufficiently up-to-date readable_until value
