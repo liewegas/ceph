@@ -926,7 +926,7 @@ void BlueStore::LRUCache::_touch_onode(OnodeRef& o)
 
 void BlueStore::LRUCache::_trim(uint64_t onode_max, uint64_t buffer_max)
 {
-  dout(20) << __func__ << " onodes " << onode_lru.size() << " / " << onode_max
+  dout(30) << __func__ << " onodes " << onode_lru.size() << " / " << onode_max
 	   << " buffers " << buffer_size << " / " << buffer_max
 	   << dendl;
 
@@ -1144,7 +1144,7 @@ void BlueStore::TwoQCache::_adjust_buffer_size(Buffer *b, int64_t delta)
 
 void BlueStore::TwoQCache::_trim(uint64_t onode_max, uint64_t buffer_max)
 {
-  dout(20) << __func__ << " onodes " << onode_lru.size() << " / " << onode_max
+  dout(30) << __func__ << " onodes " << onode_lru.size() << " / " << onode_max
 	   << " buffers " << buffer_bytes << " / " << buffer_max
 	   << dendl;
 
@@ -3764,7 +3764,7 @@ void BlueStore::MempoolThread::_trim_shards(bool interval_stats)
                   << " data_alloc: " << data_alloc
                   << " data_used: " << data_used << dendl;
   } else {
-    ldout(cct, 20) << __func__  << " cache_size: " << cache_size
+    ldout(cct, 30) << __func__  << " cache_size: " << cache_size
                    << " kv_alloc: " << kv_alloc
                    << " kv_used: " << kv_used
                    << " meta_alloc: " << meta_alloc
