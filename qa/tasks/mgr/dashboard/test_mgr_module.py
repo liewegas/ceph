@@ -14,7 +14,7 @@ class MgrModuleTestCase(DashboardTestCase):
 
     @classmethod
     def tearDownClass(cls):
-        cls._ceph_cmd(['mgr', 'module', 'disable', 'telemetry'])
+        cls._ceph_cmd(['mgr', 'module', 'disable', 'selftest'])
         super(MgrModuleTestCase, cls).tearDownClass()
 
     def wait_until_rest_api_accessible(self):
@@ -37,7 +37,7 @@ class MgrModuleTestCase(DashboardTestCase):
 
 class MgrModuleTest(MgrModuleTestCase):
     def test_list_disabled_module(self):
-        self._ceph_cmd(['mgr', 'module', 'disable', 'telemetry'])
+        self._ceph_cmd(['mgr', 'module', 'disable', 'selftest'])
         self.wait_until_rest_api_accessible()
         data = self._get('/api/mgr/module')
         self.assertStatus(200)
@@ -65,12 +65,12 @@ class MgrModuleTest(MgrModuleTestCase):
                             'tags': JList(str)
                         }))
                 })))
-        module_info = self.find_object_in_list('name', 'telemetry', data)
+        module_info = self.find_object_in_list('name', 'selftest', data)
         self.assertIsNotNone(module_info)
         self.assertFalse(module_info['enabled'])
 
     def test_list_enabled_module(self):
-        self._ceph_cmd(['mgr', 'module', 'enable', 'telemetry'])
+        self._ceph_cmd(['mgr', 'module', 'enable', 'selftest'])
         self.wait_until_rest_api_accessible()
         data = self._get('/api/mgr/module')
         self.assertStatus(200)
@@ -98,9 +98,43 @@ class MgrModuleTest(MgrModuleTestCase):
                             'tags': JList(str)
                         }))
                 })))
-        module_info = self.find_object_in_list('name', 'telemetry', data)
+        module_info = self.find_object_in_list('name', 'selftest', data)
         self.assertIsNotNone(module_info)
         self.assertTrue(module_info['enabled'])
+
+    def test_enable(self):
+        self._ceph_cmd(['mgr', 'module', 'disable', 'selftest'])
+        self.wait_until_rest_api_accessible()
+        try:
+            # Note, an exception is thrown because the Ceph Mgr
+            # modules are reloaded.
+            self._post('/api/mgr/module/selftest/enable')
+        except requests.ConnectionError:
+            pass
+        self.wait_until_rest_api_accessible()
+        data = self._get('/api/mgr/module')
+        self.assertStatus(200)
+        module_info = self.find_object_in_list('name', 'selftest', data)
+        self.assertIsNotNone(module_info)
+        self.assertTrue(module_info['enabled'])
+
+    def test_disable(self):
+        # Enable the 'selftest' module (all CephMgr modules are restarted)
+        # and wait until the Dashboard REST API is accessible.
+        self._ceph_cmd(['mgr', 'module', 'enable', 'selftest'])
+        self.wait_until_rest_api_accessible()
+        try:
+            # Note, an exception is thrown because the Ceph Mgr
+            # modules are reloaded.
+            self._post('/api/mgr/module/selftest/disable')
+        except requests.ConnectionError:
+            pass
+        self.wait_until_rest_api_accessible()
+        data = self._get('/api/mgr/module')
+        self.assertStatus(200)
+        module_info = self.find_object_in_list('name', 'selftest', data)
+        self.assertIsNotNone(module_info)
+        self.assertFalse(module_info['enabled'])
 
 
 class MgrModuleTelemetryTest(MgrModuleTestCase):
@@ -164,36 +198,3 @@ class MgrModuleTelemetryTest(MgrModuleTestCase):
         self.assertEqual(data['proxy'], 'foo')
         self.assertEqual(data['url'], 'https://foo.bar/report')
 
-    def test_enable(self):
-        self._ceph_cmd(['mgr', 'module', 'disable', 'telemetry'])
-        self.wait_until_rest_api_accessible()
-        try:
-            # Note, an exception is thrown because the Ceph Mgr
-            # modules are reloaded.
-            self._post('/api/mgr/module/telemetry/enable')
-        except requests.ConnectionError:
-            pass
-        self.wait_until_rest_api_accessible()
-        data = self._get('/api/mgr/module')
-        self.assertStatus(200)
-        module_info = self.find_object_in_list('name', 'telemetry', data)
-        self.assertIsNotNone(module_info)
-        self.assertTrue(module_info['enabled'])
-
-    def test_disable(self):
-        # Enable the 'telemetry' module (all CephMgr modules are restarted)
-        # and wait until the Dashboard REST API is accessible.
-        self._ceph_cmd(['mgr', 'module', 'enable', 'telemetry'])
-        self.wait_until_rest_api_accessible()
-        try:
-            # Note, an exception is thrown because the Ceph Mgr
-            # modules are reloaded.
-            self._post('/api/mgr/module/telemetry/disable')
-        except requests.ConnectionError:
-            pass
-        self.wait_until_rest_api_accessible()
-        data = self._get('/api/mgr/module')
-        self.assertStatus(200)
-        module_info = self.find_object_in_list('name', 'telemetry', data)
-        self.assertIsNotNone(module_info)
-        self.assertFalse(module_info['enabled'])
