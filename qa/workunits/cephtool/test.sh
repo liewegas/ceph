@@ -2700,6 +2700,13 @@ function test_mgr_tell()
   ceph tell mgr osd status
 }
 
+function test_mgr_devices()
+{
+  ceph device ls
+  expect_false ceph device info doesnotexist
+  expect_false ceph device get-health-metrics doesnotexist
+}
+
 #
 # New tests should be added to the TESTS array below
 #
@@ -2759,6 +2766,7 @@ MDS_TESTS+=" mon_mds_metadata"
 MDS_TESTS+=" mds_tell_help_command"
 
 MGR_TESTS+=" mgr_tell"
+MGR_TESTS+=" mgr_devices"
 
 TESTS+=$MON_TESTS
 TESTS+=$OSD_TESTS
