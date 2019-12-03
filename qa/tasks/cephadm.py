@@ -418,7 +418,6 @@ def ceph_mons(ctx, config):
                             break
 
         # refresh ceph.conf files for all mons + first mgr
-        """
         for remote, roles in ctx.cluster.remotes.items():
             for mon in [r for r in roles
                         if teuthology.is_type('mon', cluster_name)(r)]:
@@ -431,7 +430,6 @@ def ceph_mons(ctx, config):
             'ceph', 'orchestrator', 'service', 'redeploy',
             'mgr', ctx.ceph[cluster_name].first_mgr,
         ])
-        """
 
         yield
 
