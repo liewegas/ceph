@@ -36,7 +36,8 @@
 #undef dout_prefix
 #define dout_prefix _conn_prefix(_dout)
 ostream& AsyncConnection::_conn_prefix(std::ostream *_dout) {
-  return *_dout << "-- " << async_msgr->get_myaddrs() << " >> "
+  return *_dout << "-- "  << async_msgr << "/" << ceph_entity_type_name(async_msgr->get_mytype())
+		<< " " << async_msgr->get_myaddrs() << " >> "
 		<< *peer_addrs << " conn(" << this
 		<< (msgr2 ? " msgr2=" : " legacy=")
 		<< protocol.get()

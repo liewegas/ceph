@@ -33,7 +33,8 @@
 #undef dout_prefix
 #define dout_prefix _prefix(_dout, this)
 static ostream& _prefix(std::ostream *_dout, AsyncMessenger *m) {
-  return *_dout << "-- " << m->get_myaddrs() << " ";
+  return *_dout << "-- " << m << "/" << ceph_entity_type_name(m->get_mytype())
+		<< " " << m->get_myaddrs() << " ";
 }
 
 static ostream& _prefix(std::ostream *_dout, Processor *p) {

@@ -17,7 +17,8 @@
 #undef dout_prefix
 #define dout_prefix _conn_prefix(_dout)
 ostream &ProtocolV2::_conn_prefix(std::ostream *_dout) {
-  return *_dout << "--2- " << messenger->get_myaddrs() << " >> "
+  return *_dout << "--2- " << messenger << "/" << ceph_entity_type_name(messenger->get_mytype())
+		<< " " << messenger->get_myaddrs() << " >> "
                 << *connection->peer_addrs << " conn(" << connection << " "
                 << this
 		<< " " << ceph_con_mode_name(auth_meta->con_mode)
