@@ -36,7 +36,7 @@ using ceph::bufferlist;
 
 #define dout_subsys ceph_subsys_mgrc
 #undef dout_prefix
-#define dout_prefix *_dout << "mgrc " << __func__ << " "
+#define dout_prefix *_dout << "mgrc(" << this << ") " << __func__ << " "
 
 MgrClient::MgrClient(CephContext *cct_, Messenger *msgr_, MonMap *monmap_)
   : Dispatcher(cct_),
