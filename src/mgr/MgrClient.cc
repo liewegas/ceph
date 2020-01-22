@@ -36,7 +36,7 @@ using ceph::bufferlist;
 
 #define dout_subsys ceph_subsys_mgrc
 #undef dout_prefix
-#define dout_prefix *_dout << "mgrc(" << this << ") " << __func__ << " "
+#define dout_prefix *_dout << "mgrc(" << this << "/" << ceph_entity_type_name(msgr->get_mytype()) << "/" << (int)service_daemon << ") " << __func__ << " "
 
 MgrClient::MgrClient(CephContext *cct_, Messenger *msgr_, MonMap *monmap_)
   : Dispatcher(cct_),
@@ -184,6 +184,9 @@ void MgrClient::reconnect()
 
   // Don't send an open if we're just a client (i.e. doing
   // command-sending, not stats etc)
+  ldout(cct, 10) << " msgr->mytype=" << ceph_entity_type_name(msgr->get_mytype())
+		 << " service_daemon=" << (int)service_daemon
+		 << dendl;
   if (msgr->get_mytype() != CEPH_ENTITY_TYPE_CLIENT || service_daemon) {
     _send_open();
   }
@@ -223,6 +226,7 @@ void MgrClient::reconnect()
 
 void MgrClient::_send_open()
 {
+  ldout(cct, 10) << dendl;
   if (session && session->con) {
     auto open = make_message<MMgrOpen>();
     if (!service_name.empty()) {
