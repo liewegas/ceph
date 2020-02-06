@@ -582,6 +582,46 @@ Usage:
         return HandleCommandResult(stdout=completion.result_str())
 
     @orchestrator._cli_write_command(
+        'orchestrator prom add',
+        'name=num,type=CephInt,req=false '
+        'name=hosts,type=CephString,n=N,req=false '
+        'name=label,type=CephString,req=false',
+        'Create a prometheus service')
+    def _prom_add(self, count=None, hosts=None, label=None):
+        spec = orchestrator.StatefulServiceSpec(
+            placement=orchestrator.PlacementSpec(label=label, hosts=hosts, count=count),
+        )
+        completion = self.add_prometheus(spec)
+        self._orchestrator_wait([completion])
+        orchestrator.raise_if_exception(completion)
+        return HandleCommandResult(stdout=completion.result_str())
+
+    @orchestrator._cli_write_command(
+        'orchestrator prom update',
+        'name=num,type=CephInt,req=false '
+        'name=hosts,type=CephString,n=N,req=false '
+        'name=label,type=CephString,req=false',
+        'Update a prometheus service')
+    def _prom_update(self, count=None, hosts=None, label=None):
+        spec = orchestrator.StatefulServiceSpec(
+            placement=orchestrator.PlacementSpec(label=label, hosts=hosts, count=count),
+        )
+        completion = self.update_prometheus(spec)
+        self._orchestrator_wait([completion])
+        orchestrator.raise_if_exception(completion)
+        return HandleCommandResult(stdout=completion.result_str())
+
+    @orchestrator._cli_write_command(
+        'orchestrator prometheus rm',
+        "name=name,type=CephString",
+        'Remove a prometheus service')
+    def _prom_rm(self, name):
+        completion = self.remove_prometheus(name)
+        self._orchestrator_wait([completion])
+        orchestrator.raise_if_exception(completion)
+        return HandleCommandResult(stdout=completion.result_str())
+
+    @orchestrator._cli_write_command(
         'orchestrator service',
         "name=action,type=CephChoices,strings=start|stop|restart|redeploy|reconfig "
         "name=svc_type,type=CephString "

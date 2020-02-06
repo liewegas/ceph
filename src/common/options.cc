@@ -5130,7 +5130,7 @@ std::vector<Option> get_global_options() {
     .set_description("Filesystem path to manager modules."),
 
     Option("mgr_initial_modules", Option::TYPE_STR, Option::LEVEL_BASIC)
-    .set_default("restful iostat")
+    .set_default("restful iostat prometheus")
     .set_flag(Option::FLAG_NO_MON_UPDATE)
     .set_flag(Option::FLAG_CLUSTER_CREATE)
     .add_service("mon")

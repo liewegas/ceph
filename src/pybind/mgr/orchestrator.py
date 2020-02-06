@@ -1002,6 +1002,23 @@ class Orchestrator(object):
         """
         raise NotImplementedError()
 
+    def add_prometheus(self, spec):
+        # type: (StatefulServiceSpec) -> Completion
+        """Create a new Prometheus service"""
+        raise NotImplementedError()
+
+    def remove_prometheus(self, name):
+        # type: (str) -> Completion
+        """Remove a Prometheus service"""
+        raise NotImplementedError()
+
+    def update_prometheus(self, spec):
+        # type: (StatefulServiceSpec) -> Completion
+        """
+        Update / redeploy existing prometheus Service
+        """
+        raise NotImplementedError()
+
     def upgrade_check(self, image, version):
         # type: (Optional[str], Optional[str]) -> Completion
         raise NotImplementedError()
