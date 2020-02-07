@@ -1795,6 +1795,45 @@ class CephadmOrchestrator(MgrModule, orchestrator.OrchestratorClientMixin):
 
         return self._create_daemon('mgr', name, host, keyring=keyring)
 
+    def add_mgrs(self, spec):
+        if not spec.placement.hosts or len(spec.placement.hosts) < spec.placement.count:
+            raise RuntimeError("must specify at least %d hosts" % spec.placement.count)
+        return self._get_services('mgr').then(lambda ds: self._add_mgr(ds, spec))
+
+    def _add_mgr(self, daemons, spec):
+        args = []
+        num_added = 0
+        for host, _, name in spec.placement.hosts:
+            if num_added >= spec.count:
+                break
+            mgr_id = self.get_unique_name(host, daemons)
+            self.log.debug('placing mgr.%s on host %s' % (mgr_id, host))
+            args.append((host, mgr_id))
+            # add to daemon list so next name(s) will also be unique
+            sd = orchestrator.ServiceDescription()
+            sd.service_instance = mgr_id
+            sd.service_type = 'mgr'
+            sd.nodename = host
+            daemons.append(sd)
+            num_added += 1
+        return self._create_mgr(args)
+
+    def remove_mgr(self, name):
+        self.log.debug("Attempting to remove mgr: {}".format(name))
+
+        def _remove_mgr(daemons):
+            args = []
+            for d in daemons:
+                if d.service_instance == name:
+                    args.append(
+                        ('%s.%s' % (d.service_type, d.service_instance),
+                         d.nodename)
+                    )
+            if not args:
+                raise OrchestratorError('Unable to find mgr.%s daemon(s)' % name)
+            return self._remove_daemon(args)
+        return self._get_services('mgr').then(_remove_mgr)
+
     @with_services('mgr')
     def update_mgrs(self, spec, services):
         # type: (orchestrator.StatefulServiceSpec, List[orchestrator.ServiceDescription]) -> orchestrator.Completion
@@ -1834,44 +1873,19 @@ class CephadmOrchestrator(MgrModule, orchestrator.OrchestratorClientMixin):
             # otherwise, remove *any* mgr
             if num_to_remove > 0:
                 for d in services:
-                    to_remove_damons.append(('%s.%s' % (d.service_type, d.service_instance), d.nodename))
-                    num_to_remove -= 1
-                    if num_to_remove == 0:
-                        break
+                    if d.service_instance != self.get_mgr_id():
+                        to_remove_damons.append(('%s.%s' % (d.service_type, d.service_instance), d.nodename))
+                        num_to_remove -= 1
+                        if num_to_remove == 0:
+                            break
             c = self._remove_daemon(to_remove_damons)
             c.add_progress('Removing MGRs', self)
             c.update_progress = True
             return c
 
         else:
-            # we assume explicit placement by which there are the same number of
-            # hosts specified as the size of increase in number of daemons.
-            num_new_mgrs = spec.count - num_mgrs
-            if len(spec.placement.hosts) < num_new_mgrs:
-                raise RuntimeError(
-                    "Error: {} hosts provided, expected {}".format(
-                        len(spec.placement.hosts), num_new_mgrs))
-
-            for host_spec in spec.placement.hosts:
-                if host_spec.name and len([d for d in services if d.service_instance == host_spec.name]):
-                    raise RuntimeError('name %s alrady exists', host_spec.name)
-
-            for host_spec in spec.placement.hosts:
-                if host_spec.name and len([d for d in services if d.service_instance == host_spec.name]):
-                    raise RuntimeError('name %s alrady exists', host_spec.name)
-
-            self.log.info("creating {} managers on hosts: '{}'".format(
-                num_new_mgrs, ",".join([_spec.hostname for _spec in spec.placement.hosts])))
-
-            args = []
-            for host_spec in spec.placement.hosts:
-                host = host_spec.hostname
-                name = host_spec.name or self.get_unique_name(host, services)
-                args.append((host, name))
-            c = self._create_mgr(args)
-            c.add_progress('Creating MGRs', self)
-            c.update_progress = True
-            return c
+            spec.count -= num_mgrs
+            return self._add_mgr(services, spec)
 
     def add_mds(self, spec):
         if not spec.placement.hosts or len(spec.placement.hosts) < spec.placement.count:
