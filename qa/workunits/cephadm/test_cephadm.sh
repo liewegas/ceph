@@ -263,6 +263,10 @@ while true; do
 	echo "grafana did not come up"
 	exit 1
     fi
+    $SUDO ps axf
+    $SUDO netstat -anp
+    $SUDO docker ps -a || $SUDO podman ps -a
+    $SUDO journalctl -u ceph-$FSID@grafana.a | cat
     sleep 5
 done
 echo "grafana ok"
