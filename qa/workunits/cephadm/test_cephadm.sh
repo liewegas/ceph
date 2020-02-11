@@ -265,6 +265,7 @@ while true; do
     $SUDO ps axf
     $SUDO netstat -anp
     $SUDO docker ps -a || $SUDO podman ps -a
+    $SUDO journalctl -u ceph-$FSID@grafana.a | cat
     sleep 5
 done
 echo "grafana ok"
