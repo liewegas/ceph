@@ -263,6 +263,9 @@ while true; do
 	echo "grafana did not come up"
 	exit 1
     fi
+    $SUDO ps axf
+    $SUDO netstat -anp
+    $SUDO docker ps -a || $SUDO podman ps -a
     sleep 5
 done
 echo "grafana ok"
