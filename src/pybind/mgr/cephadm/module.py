@@ -1950,25 +1950,39 @@ class CephadmOrchestrator(orchestrator.Orchestrator, MgrModule):
             get_hosts_func=self._get_hosts,
             get_daemons_func=self.cache.get_daemons_by_service,
             service_type=daemon_type).load()
-        if len(daemons) > spec.placement.count:
-            # remove some
-            to_remove = len(daemons) - spec.placement.count
-            args = []
-            for d in daemons[0:to_remove]:
-                args.append(
+        self.log.debug('spec.placement.hosts %s' % spec.placement.hosts)
+
+        # add any?
+        add_specs = []
+        hosts_with_daemons = {d.hostname for d in daemons}
+        self.log.debug('hosts with daemons: %s' % hosts_with_daemons)
+        for hs in spec.placement.hosts:
+            if hs.hostname not in hosts_with_daemons:
+                self.log.debug('will add to %s' % hs.hostname)
+                add_specs.append(hs)
+
+        # remove any?
+        rm_args = []
+        target_hosts = [h.hostname for h in spec.placement.hosts]
+        for d in daemons:
+            if d.hostname not in target_hosts:
+                self.log.debug('will remove %s' % d.name())
+                rm_args.append(
                     ('%s.%s' % (d.daemon_type, d.daemon_id), d.hostname)
                 )
-            return self._remove_daemon(args)
-        elif len(daemons) < spec.placement.count:
-            # add some
-            spec.placement.count -= len(daemons)
-            hosts_with_daemons = {d.hostname for d in daemons}
-            hosts_without_daemons = {p for p in spec.placement.hosts
-                                     if p.hostname not in hosts_with_daemons}
-            spec.placement.hosts = hosts_without_daemons
-            return self._create_daemons(daemon_type, spec, daemons,
-                                        create_func, config_func)
-        return trivial_result([])
+        if add_specs:
+            spec.placement.count = len(add_specs)
+            spec.placement.set_hosts(add_specs)
+
+        # **HELP**
+        r = []
+        if add_specs:
+            r.extend(self._create_daemons(
+                daemon_type, spec, daemons,
+                create_func, config_func))
+        if rm_args:
+            r.extend(self._remove_daemon(rm_args))
+        return async_map_completion(r)
 
     def _add_daemon(self, daemon_type, spec,
                     create_func, config_func=None):
@@ -1990,6 +2004,7 @@ class CephadmOrchestrator(orchestrator.Orchestrator, MgrModule):
 
     def _create_daemons(self, daemon_type, spec, daemons,
                         create_func, config_func=None):
+        self.log.debug('_create_daemons')
         if spec.placement.count > len(spec.placement.hosts):
             raise OrchestratorError('too few hosts: want %d, have %s' % (
                 spec.placement.count, spec.placement.hosts))
@@ -1999,6 +2014,9 @@ class CephadmOrchestrator(orchestrator.Orchestrator, MgrModule):
 
         args = [] # type: ignore
         for host, network, name in spec.placement.hosts:
+            self.log.debug('host %s network %s name %s' % (host, network, name))
+            self.log.debug('spec.name %s' % spec.name)
+            self.log.debug('daemons %s' % daemons)
             daemon_id = self.get_unique_name(daemon_type, host, daemons,
                                              spec.name, name)
             self.log.debug('Placing %s.%s on host %s' % (
