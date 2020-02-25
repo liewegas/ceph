@@ -1948,6 +1948,7 @@ class CephadmOrchestrator(orchestrator.Orchestrator, MgrModule):
         spec = HostAssignment(
             spec=spec,
             get_hosts_func=self._get_hosts,
+            get_daemons_func=self.cache.get_daemons_by_service,
             service_type=daemon_type).load()
         if len(daemons) > spec.placement.count:
             # remove some
@@ -2407,7 +2408,7 @@ class SimpleScheduler(BaseScheduler):
         # type: (List, Optional[int]) -> List[HostPlacementSpec]
         if not host_pool:
             raise Exception('List of host candidates is empty')
-        host_pool = [HostPlacementSpec(x, '', '') for x in host_pool]
+        host_pool = [x for x in host_pool]
         # shuffle for pseudo random selection
         random.shuffle(host_pool)
         return host_pool[:count]
@@ -2428,65 +2429,122 @@ class HostAssignment(object):
                  spec=None,  # type: Optional[orchestrator.ServiceSpec]
                  scheduler=None,  # type: Optional[BaseScheduler]
                  get_hosts_func=None,  # type: Optional[Callable[[Optional[str]],List[str]]]
+                 get_daemons_func=None,
                  service_type=None,  # type: Optional[str]
                  ):
-        assert spec and get_hosts_func and service_type
+        assert spec and get_hosts_func and get_daemons_func and service_type
         self.spec = spec  # type: orchestrator.ServiceSpec
         self.scheduler = scheduler if scheduler else SimpleScheduler(self.spec.placement)
         self.get_hosts_func = get_hosts_func
+        self.get_daemons_func = get_daemons_func
         self.daemon_type = service_type
+        self.service_name = service_type
+        if spec.name:
+            self.service_name += '.' + spec.name
 
     def load(self):
         # type: () -> orchestrator.ServiceSpec
         """
         Load hosts into the spec.placement.hosts container.
         """
-        self.load_labeled_hosts()
-        self.assign_hosts()
+        # respect any explicit host list
+        if self.spec.placement.hosts:
+            logger.info('Provided hosts: %s' % self.spec.placement.hosts)
+            return self.spec
+
+        # respect all_hosts=true
+        if self.spec.placement.all_hosts:
+            candidates = [
+                HostPlacementSpec(x, '', '')
+                for x in self.get_hosts_func(None)
+            ]
+            logger.info('All hosts: {}'.format(candidates))
+            self.spec.placement.set_hosts(candidates)
+            return self.spec
+
+        # select candidate hosts based on labels, types, etc.
+        hosts = self.pick_candidates()
+
+        if not self.spec.placement.count:
+            logger.info('Labeled hosts: {}'.format(hosts))
+            self.spec.placement.set_hosts(hosts)
+            return self.spec
+
+        # we need to select a subset of the candidates
+
+        # prefer hosts that already have services
+        daemons = self.get_daemons_func(self.service_name)
+        hosts_with_daemons = {d.hostname for d in daemons}
+        existing = [hs for hs in hosts
+                    if hs.hostname in hosts_with_daemons]
+        if len(existing) >= self.spec.placement.count:
+            chosen = self.scheduler.place(existing, self.spec.placement.count)
+            logger.info('Hosts with existing daemons: {}'.format(chosen))
+            self.spec.placement.set_hosts(chosen)
+            return self.spec
+
+        need = self.spec.placement.count - len(existing)
+        others = [hs for hs in hosts
+                  if hs.hostname not in hosts_with_daemons]
+        chosen = self.scheduler.place(others, need)
+        self.spec.placement.set_hosts(existing + chosen)
+        logger.info('Combine hosts with existing daemons %s + new hosts %s' % (
+            existing, chosen))
         return self.spec
 
-    def load_labeled_hosts(self):
-        # type: () -> None
+    def pick_candidates(self):
+        # type: () -> List[orchestrator.HostPlacementSpec]
         """
-        Assign hosts based on their label
+        Use the assigned scheduler to load hosts into the spec.placement.hosts
+        container
         """
+        # is there an explicit label?
         if self.spec.placement.label:
-            logger.info("Matching label '%s'" % self.spec.placement.label)
             candidates = [
                 HostPlacementSpec(x, '', '')
                 for x in self.get_hosts_func(self.spec.placement.label)
             ]
-            logger.info('Assigning hostss to spec: {}'.format(candidates))
-            self.spec.placement.set_hosts(candidates)
+            logger.info('Candidate hosts with label %s: %s' % (
+                self.spec.placement.label, candidates))
+            return candidates
 
-    def assign_hosts(self):
-        # type: () -> None
-        """
-        Use the assigned scheduler to load hosts into the spec.placement.hosts container
-        """
-        # If no imperative or declarative host assignments, use the scheduler to pick from the
-        # host pool (assuming `count` is set)
-        if not self.spec.placement.label and not self.spec.placement.hosts and self.spec.placement.count:
-            logger.info("Found num spec. Looking for labeled hosts.")
-            # TODO: actually query for labels (self.daemon_type)
-            candidates = self.scheduler.place([x for x in self.get_hosts_func(None)],
-                                              count=self.spec.placement.count)
-            # Not enough hosts to deploy on
-            if len(candidates) != self.spec.placement.count:
-                logger.warning("Did not find enough labeled hosts to \
-                               scale to <{}> services. Falling back to unlabeled hosts.".
-                               format(self.spec.placement.count))
+        # otherwise, start with hosts labeled for this service or type
+        candidates = [
+            HostPlacementSpec(x, '', '')
+            for x in self.get_hosts_func(self.service_name)
+        ]
+        if candidates:
+            logger.info('Candidate hosts with service label %s: %s' % (
+                self.service_name, candidates))
+            return candidates
+
+        # type label (e.g., mds)
+        candidates = [
+            HostPlacementSpec(x, '', '')
+            for x in self.get_hosts_func(self.daemon_type)
+        ]
+        if candidates:
+            if self.spec.placement.count and \
+               len(candidates) < self.spec.placement.count:
+                # NOTE: Hmm, is this really the behavior we want?
+                logger.warning("Did not find enough labeled hosts to "
+                               "scale to <{}> services. Falling back to "
+                               "unlabeled hosts.".format(
+                                   self.spec.placement.count))
             else:
-                logger.info('Assigning hosts to spec: {}'.format(candidates))
-                self.spec.placement.set_hosts(candidates)
-                return None
+                logger.info('Candidate hosts with service type label: %s' % (
+                    candidates))
+                return candidates
 
-            candidates = self.scheduler.place([x for x in self.get_hosts_func(None)], count=self.spec.placement.count)
-            # Not enough hosts to deploy on
-            if len(candidates) != self.spec.placement.count:
-                raise OrchestratorValidationError("Cannot place {} daemons on {} hosts.".
-                                                  format(self.spec.placement.count, len(candidates)))
-
-            logger.info('Assigning hosts to spec: {}'.format(candidates))
-            self.spec.placement.set_hosts(candidates)
-            return None
+        # fall back to *all* hosts?
+        if not self.spec.placement.count:
+            raise OrchestratorValidationError(
+                "Cannot place service %s without any placement information" % (
+                    self.service_name))
+        
+        candidates = [
+            HostPlacementSpec(x, '', '')
+            for x in self.get_hosts_func(None)
+        ]
+        logger.info('Candidate hosts (all): {}'.format(candidates))
+        return candidates
