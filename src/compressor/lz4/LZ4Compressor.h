@@ -33,6 +33,26 @@ class LZ4Compressor : public Compressor {
     LZ4_stream_t lz4_stream;
     LZ4_resetStream(&lz4_stream);
 
+    // older version of liblz4 introduce bit errors when compressing
+    // unaligned buffers.  check for that!
+    if (true) {
+      auto& l = src.buffers();
+      auto p = l.begin();
+      while (p != l.end()) {
+	if (((unsigned long)p->c_str() & ((long)-1)) == 0 &&
+	    ((unsigned long)p->end_c_str() & ((long)-1)) == 0) {
+	  ++p;
+	} else {
+	  ++p;
+	  if (p != l.end()) {
+	    bufferlist new_src = src;
+	    new_src.rebuild();
+	    return compress(new_src, dst);
+	  }
+	}
+      }
+    }
+
     auto p = src.begin();
     size_t left = src.length();
     int pos = 0;
