@@ -130,6 +130,18 @@ public:
   create(const entity_name_t& name,
          const std::string& lname,
          const uint64_t nonce);
+
+  static uint64_t get_random_nonce() {
+    return ceph::util::generate_random_number<uint64_t>();
+  }
+  static uint64_t get_pid_nonce() {
+    uint64_t nonce = getpid();
+    if (nonce == 1) {
+      // we're running in a container; use a random number instead!
+      nonce = ceph::util::generate_random_number<uint64_t>();
+    }
+    return nonce;
+  }
 };
 
 inline ostream& operator<<(ostream& out, const Messenger& msgr) {
