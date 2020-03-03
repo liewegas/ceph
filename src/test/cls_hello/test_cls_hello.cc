@@ -123,11 +123,20 @@ TEST(ClsHello, WriteReturnData) {
   ASSERT_EQ(0, ioctx.exec("myobject", "hello", "write_return_data", in, out));
   ASSERT_EQ(std::string(), std::string(out.c_str(), out.length()));
 
-  // this will return return an error due to unexpected input
+  // this will return return an error due to unexpected input.
+  // note that we set the RETURNVEC flag here so that we *reliably* get the
+  // "too much input data!" return data string
   char buf[4096];
   memset(buf, 1, sizeof(buf));
   in.append(buf, sizeof(buf));
-  ASSERT_EQ(-EINVAL, ioctx.exec("myobject2", "hello", "write_return_data", in, out));
+  ObjectWriteOperation o;
+  o.exec("hello", "write_return_data", in, &out, &rval);
+  librados::AioCompletion *completion = cluster.aio_create_completion();
+  ASSERT_EQ(0, ioctx.aio_operate("foo", completion, &o,
+				 librados::OPERATION_RETURNVEC));
+  completion->wait_for_complete();
+  ASSERT_EQ(-EINVAL, completion->get_return_value());
+  ASSERT_EQ(-EINVAL, rval);
   ASSERT_EQ(std::string("too much input data!"), std::string(out.c_str(), out.length()));
   ASSERT_EQ(-ENOENT, ioctx.getxattr("myobject2", "foo", out));
 
