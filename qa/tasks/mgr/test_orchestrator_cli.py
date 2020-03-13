@@ -82,8 +82,8 @@ class TestOrchestratorCli(MgrTestCase):
         self._orch_cmd("daemon", "start", "mds.a")
 
     def test_osd_create(self):
-        self._orch_cmd("osd", "create", "*:device")
-        self._orch_cmd("osd", "create", "*:device,device2")
+        self._orch_cmd("apply", "osd", "*:device")
+        self._orch_cmd("apply", "osd", "*:device,device2")
 
         drive_groups = {
             'test': {
@@ -92,11 +92,12 @@ class TestOrchestratorCli(MgrTestCase):
             }
         }
 
-        res = self._orch_cmd_result("osd", "create", "-i", "-", stdin=json.dumps(drive_groups))
+        res = self._orch_cmd_result("apply", "osd", "-i", "-",
+                                    stdin=json.dumps(drive_groups))
         self.assertEqual(res, 0)
 
         with self.assertRaises(Exception):
-           self._orch_cmd("osd", "create", "notfound:device")
+           self._orch_cmd("apply", "osd", "notfound:device")
 
     def test_blink_device_light(self):
         def _ls_lights(what):
