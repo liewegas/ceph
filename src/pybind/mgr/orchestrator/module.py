@@ -535,112 +535,6 @@ Usage:
         return HandleCommandResult(stdout=table.get_string())
 
     @_cli_write_command(
-        'orch daemon add',
-        'name=daemon_type,type=CephChoices,strings=mon|mgr|rbd-mirror|crash|alertmanager|grafana|node-exporter|prometheus,req=false '
-        'name=placement,type=CephString,req=false',
-        'Add daemon(s)')
-    def _daemon_add_misc(self, daemon_type=None, placement=None, inbuf=None):
-        usage = f"""Usage:
-    ceph orch daemon add -i <json_file>
-    ceph orch daemon add {daemon_type or '<daemon_type>'} <placement>"""
-        if inbuf:
-            if daemon_type or placement:
-                raise OrchestratorValidationError(usage)
-            spec = ServiceSpec.from_json(yaml.safe_load(inbuf))
-        else:
-            placement = PlacementSpec.from_string(placement)
-            placement.validate()
-
-            spec = ServiceSpec(daemon_type, placement=placement)
-
-        if daemon_type == 'mon':
-            completion = self.add_mon(spec)
-        elif daemon_type == 'mgr':
-            completion = self.add_mgr(spec)
-        elif daemon_type == 'rbd-mirror':
-            completion = self.add_rbd_mirror(spec)
-        elif daemon_type == 'crash':
-            completion = self.add_crash(spec)
-        elif daemon_type == 'alertmanager':
-            completion = self.add_alertmanager(spec)
-        elif daemon_type == 'grafana':
-            completion = self.add_grafana(spec)
-        elif daemon_type == 'node-exporter':
-            completion = self.add_node_exporter(spec)
-        elif daemon_type == 'prometheus':
-            completion = self.add_prometheus(spec)
-        else:
-            raise OrchestratorValidationError(f'unknown daemon type `{daemon_type}`')
-
-        self._orchestrator_wait([completion])
-        raise_if_exception(completion)
-        return HandleCommandResult(stdout=completion.result_str())
-
-    @_cli_write_command(
-        'orch daemon add mds',
-        'name=fs_name,type=CephString '
-        'name=placement,type=CephString,req=false',
-        'Start MDS daemon(s)')
-    def _mds_add(self, fs_name, placement=None):
-        spec = ServiceSpec(
-            'mds', fs_name,
-            placement=PlacementSpec.from_string(placement),
-        )
-        completion = self.add_mds(spec)
-        self._orchestrator_wait([completion])
-        raise_if_exception(completion)
-        return HandleCommandResult(stdout=completion.result_str())
-
-    @_cli_write_command(
-        'orch daemon add rgw',
-        'name=realm_name,type=CephString '
-        'name=zone_name,type=CephString '
-        'name=placement,type=CephString,req=false',
-        'Start RGW daemon(s)')
-    def _rgw_add(self, realm_name, zone_name, placement=None, inbuf=None):
-        usage = """
-Usage:
-  ceph orch daemon rgw add -i <json_file>
-  ceph orch daemon rgw add <realm_name> <zone_name>
-        """
-        if inbuf:
-            try:
-                rgw_spec = RGWSpec.from_json(json.loads(inbuf))
-            except ValueError as e:
-                msg = 'Failed to read JSON input: {}'.format(str(e)) + usage
-                return HandleCommandResult(-errno.EINVAL, stderr=msg)
-        rgw_spec = RGWSpec(
-            rgw_realm=realm_name,
-            rgw_zone=zone_name,
-            placement=PlacementSpec.from_string(placement),
-        )
-
-        completion = self.add_rgw(rgw_spec)
-        self._orchestrator_wait([completion])
-        raise_if_exception(completion)
-        return HandleCommandResult(stdout=completion.result_str())
-
-    @_cli_write_command(
-        'orch daemon add nfs',
-        "name=svc_arg,type=CephString "
-        "name=pool,type=CephString "
-        "name=namespace,type=CephString,req=false "
-        'name=placement,type=CephString,req=false',
-        'Start NFS daemon(s)')
-    def _nfs_add(self, svc_arg, pool, namespace=None, placement=None):
-        spec = NFSServiceSpec(
-            svc_arg,
-            pool=pool,
-            namespace=namespace,
-            placement=PlacementSpec.from_string(placement),
-        )
-        spec.validate_add()
-        completion = self.add_nfs(spec)
-        self._orchestrator_wait([completion])
-        raise_if_exception(completion)
-        return HandleCommandResult(stdout=completion.result_str())
-
-    @_cli_write_command(
         'orch',
         "name=action,type=CephChoices,strings=start|stop|restart|redeploy|reconfig "
         "name=service_name,type=CephString",
@@ -661,23 +555,6 @@ Usage:
             raise OrchestratorError('%s is not a valid daemon name' % name)
         (daemon_type, daemon_id) = name.split('.', 1)
         completion = self.daemon_action(action, daemon_type, daemon_id)
-        self._orchestrator_wait([completion])
-        raise_if_exception(completion)
-        return HandleCommandResult(stdout=completion.result_str())
-
-    @_cli_write_command(
-        'orch daemon rm',
-        "name=names,type=CephString,n=N "
-        'name=force,type=CephBool,req=false',
-        'Remove specific daemon(s)')
-    def _daemon_rm(self, names, force=False):
-        for name in names:
-            if '.' not in name:
-                raise OrchestratorError('%s is not a valid daemon name' % name)
-            (daemon_type) = name.split('.')[0]
-            if not force and daemon_type in ['osd', 'mon', 'prometheus']:
-                raise OrchestratorError('must pass --force to REMOVE daemon with potentially PRECIOUS DATA for %s' % name)
-        completion = self.remove_daemons(names)
         self._orchestrator_wait([completion])
         raise_if_exception(completion)
         return HandleCommandResult(stdout=completion.result_str())
