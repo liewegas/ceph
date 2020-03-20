@@ -434,13 +434,6 @@ class RookOrchestrator(MgrModule, orchestrator.Orchestrator):
             mgr=self
         )
 
-    def remove_daemons(self, names):
-        return write_completion(
-            lambda: self.rook_cluster.remove_pods(names),
-            "Removing daemons {}".format(','.join(names)),
-            mgr=self
-        )
-
     def create_osds(self, drive_group):
         # type: (DriveGroupSpec) -> RookCompletion
         """ Creates OSDs from a drive group specification.
