@@ -120,6 +120,9 @@ class Hello(MgrModule):
             stdout=out,   # stdout
             stderr=err)
 
+    def foo(self):
+        raise RuntimeError('foo bar!')
+
     def serve(self):
         """
         This method is called by the mgr when the module starts and can be
@@ -128,6 +131,8 @@ class Hello(MgrModule):
         self.log.info("Starting")
         while self.run:
             # Do some useful background work here.
+
+            self.foo()
 
             # Use mgr_tick_period (default: 2) here just to illustrate
             # consuming native ceph options.  Any real background work
