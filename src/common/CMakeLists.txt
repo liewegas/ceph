@@ -14,6 +14,7 @@ set(common_srcs
   Cycles.cc
   CDC.cc
   DecayCounter.cc
+  FastCDC.cc
   Finisher.cc
   Formatter.cc
   Graylog.cc
