@@ -31,8 +31,8 @@ struct ManagedLock<MockTestImageCtx> {
   static ManagedLock *create(librados::IoCtx& ioctx, ContextWQ *work_queue,
                              const std::string& oid, librbd::Watcher *watcher,
                              managed_lock::Mode  mode,
-                             bool blacklist_on_break_lock,
-                             uint32_t blacklist_expire_seconds) {
+                             bool blocklist_on_break_lock,
+                             uint32_t blocklist_expire_seconds) {
     ceph_assert(s_instance != nullptr);
     return s_instance;
   }
@@ -561,7 +561,7 @@ TEST_F(TestMockInstanceWatcher, PeerImageAcquireWatchDNE) {
   expect_acquire_lock(mock_managed_lock, 0);
   ASSERT_EQ(0, instance_watcher->init());
 
-  // Acquire image on dead (blacklisted) instance
+  // Acquire image on dead (blocklisted) instance
   C_SaferCond on_acquire;
   instance_watcher->notify_image_acquire("dead instance", "global image id",
                                          &on_acquire);
@@ -593,7 +593,7 @@ TEST_F(TestMockInstanceWatcher, PeerImageReleaseWatchDNE) {
   expect_acquire_lock(mock_managed_lock, 0);
   ASSERT_EQ(0, instance_watcher->init());
 
-  // Release image on dead (blacklisted) instance
+  // Release image on dead (blocklisted) instance
   C_SaferCond on_acquire;
   instance_watcher->notify_image_release("dead instance", "global image id",
                                          &on_acquire);

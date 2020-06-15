@@ -29,11 +29,11 @@ class BreakRequest {
 public:
   static BreakRequest* create(librados::IoCtx& ioctx, ContextWQ *work_queue,
                               const std::string& oid, const Locker &locker,
-                              bool exclusive, bool blacklist_locker,
-                              uint32_t blacklist_expire_seconds,
+                              bool exclusive, bool blocklist_locker,
+                              uint32_t blocklist_expire_seconds,
                               bool force_break_lock, Context *on_finish) {
     return new BreakRequest(ioctx, work_queue, oid, locker, exclusive,
-                            blacklist_locker, blacklist_expire_seconds,
+                            blocklist_locker, blocklist_expire_seconds,
                             force_break_lock, on_finish);
   }
 
@@ -52,7 +52,7 @@ private:
    * GET_LOCKER
    *    |
    *    v
-   * BLACKLIST (skip if disabled)
+   * BLOCKLIST (skip if disabled)
    *    |
    *    v
    * BREAK_LOCK
@@ -69,8 +69,8 @@ private:
   std::string m_oid;
   Locker m_locker;
   bool m_exclusive;
-  bool m_blacklist_locker;
-  uint32_t m_blacklist_expire_seconds;
+  bool m_blocklist_locker;
+  uint32_t m_blocklist_expire_seconds;
   bool m_force_break_lock;
   Context *m_on_finish;
 
@@ -83,8 +83,8 @@ private:
 
   BreakRequest(librados::IoCtx& ioctx, ContextWQ *work_queue,
                const std::string& oid, const Locker &locker,
-               bool exclusive, bool blacklist_locker,
-               uint32_t blacklist_expire_seconds, bool force_break_lock,
+               bool exclusive, bool blocklist_locker,
+               uint32_t blocklist_expire_seconds, bool force_break_lock,
                Context *on_finish);
 
   void send_get_watchers();
@@ -93,8 +93,8 @@ private:
   void send_get_locker();
   void handle_get_locker(int r);
 
-  void send_blacklist();
-  void handle_blacklist(int r);
+  void send_blocklist();
+  void handle_blocklist(int r);
 
   void send_break_lock();
   void handle_break_lock(int r);
