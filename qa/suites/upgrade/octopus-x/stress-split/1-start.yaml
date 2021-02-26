@@ -11,6 +11,7 @@ tasks:
         #set config option for which cls modules are allowed to be loaded / used
         osd_class_load_list: "*"
         osd_class_default_list: "*"
+        debug_ms: 20
 
 - cephadm.shell:
     mon.a:
