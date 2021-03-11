@@ -3,8 +3,8 @@ os_version: "20.04"
 
 tasks:
 - cephadm:
-    image: docker.io/ceph/ceph:v15.2.9
-    cephadm_branch: v15.2.9
+    image: quay.ceph.io/ceph-ci/ceph:wip-debug-mgr-options-octopus
+    cephadm_branch: v15.2.4
     cephadm_git_url: https://github.com/ceph/ceph
     # avoid --cap-add=PTRACE + --privileged for older cephadm versions
     allow_ptrace: false
