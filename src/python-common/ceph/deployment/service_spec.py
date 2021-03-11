@@ -578,6 +578,11 @@ class ServiceSpec(object):
         # point.
         return None
 
+    def get_networks(self) -> Optional[List[str]]:
+        # If defined, we will bind to an IP in one of these
+        # networks
+        return None
+
     def to_json(self):
         # type: () -> OrderedDict[str, Any]
         ret: OrderedDict[str, Any] = OrderedDict()
@@ -710,6 +715,7 @@ class RGWSpec(ServiceSpec):
                  rgw_frontend_type: Optional[str] = None,
                  unmanaged: bool = False,
                  ssl: bool = False,
+                 networks: Optional[List[str]] = None,
                  preview_only: bool = False,
                  config: Optional[Dict[str, str]] = None,
                  subcluster: Optional[str] = None,  # legacy, only for from_json on upgrade
@@ -731,9 +737,13 @@ class RGWSpec(ServiceSpec):
         self.rgw_frontend_ssl_certificate = rgw_frontend_ssl_certificate
         self.rgw_frontend_type = rgw_frontend_type
         self.ssl = ssl
+        self.networks = networks
 
     def get_port_start(self) -> Optional[int]:
         return self.get_port()
+
+    def get_networks(self) -> Optional[List[str]]:
+        return self.networks
 
     def get_port(self) -> int:
         if self.rgw_frontend_port:
