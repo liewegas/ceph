@@ -731,16 +731,28 @@ class RgwService(CephService):
         ftype = spec.rgw_frontend_type or "beast"
         if ftype == 'beast':
             if spec.ssl:
-                args.append(f"ssl_port={daemon_spec.ports[0]}")
+                if daemon_spec.ip:
+                    args.append(f"ssl_endpoint={daemon_spec.ip}:{daemon_spec.ports[0]}")
+                else:
+                    args.append(f"ssl_port={daemon_spec.ports[0]}")
                 args.append(f"ssl_certificate=config://rgw/cert/{spec.service_name()}.crt")
             else:
-                args.append(f"port={daemon_spec.ports[0]}")
+                if daemon_spec.ip:
+                    args.append(f"endpoint={daemon_spec.ip}:{daemon_spec.ports[0]}")
+                else:
+                    args.append(f"port={daemon_spec.ports[0]}")
         elif ftype == 'civetweb':
             if spec.ssl:
-                args.append(f"port={daemon_spec.ports[0]}s")  # note the 's' suffix on port
+                if daemon_spec.ip:
+                    args.append(f"port={daemon_spec.ip}:{daemon_spec.ports[0]}s")  # note the 's' suffix on port
+                else:
+                    args.append(f"port={daemon_spec.ports[0]}s")  # note the 's' suffix on port
                 args.append(f"ssl_certificate=config://rgw/cert/{spec.service_name()}.crt")
             else:
-                args.append(f"port={daemon_spec.ports[0]}")
+                if daemon_spec.ip:
+                    args.append(f"port={daemon_spec.ip}:{daemon_spec.ports[0]}")
+                else:
+                    args.append(f"port={daemon_spec.ports[0]}")
         frontend = f'{ftype} {" ".join(args)}'
 
         ret, out, err = self.mgr.check_mon_command({
