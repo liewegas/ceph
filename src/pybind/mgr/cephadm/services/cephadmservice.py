@@ -110,7 +110,8 @@ class CephadmService(metaclass=ABCMeta):
             network: str,
             spec: ServiceSpecs,
             daemon_type: Optional[str] = None,
-            ports: Optional[List[int]] = None
+            ports: Optional[List[int]] = None,
+            ip: Optional[str] = None,
     ) -> CephadmDaemonDeploySpec:
         return CephadmDaemonDeploySpec(
             host=host,
@@ -119,6 +120,7 @@ class CephadmService(metaclass=ABCMeta):
             network=network,
             daemon_type=daemon_type,
             ports=ports,
+            ip=ip,
         )
 
     def prepare_create(self, daemon_spec: CephadmDaemonDeploySpec) -> CephadmDaemonDeploySpec:

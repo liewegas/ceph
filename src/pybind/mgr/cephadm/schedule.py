@@ -1,6 +1,6 @@
 import logging
 import random
-from typing import List, Optional, Callable, TypeVar, Tuple, NamedTuple
+from typing import List, Optional, Callable, TypeVar, Tuple, NamedTuple, Dict
 
 import orchestrator
 from ceph.deployment.service_spec import ServiceSpec
@@ -62,6 +62,7 @@ class HostAssignment(object):
                  spec,  # type: ServiceSpec
                  hosts: List[orchestrator.HostSpec],
                  daemons: List[orchestrator.DaemonDescription],
+                 networks: Dict[str, Dict[str, List[str]]] = {},
                  filter_new_host=None,  # type: Optional[Callable[[str],bool]]
                  allow_colo: bool = False,
                  ):
@@ -71,6 +72,7 @@ class HostAssignment(object):
         self.filter_new_host = filter_new_host
         self.service_name = spec.service_name()
         self.daemons = daemons
+        self.networks = networks
         self.allow_colo = allow_colo
         self.port_start = spec.get_port_start()
 
@@ -230,6 +232,26 @@ class HostAssignment(object):
         else:
             raise OrchestratorValidationError(
                 "placement spec is empty: no hosts, no label, no pattern, no count")
+
+        # allocate an IP?
+        networks = self.spec.get_networks()
+        if networks:
+            orig = ls.copy()
+            ls = []
+            for p in orig:
+                ip = None
+                for subnet in networks:
+                    ips = self.networks.get(p.hostname, {}).get(subnet, [])
+                    if ips:
+                        ip = sorted(ips)[0]
+                        break
+                if ip:
+                    ls.append(DaemonPlacement(hostname=p.hostname, network=p.network,
+                                              name=p.name, port=p.port, ip=ip))
+                else:
+                    logger.debug(
+                        f'Skipping {p.hostname} with no IP in network(s) {networks}'
+                    )
 
         if self.filter_new_host:
             old = ls.copy()
