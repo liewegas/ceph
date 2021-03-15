@@ -742,33 +742,41 @@ class RgwService(CephService):
 
         keyring = self.get_keyring(rgw_id)
 
+        if daemon_spec.ports:
+            port = daemon_spec.ports[0]
+        else:
+            # this is a redeploy of older instance that doesn't have an explicitly
+            # assigned port, in which case we can assume there is only 1 per host
+            # and it matches the spec.
+            port = spec.get_port()
+
         # configure frontend
         args = []
         ftype = spec.rgw_frontend_type or "beast"
         if ftype == 'beast':
             if spec.ssl:
                 if daemon_spec.ip:
-                    args.append(f"ssl_endpoint={daemon_spec.ip}:{daemon_spec.ports[0]}")
+                    args.append(f"ssl_endpoint={daemon_spec.ip}:{port}")
                 else:
-                    args.append(f"ssl_port={daemon_spec.ports[0]}")
+                    args.append(f"ssl_port={port}")
                 args.append(f"ssl_certificate=config://rgw/cert/{spec.service_name()}.crt")
             else:
                 if daemon_spec.ip:
-                    args.append(f"endpoint={daemon_spec.ip}:{daemon_spec.ports[0]}")
+                    args.append(f"endpoint={daemon_spec.ip}:{port}")
                 else:
-                    args.append(f"port={daemon_spec.ports[0]}")
+                    args.append(f"port={port}")
         elif ftype == 'civetweb':
             if spec.ssl:
                 if daemon_spec.ip:
-                    args.append(f"port={daemon_spec.ip}:{daemon_spec.ports[0]}s")  # note the 's' suffix on port
+                    args.append(f"port={daemon_spec.ip}:{port}s")  # note the 's' suffix on port
                 else:
-                    args.append(f"port={daemon_spec.ports[0]}s")  # note the 's' suffix on port
+                    args.append(f"port={port}s")  # note the 's' suffix on port
                 args.append(f"ssl_certificate=config://rgw/cert/{spec.service_name()}.crt")
             else:
                 if daemon_spec.ip:
-                    args.append(f"port={daemon_spec.ip}:{daemon_spec.ports[0]}")
+                    args.append(f"port={daemon_spec.ip}:{port}")
                 else:
-                    args.append(f"port={daemon_spec.ports[0]}")
+                    args.append(f"port={port}")
         frontend = f'{ftype} {" ".join(args)}'
 
         ret, out, err = self.mgr.check_mon_command({
