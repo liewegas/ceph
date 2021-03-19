@@ -235,6 +235,8 @@ def ceph_log(ctx, config):
             run.wait(
                 ctx.cluster.run(
                     args=[
+                        'sudo', 'find', '/var/log/ceph', '-ls',
+                        run.Raw('&&'),
                         'sudo',
                         'find',
                         '/var/log/ceph',   # all logs, not just for the cluster
