@@ -235,6 +235,8 @@ def ceph_log(ctx, config):
             run.wait(
                 ctx.cluster.run(
                     args=[
+                        'sudo', 'find', '/var/log/ceph', '-ls',
+                        run.Raw('&&'),
                         'sudo',
                         'find',
                         '/var/log/ceph',   # all logs, not just for the cluster
@@ -369,6 +371,7 @@ def ceph_bootstrap(ctx, config):
             ctx.cephadm,
             '--image', ctx.ceph[cluster_name].image,
             '-v',
+            '--logrotate-dir', '/tmp',  # we don't want logrotate to rotate our logs!
             'bootstrap',
             '--fsid', fsid,
             '--config', '{}/seed.{}.conf'.format(testdir, cluster_name),
