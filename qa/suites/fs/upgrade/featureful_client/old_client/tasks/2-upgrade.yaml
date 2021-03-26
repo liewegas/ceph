@@ -19,6 +19,10 @@ overrides:
 tasks:
 - mds_pre_upgrade:
 - print: "**** done mds pre-upgrade sequence"
+- exec:
+    mon.a:
+    - ceph config set mon mon_warn_on_insecure_global_id_reclaim false --force
+    - ceph config set mon mon_warn_on_insecure_global_id_reclaim_allowed false --force
 - install.upgrade:
     mon.a:
     mon.b:
