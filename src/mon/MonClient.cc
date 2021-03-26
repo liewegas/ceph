@@ -746,6 +746,9 @@ void MonClient::_add_conn(unsigned rank, uint64_t global_id)
   auto peer = monmap.get_addrs(rank);
   auto conn = messenger->connect_to_mon(peer);
   MonConnection mc(cct, conn, global_id, &auth_registry);
+  if (auth) {
+    mc.get_auth().reset(auth->clone());
+  }
   pending_cons.insert(std::make_pair(peer, std::move(mc)));
   ldout(cct, 10) << "picked mon." << monmap.get_name(rank)
                  << " con " << conn
@@ -906,7 +909,7 @@ void MonClient::_finish_hunting(int auth_err)
     _resend_mon_commands();
     send_log(true);
     if (active_con) {
-      std::swap(auth, active_con->get_auth());
+      auth = std::move(active_con->get_auth());
       if (global_id && global_id != active_con->get_global_id()) {
 	lderr(cct) << __func__ << " global_id changed from " << global_id
 		   << " to " << active_con->get_global_id() << dendl;
@@ -1710,9 +1713,6 @@ int MonConnection::get_auth_request(
     return -EACCES;
   }
 
-  if (auth) {
-    auth.reset();
-  }
   int r = _init_auth(*method, entity_name, want_keys, keyring, true);
   ceph_assert(r == 0);
 
@@ -1833,12 +1833,6 @@ int MonConnection::_negotiate(MAuthReply *m,
 			      uint32_t want_keys,
 			      RotatingKeyRing* keyring)
 {
-  if (auth && (int)m->protocol == auth->get_protocol()) {
-    // good, negotiation completed
-    auth->reset();
-    return 0;
-  }
-
   int r = _init_auth(m->protocol, entity_name, want_keys, keyring, false);
   if (r == -ENOTSUP) {
     if (m->result == -ENOTSUP) {
@@ -1857,9 +1851,15 @@ int MonConnection::_init_auth(
   RotatingKeyRing* keyring,
   bool msgr2)
 {
-  ldout(cct,10) << __func__ << " method " << method << dendl;
-  auth.reset(
-    AuthClientHandler::create(cct, method, keyring));
+  ldout(cct, 10) << __func__ << " method " << method << dendl;
+  if (auth && auth->get_protocol() == (int)method) {
+    ldout(cct, 10) << __func__ << " already have auth, reseting" << dendl;
+    auth->reset();
+    return 0;
+  }
+
+  ldout(cct, 10) << __func__ << " creating new auth" << dendl;
+  auth.reset(AuthClientHandler::create(cct, method, keyring));
   if (!auth) {
     ldout(cct, 10) << " no handler for protocol " << method << dendl;
     return -ENOTSUP;

@@ -2,3 +2,8 @@
 verify_ceph_hash: false
 tasks:
 - cephadm:
+    conf:
+      mon:
+        auth_allow_insecure_global_id_reclaim: true
+        mon_warn_on_insecure_global_id_reclaim: false
+        mon_warn_on_insecure_global_id_reclaim_allowed: false
