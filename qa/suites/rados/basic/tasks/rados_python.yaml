@@ -8,6 +8,12 @@ overrides:
     - \(OSD_
     - \(OBJECT_
     - \(POOL_APP_NOT_ENABLED\)
+  ceph:
+    conf:
+      global:
+        debug ms: 20
+        debug auth: 20
+        debug monc: 20
 tasks:
 - workunit:
     clients:
