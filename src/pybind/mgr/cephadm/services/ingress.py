@@ -189,12 +189,13 @@ class IngressService(CephService):
 
         # set state. first host in placement is master all others backups
         state = 'BACKUP'
-        if hosts[0] == host:
+        if hosts and hosts[0] == host:
             state = 'MASTER'
 
         # remove host, daemon is being deployed on from hosts list for
         # other_ips in conf file and converter to ips
-        hosts.remove(host)
+        if host in hosts:
+            hosts.remove(host)
         other_ips = [resolve_ip(h) for h in hosts]
 
         keepalived_conf = self.mgr.template.render(
