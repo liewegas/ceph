@@ -96,6 +96,7 @@ class IngressService(CephService):
                 'ip': daemon_spec.ip or '*',
                 'frontend_ports': daemon_spec.ports[0:-1] if daemon_spec.ports else spec.frontend_ports,
                 'monitor_port': daemon_spec.ports[-1] if daemon_spec.ports else spec.monitor_port,
+                'backend_is_ssl': spec.backend_service == 'mgr',
             }
         )
         config_files = {

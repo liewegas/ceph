@@ -59,7 +59,7 @@ backend backend{{pos}}
     balance static-rr
     option httpchk HEAD / HTTP/1.0
     {% for server in servers %}
-    server {{ server.name }} {{ server.ip }}:{{ server.ports[pos] }} check weight 100
+    server {{ server.name }} {{ server.ip }}:{{ server.ports[pos] }} check {% if backend_is_ssl %}check-ssl verify none {%endif%}weight 100
     {% endfor %}
 
 {% endfor %}
