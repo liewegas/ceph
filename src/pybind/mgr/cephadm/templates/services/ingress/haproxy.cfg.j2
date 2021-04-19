@@ -45,18 +45,21 @@ frontend stats
     http-request use-service prometheus-exporter if { path /metrics }
     monitor-uri /health
 
-frontend frontend
+{% for pos in range(frontend_ports | length) %}
+frontend frontend{{pos}}
 {% if spec.ssl_cert %}
-    bind {{ ip }}:{{ frontend_port }} ssl crt /var/lib/haproxy/haproxy.pem
+    bind {{ ip }}:{{ frontend_ports[pos] }} ssl crt /var/lib/haproxy/haproxy.pem
 {% else %}
-    bind {{ ip }}:{{ frontend_port }}
+    bind {{ ip }}:{{ frontend_ports[pos] }}
 {% endif %}
-    default_backend backend
+    default_backend backend{{pos}}
 
-backend backend
+backend backend{{pos}}
     option forwardfor
     balance static-rr
     option httpchk HEAD / HTTP/1.0
     {% for server in servers %}
-    server {{ server.name }} {{ server.ip }}:{{ server.port }} check weight 100
+    server {{ server.name }} {{ server.ip }}:{{ server.ports[pos] }} check weight 100
     {% endfor %}
+
+{% endfor %}

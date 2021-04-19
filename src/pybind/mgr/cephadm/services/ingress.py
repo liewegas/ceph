@@ -88,14 +88,14 @@ class IngressService(CephService):
                     {
                         'name': d.name(),
                         'ip': d.ip or resolve_ip(str(d.hostname)),
-                        'port': d.ports[0],
-                    } for d in daemons if d.ports
+                        'ports': d.ports,
+                    } for d in daemons if len(d.ports) == len(daemon_spec.ports) - 1
                 ],
                 'user': spec.monitor_user or 'admin',
                 'password': password,
                 'ip': daemon_spec.ip or '*',
-                'frontend_port': daemon_spec.ports[0] if daemon_spec.ports else spec.frontend_port,
-                'monitor_port': daemon_spec.ports[1] if daemon_spec.ports else spec.monitor_port,
+                'frontend_ports': daemon_spec.ports[0:-1] if daemon_spec.ports else spec.frontend_ports,
+                'monitor_port': daemon_spec.ports[-1] if daemon_spec.ports else spec.monitor_port,
             }
         )
         config_files = {

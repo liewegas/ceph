@@ -878,6 +878,7 @@ class IngressSpec(ServiceSpec):
                  placement: Optional[PlacementSpec] = None,
                  backend_service: Optional[str] = None,
                  frontend_port: Optional[int] = None,
+                 frontend_ports: Optional[List[int]] = None,
                  ssl_cert: Optional[str] = None,
                  ssl_dh_param: Optional[str] = None,
                  ssl_ciphers: Optional[List[str]] = None,
@@ -899,7 +900,9 @@ class IngressSpec(ServiceSpec):
             networks=networks
         )
         self.backend_service = backend_service
-        self.frontend_port = frontend_port
+        self.frontend_ports = frontend_ports
+        if frontend_port:
+            self.frontend_ports = [frontend_port]
         self.ssl_cert = ssl_cert
         self.ssl_dh_param = ssl_dh_param
         self.ssl_ciphers = ssl_ciphers
@@ -914,8 +917,7 @@ class IngressSpec(ServiceSpec):
         self.keepalived_container_image = keepalived_container_image
 
     def get_port_start(self) -> List[int]:
-        return [cast(int, self.frontend_port),
-                cast(int, self.monitor_port)]
+        return (self.frontend_ports or []) + [cast(int, self.monitor_port)]
 
     def get_virtual_ip(self) -> Optional[str]:
         return self.virtual_ip
@@ -926,9 +928,9 @@ class IngressSpec(ServiceSpec):
         if not self.backend_service:
             raise SpecValidationError(
                 'Cannot add ingress: No backend_service specified')
-        if not self.frontend_port:
+        if not self.frontend_ports:
             raise SpecValidationError(
-                'Cannot add ingress: No frontend_port specified')
+                'Cannot add ingress: No frontend_port(s) specified')
         if not self.monitor_port:
             raise SpecValidationError(
                 'Cannot add ingress: No monitor_port specified')
