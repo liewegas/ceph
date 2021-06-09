@@ -200,19 +200,19 @@ class TestNFS(MgrTestCase):
         self.sample_export['export_id'] = 2
         self.sample_export['pseudo'] = self.pseudo_path + '1'
         self.sample_export['access_type'] = 'RO'
-        self.sample_export['fsal']['user_id'] = self.cluster_id + '2'
+        self.sample_export['fsal']['user_id'] = f'nfs.{self.cluster_id}.2'
         self.assertDictEqual(self.sample_export, nfs_output[1])
         # Export-3 for subvolume with r only
         self.sample_export['export_id'] = 3
         self.sample_export['path'] = sub_vol_path
         self.sample_export['pseudo'] = self.pseudo_path + '2'
-        self.sample_export['fsal']['user_id'] = self.cluster_id + '3'
+        self.sample_export['fsal']['user_id'] = f'nfs.{self.cluster_id}.3'
         self.assertDictEqual(self.sample_export, nfs_output[2])
         # Export-4 for subvolume
         self.sample_export['export_id'] = 4
         self.sample_export['pseudo'] = self.pseudo_path + '3'
         self.sample_export['access_type'] = 'RW'
-        self.sample_export['fsal']['user_id'] = self.cluster_id + '4'
+        self.sample_export['fsal']['user_id'] = f'nfs.{self.cluster_id}.4'
         self.assertDictEqual(self.sample_export, nfs_output[3])
 
     def _get_export(self):
