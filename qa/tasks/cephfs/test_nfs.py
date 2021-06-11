@@ -44,7 +44,7 @@ class TestNFS(MgrTestCase):
          "cluster_id": self.cluster_id,
          "pseudo": self.pseudo_path,
          "access_type": "RW",
-         "squash": "no_root_squash",
+         "squash": "none",
          "security_label": True,
          "protocols": [
            4
@@ -54,9 +54,8 @@ class TestNFS(MgrTestCase):
          ],
          "fsal": {
            "name": "CEPH",
-           "user_id": "test1",
+           "user_id": "nfs.test.1",
            "fs_name": self.fs_name,
-           "sec_label_xattr": ''
          },
          "clients": []
         }
@@ -96,9 +95,9 @@ class TestNFS(MgrTestCase):
         '''
         output = self._cmd('auth', 'ls')
         if check_in:
-            self.assertIn(f'client.{self.cluster_id}{export_id}', output)
+            self.assertIn(f'client.nfs.{self.cluster_id}.{export_id}', output)
         else:
-            self.assertNotIn(f'client-{self.cluster_id}', output)
+            self.assertNotIn(f'client.nfs.{self.cluster_id}.{export_id}', output)
 
     def _test_idempotency(self, cmd_func, cmd_args):
         '''
@@ -201,19 +200,19 @@ class TestNFS(MgrTestCase):
         self.sample_export['export_id'] = 2
         self.sample_export['pseudo'] = self.pseudo_path + '1'
         self.sample_export['access_type'] = 'RO'
-        self.sample_export['fsal']['user_id'] = self.cluster_id + '2'
+        self.sample_export['fsal']['user_id'] = f'nfs.{self.cluster_id}.2'
         self.assertDictEqual(self.sample_export, nfs_output[1])
         # Export-3 for subvolume with r only
         self.sample_export['export_id'] = 3
         self.sample_export['path'] = sub_vol_path
         self.sample_export['pseudo'] = self.pseudo_path + '2'
-        self.sample_export['fsal']['user_id'] = self.cluster_id + '3'
+        self.sample_export['fsal']['user_id'] = f'nfs.{self.cluster_id}.3'
         self.assertDictEqual(self.sample_export, nfs_output[2])
         # Export-4 for subvolume
         self.sample_export['export_id'] = 4
         self.sample_export['pseudo'] = self.pseudo_path + '3'
         self.sample_export['access_type'] = 'RW'
-        self.sample_export['fsal']['user_id'] = self.cluster_id + '4'
+        self.sample_export['fsal']['user_id'] = f'nfs.{self.cluster_id}.4'
         self.assertDictEqual(self.sample_export, nfs_output[3])
 
     def _get_export(self):
@@ -555,8 +554,9 @@ class TestNFS(MgrTestCase):
         new_pseudo_path = '/testing'
         export_block['pseudo'] = new_pseudo_path
         export_block['access_type'] = 'RO'
-        self.ctx.cluster.run(args=['sudo', 'ceph', 'nfs', 'export', 'update', '-i', '-'],
-                stdin=json.dumps(export_block))
+        self.ctx.cluster.run(args=['sudo', 'ceph', 'nfs', 'export', 'update',
+                                   self.cluster_id, '-i', '-'],
+                             stdin=json.dumps(export_block))
         self._check_nfs_cluster_status('running', 'NFS Ganesha cluster restart failed')
         self._write_to_read_only_export(new_pseudo_path, port, ip)
         self._test_delete_cluster()
@@ -576,7 +576,8 @@ class TestNFS(MgrTestCase):
             else:
                 export_block_new[key] = value
             try:
-                self.ctx.cluster.run(args=['sudo', 'ceph', 'nfs', 'export', 'update', '-i', '-'],
+                self.ctx.cluster.run(args=['sudo', 'ceph', 'nfs', 'export', 'update',
+                                           self.cluster_id, '-i', '-'],
                         stdin=json.dumps(export_block_new))
             except CommandFailedError:
                 pass
@@ -619,3 +620,4 @@ class TestNFS(MgrTestCase):
         exec_cmd_invalid('export', 'delete', 'clusterid')
         exec_cmd_invalid('export', 'get')
         exec_cmd_invalid('export', 'get', 'clusterid')
+        exec_cmd_invalid('export', 'update')
