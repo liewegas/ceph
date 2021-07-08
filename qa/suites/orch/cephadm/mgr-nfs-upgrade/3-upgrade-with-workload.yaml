@@ -1,0 +1,37 @@
+tasks:
+- parallel:
+  - upgrade-tasks
+  - workload-tasks
+
+upgrade-tasks:
+- cephadm.shell:
+    env: [sha1]
+    mon.a:
+      - radosgw-admin realm create --rgw-realm=r --default
+      - radosgw-admin zonegroup create --rgw-zonegroup=default --master --default
+      - radosgw-admin zone create --rgw-zonegroup=default --rgw-zone=z --master --default
+      - radosgw-admin period update --rgw-realm=r --commit
+      - ceph orch apply rgw r z --placement=2 --port=8000
+      - sleep 120
+      - ceph config set mon mon_warn_on_insecure_global_id_reclaim false --force
+      - ceph config set mon mon_warn_on_insecure_global_id_reclaim_allowed false --force
+      - ceph orch upgrade start --image quay.ceph.io/ceph-ci/ceph:$sha1
+- cephadm.shell:
+    env: [sha1]
+    mon.a:
+      - while ceph orch upgrade status | jq '.in_progress' | grep true ; do ceph orch ps ; ceph versions ; sleep 30 ; done
+      - ceph orch ps
+      - ceph versions
+      - echo "wait for servicemap items w/ changing names to refresh"
+      - sleep 60
+      - ceph orch ps
+      - ceph versions
+      - ceph versions | jq -e '.overall | length == 1'
+      - ceph versions | jq -e '.overall | keys' | grep $sha1
+
+workload-tasks:
+- exec:
+    host.a:
+      - cd /mnt/foo && dbench 5 -t 600
+
+

@@ -1,0 +1,34 @@
+tasks:
+- vip:
+
+# make sure cephadm notices the new IP
+- cephadm.shell:
+    host.a:
+      - ceph orch device ls --refresh
+
+# stop kernel nfs server, if running
+- vip.exec:
+    all-hosts:
+      - systemctl stop nfs-server
+
+- cephadm.shell:
+    host.a:
+      - ceph fs volume create foofs
+      - ceph nfs cluster create foo --ingress --virtual-ip {{VIP0}}/{{VIPPREFIXLEN}}
+      - ceph nfs export create cephfs foofs foo --pseudo-path /fake
+
+- cephadm.wait_for_service:
+    service: nfs.foo
+- cephadm.wait_for_service:
+    service: ingress.nfs.foo
+
+## export and mount
+
+- vip.exec:
+    host.a:
+      - mkdir /mnt/foo
+      - sleep 5
+      - mount -t nfs {{VIP0}}:/fake /mnt/foo
+      - echo test > /mnt/foo/testfile
+      - sync
+
