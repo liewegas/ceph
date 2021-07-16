@@ -26,7 +26,7 @@ from cephadm.services.cephadmservice import CephadmDaemonDeploySpec
 from cephadm.schedule import HostAssignment
 from cephadm.autotune import MemoryAutotuner
 from cephadm.utils import forall_hosts, cephadmNoImage, is_repo_digest, \
-    CephadmNoImage, CEPH_TYPES, ContainerInspectInfo
+    CephadmNoImage, CEPH_TYPES, ContainerInspectInfo, KNOWN_DAEMON_TYPES
 from mgr_module import MonCommandFailed
 from mgr_util import format_bytes
 
@@ -405,7 +405,7 @@ class CephadmServe:
                 if v:
                     setattr(sd, k, str_to_datetime(d[k]))
             sd.daemon_type = d['name'].split('.')[0]
-            if sd.daemon_type not in ServiceSpec.KNOWN_SERVICE_TYPES:
+            if sd.daemon_type not in KNOWN_DAEMON_TYPES:
                 logger.warning(f"Found unknown service type {sd.daemon_type} on host {host}")
                 continue
 
