@@ -225,7 +225,7 @@ class IngressService(CephService):
 
         # set state. first host in placement is master all others backups
         state = 'BACKUP'
-        if hosts[0] == host:
+        if hosts and hosts[0] == host:
             state = 'MASTER'
 
         # remove host, daemon is being deployed on from hosts list for
