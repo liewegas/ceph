@@ -32,7 +32,7 @@ tasks:
           's3',
           aws_access_key_id=info['keys'][0]['access_key'],
           aws_secret_access_key=info['keys'][0]['secret_key'],
-          endpoint_url='http://{{VIP0}}:8800',
+          endpoint_url='http://localhost:8800',
       )
       bucket = s3.Bucket('foobucket')
       bucket.create()
@@ -71,7 +71,7 @@ tasks:
           's3',
           aws_access_key_id=info['keys'][0]['access_key'],
           aws_secret_access_key=info['keys'][0]['secret_key'],
-          endpoint_url='http://{{VIP0}}:8800',
+          endpoint_url='http://localhost:8800',
       )
       bucket = s3.Bucket('foobucket')
       data = BytesIO()
